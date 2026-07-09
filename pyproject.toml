@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "commamatrix"
+version = "0.1.0"
+description = "AI Agent Orchestration Framework"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic",
+    "bm25s",
+    "matrix-fn-schema",
+    "aiosqlite",
+    "aiofiles",
+    "httpx",
+]
+
+[project.optional-dependencies]
+postgres = ["asyncpg"]
+all = ["commamatrix[postgres]"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/commamatrix"]
