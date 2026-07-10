@@ -1,111 +1,124 @@
-from typing import Any, Iterable, overload, Callable
-import inspect
+# api/tool.py
 
-import bm25s
-from matrix_fn_schema import build_json_schema
+from __future__ import annotations
 
-from .llm_adapter import ToolCall, ToolCallResult
-from ..core.registry import FunctionRegistryEntry, FunctionRegistry, AsyncOrSyncFunction
+from abc import abstractmethod
+from collections.abc import Awaitable, Callable, Iterable
+from dataclasses import dataclass
+from typing import Any, overload
+
+from ..core.extension_runtime import ExtensionDescriptor, ExtensionSource
+
+DEFAULT_TOOL_SEARCH_AMOUNT = 5
+TOOL_ATTRIBUTE = "__commamatrix_tool__"
+KNOWN_TOOL_MODULES: set[str] = set()
 
 
-class UnknownToolError(Exception):
-    ...
-
-
-DEFAULT_TOOL_CATEGORY = 'other'
-DEFAULT_TOOL_SEARCH_AMOUNT = 10
-
+type AsyncOrSyncFunction = (Callable[..., object] | Callable[..., Awaitable[object]])
 type Decorator[F: AsyncOrSyncFunction] = Callable[[F], F]
 
 
-def build_tool_doc(fn: AsyncOrSyncFunction, category: str = DEFAULT_TOOL_CATEGORY) -> str:
-    _cat = f"[ category: {category} ]\n" if category != DEFAULT_TOOL_CATEGORY else ""
-    _async = "async " if inspect.iscoroutinefunction(fn) else ""
-    return (
-        f'{_cat}{_async}def {fn.__name__}{inspect.signature(fn)}:\n'
-        f'"""\n{inspect.getdoc(fn) or ""}\n"""'
-    ).strip()
-
-
-class ToolRegistry(FunctionRegistry):
+class ToolSource(ExtensionSource["ToolDescriptor"]):
     """
-    Registry + специфичные для инструментов операции: JSON-схемы для LLM и семантический поиск по сигнатурам / docstring'ам.
-    Метод where() наследуется без изменений
+    Abstract source of tools.
+
+    Each source is responsible for:
+        - Discovering available tools via ``scan()``.
+        - Executing its own tools via ``invoke()``.
     """
 
-    def schemas(self, entries: Iterable[FunctionRegistryEntry] | None = None) -> list[dict[str, Any]]:
-        entries = entries if entries is not None else self
-        return [build_json_schema(e.fn) for e in entries]
+    @abstractmethod
+    def scan(self) -> Iterable[ToolDescriptor]:
+        raise NotImplementedError
 
-    async def call(self, tool_call: ToolCall):
-        for elem in self:
-            if elem.name == tool_call.tool_name:
-                if inspect.iscoroutinefunction(elem.fn):
-                    result = await elem.fn(**tool_call.tool_args)
-                else:
-                    result = elem.fn(**tool_call.tool_args)
-                return ToolCallResult(tool_call_id=tool_call.tool_call_id, content=str(result))
-        raise UnknownToolError(f'Tool "{tool_call.tool_name}" not found')
-
-    def search(
-            self, query: str, *, entries: Iterable[FunctionRegistryEntry] | None = None, limit: int = DEFAULT_TOOL_SEARCH_AMOUNT
-    ) -> list[FunctionRegistryEntry]:
-        entries = list(entries if entries is not None else self)
-        if not entries:
-            return []
-
-        docs = [e.meta['doc'] for e in entries]
-        names = [e.name for e in entries]
-
-        retriever = bm25s.BM25()
-        retriever.index(bm25s.tokenize(docs))
-        retriever.corpus = names
-
-        results, scores = retriever.retrieve(
-            bm25s.tokenize(query),
-            k=min(limit, len(entries)),
-        )
-        by_name = {e.name: e for e in entries}
-        return [
-            by_name[name]
-            for name, score in zip(results[0], scores[0])
-            if score > 0
-        ]
+    async def invoke(
+        self,
+        descriptor: ToolDescriptor,
+        kwargs: dict[str, Any],
+    ) -> object:
+        """
+        Execute the tool described by *descriptor* with the given arguments.
+        Must be overridden by subclasses.
+        """
+        raise NotImplementedError
 
 
-# Изолированный реестр — только для инструментов, не пересекается с реестром хуков
-TOOL_REGISTRY = ToolRegistry()
+@dataclass(frozen=True, slots=True)
+class ToolDescriptor(ExtensionDescriptor):
+    """
+    Immutable description of a tool, independent of its origin.
+
+    Fields:
+        id:  Globally unique identifier (e.g. ``python://ns/name``).
+        namespace:  Logical grouping (typically the Python module name).
+        alias:  Short name for virtual imports (defaults to namespace).
+        name:  Tool function name.
+        doc:  Human-readable description used for BM25 search.
+        schema:  JSON Schema of the tool's parameters.
+        metadata:  Source-specific data (e.g. the Python callable ``fn``).
+    """
+
+    namespace: str
+    alias: str
+    name: str
+
+    doc: str
+    schema: dict[str, Any]
+
+    metadata: dict[str, Any]
+
+    def _fingerprint_payload(self) -> dict[str, Any]:
+        """
+        ``fn`` is stored in metadata for invoke but excluded from the fingerprint:
+        it's non-serializable and does not define the tool's semantic content.
+        """
+        meta = {k: v for k, v in self.metadata.items() if k != 'fn'}
+        return {
+            "namespace": self.namespace,
+            "alias": self.alias,
+            "name": self.name,
+            "doc": self.doc,
+            "schema": self.schema,
+            "metadata": meta,
+        }
 
 
 @overload
-def tool(arg: AsyncOrSyncFunction) -> AsyncOrSyncFunction: ...
+def tool(fn: AsyncOrSyncFunction) -> AsyncOrSyncFunction:
+    ...
 
 
 @overload
-def tool(arg: str = ..., **meta: Any) -> Decorator: ...
+def tool(**metadata: Any) -> Decorator:
+    ...
 
 
-def tool(
-        arg: AsyncOrSyncFunction | str = DEFAULT_TOOL_CATEGORY,
-        **meta: Any,
-) -> AsyncOrSyncFunction | Decorator:
+def tool(arg: AsyncOrSyncFunction | None = None, **meta: Any) -> AsyncOrSyncFunction | Decorator:
     """
-    Dual-mode декоратор для регистрации python-функции как инструмента для вызова агентом.
+    Mark a function as a tool.
 
-    @tool
-    @tool("payments")
-    @tool(codeact=False)
-    @tool("system", role="admin")
+    The decorator does NOT register the tool — it only stamps the
+    function with ``TOOL_ATTRIBUTE`` metadata and records its module
+    in ``KNOWN_TOOL_MODULES``.  Actual registration happens when a
+    ``PythonToolSource`` scans those modules.
+
+    Usage::
+
+        @tool
+        def my_tool(x: int) -> int: ...
+
+        @tool(version=2)
+        def my_tool(x: int) -> int: ...
     """
-    category = DEFAULT_TOOL_CATEGORY if callable(arg) else arg
 
-    def decorator(func: AsyncOrSyncFunction) -> AsyncOrSyncFunction:
-        TOOL_REGISTRY.register(
-            func,
-            category=category,
-            doc=build_tool_doc(func, category),
-            **meta,
-        )
-        return func
+    if arg is not None:
+        setattr(arg, TOOL_ATTRIBUTE, {})
+        KNOWN_TOOL_MODULES.add(arg.__module__)
+        return arg
 
-    return decorator(arg) if callable(arg) else decorator
+    def decorator(fn: AsyncOrSyncFunction) -> AsyncOrSyncFunction:
+        setattr(fn, TOOL_ATTRIBUTE, meta)
+        KNOWN_TOOL_MODULES.add(fn.__module__)
+        return fn
+
+    return decorator

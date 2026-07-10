@@ -1,3 +1,5 @@
+# api/__init__.py
+
 from .dialog import DialogItem, DialogOrigin, DialogItemType, DialogRole, ORIGIN_REGISTRY
 from .connector import Connector, CONNECTOR_REGISTRY, ConnectorRegistry, ListensEvents, OnEvent
 from .storage import Storage
@@ -7,9 +9,11 @@ from .llm_adapter import (
     StopReason, ToolCall, ToolCallResult, LLMError, LLMResponseError, LLMTruncatedError,
 )
 from .config import ConfigField
-from .tool import tool, TOOL_REGISTRY, ToolRegistry
+from ..core.extension_runtime import ExtensionSource, ExtensionDescriptor, ExtensionRuntime
+from .tool import tool, ToolSource, ToolDescriptor, DEFAULT_TOOL_SEARCH_AMOUNT
 from .hooks import (
-    Hook, HOOKS_REGISTRY, HooksRegistry, HookEventType, RunCtx,
+    Hook, HookEventType, HookDescriptor, HookSource,
+    RunCtx,
     OnParsedCtx, on_parsed,
     BeforeRunCtx, before_run,
     BeforeLlmCallCtx, before_llm_call,
@@ -28,8 +32,9 @@ __all__ = [
     'LLMAdapter', 'LLMResponse', 'LLMResponseTextBlock', 'LLMResponseImageBlock', 'LLMResponseFileBlock', 'LLMResponseToolCallBlock', 'LLMResponseBlock',
     'StopReason', 'ToolCall', 'ToolCallResult', 'LLMError', 'LLMResponseError', 'LLMTruncatedError',
     'ConfigField',
-    'tool', 'TOOL_REGISTRY', 'ToolRegistry',
-    'Hook', 'HOOKS_REGISTRY', 'HooksRegistry', 'HookEventType', 'RunCtx',
+    'ExtensionSource', 'ExtensionDescriptor', 'ExtensionRuntime',
+    'tool', 'ToolSource', 'ToolDescriptor', 'DEFAULT_TOOL_SEARCH_AMOUNT',
+    'Hook', 'HookEventType', 'HookDescriptor', 'HookSource', 'RunCtx',
     'OnParsedCtx', 'on_parsed',
     'BeforeRunCtx', 'before_run',
     'BeforeLlmCallCtx', 'before_llm_call',

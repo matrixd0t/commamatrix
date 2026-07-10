@@ -1,3 +1,5 @@
+# api/connector.py
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -29,7 +31,7 @@ class ConnectorRegistry:
         self._ctx_types[ctx_type] = connector_cls
         self._connectors.append(connector_cls)
 
-    async def parse_any(self, data: dict, agent: type[Agent]) -> OnParsedCtx | None:
+    async def parse_any(self, data: dict, agent: Agent) -> OnParsedCtx | None:
         for connector_cls in self._connectors:
             if ctx := await connector_cls.parse(data, agent):
                 return ctx
@@ -73,7 +75,7 @@ class Connector(ABC, Generic[OrgT]):
 
     @classmethod
     @abstractmethod
-    async def parse(cls, data: dict, agent: type[Agent]) -> OnParsedCtx | None: ...
+    async def parse(cls, data: dict, agent: Agent) -> OnParsedCtx | None: ...
 
     @classmethod
     @abstractmethod

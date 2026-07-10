@@ -1,57 +1,63 @@
+# api/hooks.py
+
 from __future__ import annotations
 
-from dataclasses import field, dataclass
+from abc import abstractmethod
+from dataclasses import dataclass, field
 from enum import StrEnum
 from uuid import uuid4
-from typing import TYPE_CHECKING, Any
-from collections.abc import Callable, Awaitable
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from collections.abc import Awaitable, Callable
 
-from ..core import FunctionRegistry
-from .tool import ToolRegistry
 from .connector import Connector
 from .dialog import DialogItem, DialogOrigin
+from ..core.extension_runtime import ExtensionDescriptor, ExtensionSource
 from .llm_adapter import LLMResponse, ToolCallResult, ToolCall, LLMAdapter
 
 if TYPE_CHECKING:
     from ..core.agent import Agent
+    from ..core.tool_runtime import ToolRuntime
 
-type Handler[CtxT] = Callable[[CtxT], Awaitable[None]]
+CtxT = TypeVar("CtxT")
+
+type Handler[CtxT] = Callable[[CtxT], object | Awaitable[object]]
+
+HOOK_ATTRIBUTE = "__commamatrix_hook__"
+HOOK_HANDLER_METADATA_KEY = "__handler__"
+KNOWN_HOOK_MODULES: set[str] = set()
 
 
-class HooksRegistry(FunctionRegistry):
+@dataclass(frozen=True, slots=True)
+class Hook(Generic[CtxT]):
     """
-    Реестр хуков. FunctionRegistry с методом fire
+    Typed decorator for hook handlers.
+
+    Does NOT register handlers directly — only stamps the function with
+    metadata (``HOOK_ATTRIBUTE``) and records its module in
+    ``KNOWN_HOOK_MODULES``.  Actual registration happens when a
+    ``PythonHookSource`` scans those modules.
+
+    Usage::
+
+        @before_run
+        async def my_handler(ctx: BeforeRunCtx) -> None: ...
+
+        @before_run(priority=10)
+        async def my_handler(ctx: BeforeRunCtx) -> None: ...
     """
 
-    async def fire(self, event: str, ctx: Any) -> None:
-        """
-        Запускает все хуки для события, отсортированные по полю priority
-        При одинаковом priority — в порядке регистрации (т.е. в порядке импорта плагинов)
-        """
-        entries = self.where(event=event)
-        for entry in sorted(entries, key=lambda e: e.meta.get('priority', 0)):
-            await entry.fn(ctx)
+    _event: HookEventType
+    _ctx_type: type[CtxT]
 
-
-HOOKS_REGISTRY = HooksRegistry()
-
-
-class Hook[CtxT]:
-    """
-    Типизированная фабрика декораторов для обработчиков событий
-    OrgT определяет сигнатуру обработчика — IDE выводит тип ctx автоматически
-    """
-
-    def __init__(self, registry: FunctionRegistry, event: str, ctx_type: type[CtxT]) -> None:
-        self._registry = registry
-        self._event = event
-        self._ctx_type = ctx_type
-        self.__name__ = event
-
-    def __call__(self, fn: Handler[CtxT] | None = None, /, **meta: object) -> Handler[CtxT] | Callable[[Handler[CtxT]], Handler[CtxT]]:
+    def __call__(self, fn: Handler[CtxT] | None = None, /, priority: int = 0) -> Handler[CtxT]:
         def decorator(f: Handler[CtxT]) -> Handler[CtxT]:
-            self._registry.register(f, event=self._event, **meta)
+            setattr(f, HOOK_ATTRIBUTE, {
+                "event": self._event,
+                "priority": priority,
+            })
+            KNOWN_HOOK_MODULES.add(f.__module__)
             return f
+
         if fn is not None:
             return decorator(fn)
         return decorator
@@ -60,7 +66,63 @@ class Hook[CtxT]:
         return f'Hook[{self._ctx_type.__name__}](event={self._event!r})'
 
 
+@dataclass(frozen=True, slots=True)
+class HookDescriptor(ExtensionDescriptor):
+    """
+    Declarative descriptor of a single hook registration.
+
+    Unlike the old registry-based approach, this descriptor is completely
+    source-agnostic — it only declares *when* to fire (``event``) and in
+    what *order* (``priority``).  The actual handler function is stored
+    in ``metadata[HOOK_HANDLER_METADATA_KEY]`` by Python-based sources;
+    non-Python sources (MCP, HTTP webhooks) may use a different mechanism.
+
+    Fields:
+        event:  Event identifier (e.g. ``"before_llm_call"``).
+        priority:  Execution order — lower runs first.
+        metadata:  Source-specific data (e.g. the Python callable).
+    """
+
+    event: str
+    priority: int
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def _fingerprint_payload(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "event": self.event,
+            "priority": self.priority,
+        }
+
+
+class HookSource(ExtensionSource[HookDescriptor]):
+    """Abstract source of hook descriptors."""
+
+    @abstractmethod
+    def scan(self) -> list[HookDescriptor]:
+        raise NotImplementedError
+
+    async def invoke(self, descriptor: HookDescriptor, ctx: object) -> object:
+        """
+        Execute the handler described by *descriptor*.
+
+        Default implementation looks up ``HOOK_HANDLER_METADATA_KEY`` in
+        ``descriptor.metadata`` and calls the stored callable.  Supports
+        both sync and async handlers — if the result is awaitable it is
+        awaited automatically.
+        """
+        fn = descriptor.metadata.get(HOOK_HANDLER_METADATA_KEY)
+        if fn is None:
+            return None
+        result = fn(ctx)
+        if hasattr(result, '__await__'):
+            result = await result
+        return result
+
+
 class HookEventType(StrEnum):
+    """Well-known hook event identifiers used by the agent loop."""
+
     ON_PARSED = 'on_parsed'
     BEFORE_RUN = 'before_run'
     BEFORE_LLM_CALL = 'before_llm_call'
@@ -74,31 +136,23 @@ class HookEventType(StrEnum):
 
 @dataclass(slots=True, kw_only=True)
 class BaseEventCtx:
-    """
-    Базовый контекст события
-    meta — данные, специфичные для КОНКРЕТНОГО события (не переживают его).
-    Для данных, живущих дольше одного события — используйте run.state.
-    """
+    """Base class for all hook event contexts."""
     meta: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True, kw_only=True)
 class RunCtx:
     """
-    Common properties of an agentic loop run. This object is passed to every event context.
+    Shared mutable state for a single agentic loop run.
 
-    Use 'state' field to pass arbitrary information between events in same agentic loop.
-    connector is None for headless/sub-agent runs (no platform to send to).
+    Created once per ``Agent.run()`` invocation and passed through all
+    hooks in that run.  Hooks can read/write ``state`` to share data
+    across lifecycle stages.
     """
-    agent: type[Agent]
+    agent: Agent
     connector: type[Connector] | None = None
     origin: DialogOrigin
     user: str
-    """
-    platform-specific identifier of user that triggered a chain of events.
-
-    examples: 'tg:11111', 'vk:22334455'
-    """
     run_id: str = field(default_factory=lambda: uuid4().hex)
     iteration: int = 0
     state: dict[str, Any] = field(default_factory=dict)
@@ -106,174 +160,83 @@ class RunCtx:
 
 @dataclass(slots=True, kw_only=True)
 class OnParsedCtx(BaseEventCtx):
-    agent: type[Agent]
+    """Fired after a connector parses an incoming raw event into dialog items."""
+    agent: Agent
     connector: type[Connector]
     raw: dict
     dialog_items: list[DialogItem]
     previous_external_id: str | None = None
 
 
-on_parsed = Hook(HOOKS_REGISTRY, event=HookEventType.ON_PARSED, ctx_type=OnParsedCtx)
-"""
-После парсинга входящих данных коннектором. dialog_items можно мутировать/фильтровать
-
-@on_parsed
-async def handler(ctx: OnParsedCtx):
-    ...
-"""
-
-
 @dataclass(slots=True, kw_only=True)
 class BeforeRunCtx(BaseEventCtx):
+    """Fired before the agentic loop starts. Set ``abort=True`` to skip the run."""
     run: RunCtx
     abort: bool = False
 
 
-before_run = Hook(HOOKS_REGISTRY, event=HookEventType.BEFORE_RUN, ctx_type=BeforeRunCtx)
-"""
-В самом начале _run, до первого обращения к storage
-abort = отменить весь run
-tools может быть изменен, это не отразится на общем реестре инструментов
-
-@before_run
-async def handler(ctx: BeforeRunCtx):
-    ...
-"""
-
-
 @dataclass(slots=True, kw_only=True)
 class BeforeLlmCallCtx(BaseEventCtx):
+    """Fired before each LLM call. Hooks can modify dialog, tools, or params."""
     run: RunCtx
     dialog: list[DialogItem]
-    tools: ToolRegistry
+    tools: 'ToolRuntime'
     llm_call_params: dict = field(default_factory=dict)
-    """
-    Дополнительные провайдер-специфичные параметры вызова llm, например, модель, температура, top_k и т.п.
-    """
-
-
-before_llm_call = Hook(HOOKS_REGISTRY, event=HookEventType.BEFORE_LLM_CALL, ctx_type=BeforeLlmCallCtx)
-"""
-Перед вызовом LLM
-dialog — список DialogItem (доменные объекты, рендеринг в messages ещё не выполнен — он адаптер-специфичен и произойдёт внутри ask_llm)
-Можно мутировать/фильтровать dialog и tools.
-
-@before_llm_call
-async def handler(ctx: BeforeLlmCallCtx):
-    ...
-"""
 
 
 @dataclass(slots=True, kw_only=True)
 class AfterLlmCallCtx(BaseEventCtx):
+    """Fired after the LLM returns a response. Hooks can inspect or modify the response."""
     run: RunCtx
     response: LLMResponse
 
 
-after_llm_call = Hook(HOOKS_REGISTRY, event=HookEventType.AFTER_LLM_CALL, ctx_type=AfterLlmCallCtx)
-"""
-После ответа LLM.
-messages — то, что реально было отправлено конкретным адаптером (уже в его нативном формате, Anthropic/OpenAI/etc).
-response можно мутировать или полностью заменить.
-
-@before_llm_call
-async def handler(ctx: BeforeLlmCallCtx):
-    ...
-"""
-
-
 @dataclass(slots=True, kw_only=True)
 class BeforeToolCallCtx(BaseEventCtx):
+    """Fired before a tool is executed. Set ``abort_tool_call=True`` to skip it."""
     run: RunCtx
     tool_call: ToolCall
     abort_tool_call: bool = False
     abort_reason: str = ''
 
 
-before_tool_call = Hook(HOOKS_REGISTRY, event=HookEventType.BEFORE_TOOL_CALL, ctx_type=BeforeToolCallCtx)
-"""
-Вызывается перед выполнением инструмента.
-tool_call можно изменять (tool_call.arguments['x'] = ...)
-или заменить целиком (ctx.tool_call = ToolCall(...)) — например,
-чтобы перенаправить вызов на другой тул с другим набором аргументов
-
-abort_tool_call — отменить именно ЭТОТ вызов инструмента (не весь run).
-
-@before_tool_call
-async def handler(ctx: BeforeToolCallCtx):
-    ...
-"""
-
-
 @dataclass(slots=True, kw_only=True)
 class AfterToolCallCtx(BaseEventCtx):
+    """Fired after a tool call completes, with the result."""
     run: RunCtx
     tool_call: ToolCall
     result: ToolCallResult
 
 
-after_tool_call = Hook(HOOKS_REGISTRY, event=HookEventType.AFTER_TOOL_CALL, ctx_type=AfterToolCallCtx)
-"""
-Вызывается после выполнения инструмента
-tool_call — тот же объект (с учётом изменений из before_tool_execution),
-возвращён не для повторной передачи данных, а для сопоставления с result.
-Изменения tool_call.arguments здесь уже не влияет на реальный вызов
-(он выполнен), но влияет на то, что запишется в DialogItem
-
-@after_tool_call
-async def handler(ctx: AfterToolCallCtx):
-    ...
-"""
-
-
 @dataclass(slots=True, kw_only=True)
 class BeforeSendCtx(BaseEventCtx):
+    """Fired before a dialog item is sent to the user via the connector."""
     run: RunCtx
     dialog_item: DialogItem
 
 
-before_send = Hook(HOOKS_REGISTRY, event=HookEventType.BEFORE_SEND, ctx_type=BeforeSendCtx)
-"""
-Перед отправкой одного DialogItem пользователю.
-Вызывается для каждого элемента ответа (текст, изображение, файл — отдельно).
-
-@before_send
-async def handler(ctx: BeforeSendCtx):
-    ...
-"""
-
-
 @dataclass(slots=True, kw_only=True)
 class OnErrorCtx(BaseEventCtx):
+    """Fired when an exception occurs during the run. Set ``suppress=True`` to swallow it."""
     run: RunCtx
     error: Exception
     suppress: bool = False
 
 
-on_error = Hook(HOOKS_REGISTRY, event=HookEventType.ON_ERROR, ctx_type=OnErrorCtx)
-"""
-Исключение в цикле агента (кроме CancelledError — тот наружу, без хука).
-suppress=True — подавить исключение, run завершится "тихо" (after_run всё равно отработает через finally).
-
-@on_error
-async def handler(ctx: OnErrorCtx):
-    ...
-"""
-
-
 @dataclass(slots=True, kw_only=True)
 class AfterRunCtx(BaseEventCtx):
+    """Fired after the run finishes (always, even on error — in ``finally``)."""
     run: RunCtx
     error: Exception | None = None
 
 
-after_run = Hook(HOOKS_REGISTRY, event=HookEventType.AFTER_RUN, ctx_type=AfterRunCtx)
-"""
-Вызывается после завершения run, в finally — независимо от успеха, ошибки или CancelledError.
-Место для cleanup: закрытие трейсинг-спана, decrement счётчиков, billing.
-error is None при успешном завершении.
-
-@after_run
-async def handler(ctx: AfterRunCtx):
-    ...
-"""
+# Typed decorator instances for each event
+on_parsed = Hook(HookEventType.ON_PARSED, OnParsedCtx)
+before_run = Hook(HookEventType.BEFORE_RUN, BeforeRunCtx)
+before_llm_call = Hook(HookEventType.BEFORE_LLM_CALL, BeforeLlmCallCtx)
+after_llm_call = Hook(HookEventType.AFTER_LLM_CALL, AfterLlmCallCtx)
+before_tool_call = Hook(HookEventType.BEFORE_TOOL_CALL, BeforeToolCallCtx)
+after_tool_call = Hook(HookEventType.AFTER_TOOL_CALL, AfterToolCallCtx)
+before_send = Hook(HookEventType.BEFORE_SEND, BeforeSendCtx)
+on_error = Hook(HookEventType.ON_ERROR, OnErrorCtx)
+after_run = Hook(HookEventType.AFTER_RUN, AfterRunCtx)

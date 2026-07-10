@@ -1,3 +1,5 @@
+# builtin/cli_connector/connector.py
+
 from __future__ import annotations
 
 import asyncio
@@ -83,7 +85,7 @@ class CliConnector(Connector[CliOrigin], ListensEvents):
                 pass
 
     @classmethod
-    async def parse(cls, data: dict, agent: type[Agent]) -> OnParsedCtx | None:
+    async def parse(cls, data: dict, agent: Agent) -> OnParsedCtx | None:
         if data.get('platform') != 'cli':
             return None
 
