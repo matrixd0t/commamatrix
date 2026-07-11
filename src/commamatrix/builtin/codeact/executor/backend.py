@@ -1,5 +1,7 @@
 # builtin/codeact/executor/backend.py
 
+"""Abstract execution backend and result dataclass."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -9,6 +11,8 @@ from typing import Any
 
 @dataclass(slots=True)
 class ExecutionResult:
+    """Output of a single code execution: stdout, stderr, return code and timing."""
+
     stdout: str = ""
     stderr: str = ""
     returncode: int = 0
@@ -28,6 +32,12 @@ class ExecutionResult:
 
 
 class ExecutionBackend(ABC):
+    """Runs user code and returns captured output.
+
+    Implementations may range from a local subprocess to a container
+    or service-manager-isolated environment.
+    """
+
     @abstractmethod
     async def start(self) -> None:
         raise NotImplementedError

@@ -1,5 +1,12 @@
 # builtin/codeact/executor/subprocess.py
 
+"""Subprocess execution backend — runs code in a child Python process.
+
+The child communicates with the parent over JSON-RPC on stdin/stdout,
+allowing it to call back into the agent's tool runtime.
+Intentionally **not** a security sandbox.
+"""
+
 from __future__ import annotations
 
 import asyncio

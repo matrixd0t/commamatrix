@@ -25,7 +25,7 @@ cli_port = ConfigField[int](default=0, description='TCP port (0 = any free)')
 
 class CliConnector(Connector[CliOrigin]):
 
-    def __init__(self, host: str = cli_host, port: int = cli_port) -> None:
+    def __init__(self, host: str | ConfigField[str] = cli_host, port: int | ConfigField[int] = cli_port) -> None:
         self._host = host.get() if isinstance(host, ConfigField) else host
         self._port = port.get() if isinstance(port, ConfigField) else port
         self._writers: dict[str, asyncio.StreamWriter] = {}

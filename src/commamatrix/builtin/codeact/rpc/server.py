@@ -1,5 +1,7 @@
 # builtin/codeact/rpc/server.py
 
+"""RPC server — dispatches context and tool requests from the child process."""
+
 from __future__ import annotations
 
 from dataclasses import fields, is_dataclass
@@ -13,6 +15,8 @@ if TYPE_CHECKING:
 
 
 class RPCServer:
+    """Handles inbound RPC calls, routing ``context.*`` and ``tools.*`` methods."""
+
     def __init__(self, ctx: BeforeToolCallCtx) -> None:
         self._ctx = ctx
 

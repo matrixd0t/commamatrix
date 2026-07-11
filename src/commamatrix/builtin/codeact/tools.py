@@ -1,5 +1,7 @@
 # builtin/codeact/tools.py
 
+"""LLM-visible CodeAct tools: execute code, search and list available tools."""
+
 from __future__ import annotations
 from .runtime import CodeActRuntime
 from ...api.hooks import BeforeToolCallCtx

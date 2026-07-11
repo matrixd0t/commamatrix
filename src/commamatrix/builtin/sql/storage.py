@@ -44,7 +44,7 @@ class SqlStorage(Storage, ABC):
 
     def __init__(self) -> None:
         self._db: Any = None
-        self._known_columns: set[str] = set(BaseColumns)
+        self._known_columns: set[str] = set()
 
     @abstractmethod
     async def _connect(self) -> Any:
@@ -115,13 +115,17 @@ class SqlStorage(Storage, ABC):
             )
         ''')
         await self._commit(db)
-        for origin_cls in ORIGIN_REGISTRY.values():
-            await self._add_origin_columns(origin_cls)
 
-    async def _add_origin_columns(self, origin_cls: type[DialogOrigin]) -> None:
+        await self._migrate_columns(DialogItem, skip={'origin'})
+        await self._migrate_columns(DialogOrigin)
+        for origin_cls in ORIGIN_REGISTRY.values():
+            await self._migrate_columns(origin_cls)
+
+    async def _migrate_columns(self, model_cls: type, skip: set[str] | None = None) -> None:
+        skip = skip or set()
         db = self._db
-        for name, field_info in origin_cls.model_fields.items():
-            if name in self._known_columns:
+        for name, field_info in model_cls.model_fields.items():
+            if name in skip or name in self._known_columns:
                 continue
             sql_type = python_type_to_sql(field_info.annotation)
             try:
@@ -153,7 +157,7 @@ class SqlStorage(Storage, ABC):
         origin_type = type(entry.origin)
         if origin_type.__name__ not in ORIGIN_REGISTRY:
             ORIGIN_REGISTRY[origin_type.__name__] = origin_type
-        await self._add_origin_columns(origin_type)
+        await self._migrate_columns(origin_type)
 
         origin_row = self._origin_to_row(entry.origin)
 

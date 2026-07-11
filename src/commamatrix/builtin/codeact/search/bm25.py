@@ -1,5 +1,7 @@
 # builtin/codeact/search/bm25.py
 
+"""BM25-backed tool searcher using ``bm25s`` for tokenisation and retrieval."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -7,13 +9,13 @@ from collections.abc import Iterable
 import bm25s
 
 from ....api.tool import ToolDescriptor
-from ..docs import ToolDocBuilder
 from .api import ToolSearcher
 
 
 class BM25ToolSearcher(ToolSearcher):
-    def __init__(self, doc_builder: ToolDocBuilder | None = None) -> None:
-        self._doc_builder = doc_builder
+    """Indexes ``ToolDescriptor.doc`` with BM25 for fast semantic lookup."""
+
+    def __init__(self) -> None:
         self._index_fingerprint: str | None = None
         self._retriever: bm25s.BM25 | None = None
         self._ids: list[str] = []
@@ -32,10 +34,7 @@ class BM25ToolSearcher(ToolSearcher):
             return
 
         self._ids = list(self._descriptors.keys())
-        docs = [
-            self._doc_builder.build(d) if self._doc_builder else d.doc
-            for d in self._descriptors.values()
-        ]
+        docs = [d.doc for d in self._descriptors.values()]
 
         self._retriever = bm25s.BM25()
         self._retriever.index(bm25s.tokenize(docs))

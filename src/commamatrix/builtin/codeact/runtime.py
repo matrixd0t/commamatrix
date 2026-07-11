@@ -1,5 +1,7 @@
 # builtin/codeact/runtime.py
 
+"""CodeAct runtime — orchestrates code execution and nested tool invocation."""
+
 from __future__ import annotations
 
 import json
@@ -17,6 +19,11 @@ if TYPE_CHECKING:
 
 
 class CodeActRuntime:
+    """Owns the execution backend, tool searcher, and nested tool gateway.
+
+    Registered as an agent service during ``on_agent_start``.
+    """
+
     def __init__(self, backend: ExecutionBackend, searcher: ToolSearcher) -> None:
         self.backend = backend
         self.searcher = searcher

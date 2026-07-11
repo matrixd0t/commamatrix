@@ -1,5 +1,7 @@
 # builtin/codeact/rpc/stdio.py
 
+"""Stdio transport — newline-delimited JSON over asyncio subprocess pipes."""
+
 from __future__ import annotations
 
 import asyncio
@@ -10,6 +12,8 @@ from .transport import Transport
 
 
 class StdioTransport(Transport):
+    """Reads/writes newline-delimited JSON on a subprocess stdin/stdout."""
+
     def __init__(self, process: asyncio.subprocess.Process) -> None:
         self._process = process
 

@@ -23,6 +23,7 @@ class ToolRuntime(ExtensionRuntime[ToolDescriptor]):
     def __init__(self) -> None:
         super().__init__()
         self._by_alias: dict[str, list[ToolDescriptor]] = {}
+        self._by_name: dict[str, list[ToolDescriptor]] = {}
         self._schemas: list[dict[str, Any]] = []
 
     @property
@@ -39,19 +40,19 @@ class ToolRuntime(ExtensionRuntime[ToolDescriptor]):
 
         Resolution order:
         1. Full ``id`` (e.g. ``python://ns/name``).
-        2. ``alias``.
-        3. ``name`` (first match).
+        2. ``alias`` (O(1) via index).
+        3. ``name`` (O(1) via index, first match).
         """
         if name in self._descriptors:
             return self._descriptors[name]
 
-        for descriptor in self._descriptors.values():
-            if descriptor.alias == name:
-                return descriptor
+        by_alias = self._by_alias.get(name)
+        if by_alias:
+            return by_alias[0]
 
-        for descriptor in self._descriptors.values():
-            if descriptor.name == name:
-                return descriptor
+        by_name = self._by_name.get(name)
+        if by_name:
+            return by_name[0]
 
         return None
 
@@ -130,12 +131,15 @@ class ToolRuntime(ExtensionRuntime[ToolDescriptor]):
         )
 
     def _rebuild(self) -> None:
-        """Rebuild the alias → descriptors map and schema cache."""
+        """Rebuild the alias/name → descriptors maps and schema cache."""
         by_alias: dict[str, list[ToolDescriptor]] = {}
+        by_name: dict[str, list[ToolDescriptor]] = {}
         for descriptor in self.descriptors:
             by_alias.setdefault(descriptor.alias, []).append(descriptor)
             if descriptor.namespace != descriptor.alias:
                 by_alias.setdefault(descriptor.namespace, []).append(descriptor)
+            by_name.setdefault(descriptor.name, []).append(descriptor)
         self._by_alias = by_alias
+        self._by_name = by_name
 
         self._schemas = [descriptor.schema for descriptor in self.descriptors]

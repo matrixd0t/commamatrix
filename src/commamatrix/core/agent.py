@@ -11,6 +11,8 @@ from ..api import *
 from ..builtin.python.tool_source import PythonToolSource
 from ..builtin.python.hook_source import PythonHookSource
 from ..builtin.python.connector_source import PythonConnectorSource
+from ..builtin.sqlite import SqliteStorage
+from ..builtin.fs import SimpleFileStorage
 from .runner import AgentRunner
 from .services import ServiceRegistry
 from .tool_runtime import ToolRuntime
@@ -26,16 +28,16 @@ class Agent:
     def __init__(
         self, *,
         llm_adapter: LLMAdapter,
-        storage: Storage,
-        file_storage: FileStorage,
+        storage: Storage | None = None,
+        file_storage: FileStorage | None = None,
         connectors: list[Connector] | None = None,
         connector_runtime: ConnectorRuntime | None = None,
         tool_runtime: ToolRuntime | None = None,
         hook_runtime: HookRuntime | None = None,
     ):
         self.llm_adapter = llm_adapter
-        self.storage = storage
-        self.file_storage = file_storage
+        self.storage = storage or SqliteStorage()
+        self.file_storage = file_storage or SimpleFileStorage()
 
         self.connector_runtime = connector_runtime or ConnectorRuntime()
         self.tool_runtime = tool_runtime or ToolRuntime()
@@ -57,13 +59,9 @@ class Agent:
     # ------------------------------------------------------------------
 
     async def start(self) -> list[asyncio.Task]:
-        """Initialize extensions, then start connector listeners."""
+        """Discover extensions, resolve connectors, and start listener tasks."""
         await self._ensure_started()
-        return await self.start_listeners()
 
-    async def start_listeners(self) -> list[asyncio.Task]:
-        """Initialize extensions and start all connector listener tasks."""
-        await self._ensure_started()
         active_tasks = [task for task in self._listener_tasks if not task.done()]
         if active_tasks:
             self._listener_tasks = active_tasks
@@ -185,8 +183,6 @@ class Agent:
                 HookEventType.ON_AGENT_START.value,
                 OnAgentStartCtx(agent=self),
             )
-            self.tool_runtime.scan()
-            self.hook_runtime.scan()
             self._started = True
 
     async def _before_run(self, run: RunCtx) -> BeforeRunCtx:

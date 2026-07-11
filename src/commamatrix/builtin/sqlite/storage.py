@@ -6,13 +6,16 @@ from typing import Any
 import aiosqlite
 
 from ..sql.storage import SqlStorage
+from ...api.config import ConfigField
+
+sqlite_path = ConfigField[str](default='db.sqlite', description='Path to SQLite database file')
 
 
 class SqliteStorage(SqlStorage):
 
-    def __init__(self, path: str = ':memory:') -> None:
+    def __init__(self, path: str | ConfigField[str] = sqlite_path) -> None:
         super().__init__()
-        self._path = path
+        self._path = path.get() if isinstance(path, ConfigField) else path
 
     async def _connect(self) -> aiosqlite.Connection:
         db = await aiosqlite.connect(self._path)

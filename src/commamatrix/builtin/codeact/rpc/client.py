@@ -1,5 +1,7 @@
 # builtin/codeact/rpc/client.py
 
+"""RPC client — sends requests and resolves pending futures on responses."""
+
 from __future__ import annotations
 
 import asyncio
@@ -11,6 +13,8 @@ from .transport import Transport
 
 
 class RPCClient:
+    """Async RPC client that multiplexes calls over a single ``Transport``."""
+
     def __init__(self, transport: Transport) -> None:
         self._transport = transport
         self._pending: dict[str, asyncio.Future[RPCResponse]] = {}

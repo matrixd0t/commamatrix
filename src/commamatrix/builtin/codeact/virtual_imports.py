@@ -1,5 +1,12 @@
 # builtin/codeact/virtual_imports.py
 
+"""Virtual import machinery — makes tool aliases importable as Python modules.
+
+Provides ``VirtualImportRegistry`` for in-process use and helpers for
+building ``context`` and tool proxy modules.  Subprocess workers use their
+own RPC-backed equivalents defined in the embedded entry-point.
+"""
+
 from __future__ import annotations
 
 import sys
@@ -15,6 +22,8 @@ if TYPE_CHECKING:
 
 
 class VirtualImportRegistry:
+    """Maps module names to lazy factory callables for virtual imports."""
+
     def __init__(self) -> None:
         self._factories: dict[str, Callable[[], ModuleType]] = {}
 
@@ -42,6 +51,8 @@ class VirtualImportRegistry:
 
 
 class _VirtualModuleFinder(MetaPathFinder):
+    """``sys.meta_path`` finder that resolves modules from a ``VirtualImportRegistry``."""
+
     def __init__(self, registry: VirtualImportRegistry) -> None:
         self._registry = registry
 
@@ -54,6 +65,8 @@ class _VirtualModuleFinder(MetaPathFinder):
 
 
 class _VirtualModuleLoader:
+    """Loader that delegates module creation to the registry factory."""
+
     def __init__(self, registry: VirtualImportRegistry) -> None:
         self._registry = registry
 
@@ -87,6 +100,8 @@ def uninstall_import_hook() -> None:
 
 
 class _LazyProxy:
+    """Deferred attribute resolver — chains attribute access until called or awaited."""
+
     __slots__ = ("_resolver",)
 
     def __init__(self, resolver: Callable[[], Any]) -> None:
@@ -125,6 +140,8 @@ def _yield_value(val: Any):
 
 
 class _ToolsAccessor:
+    """Exposes ``invoke`` and ``search`` on the virtual ``context.tools`` object."""
+
     __slots__ = ("_provider",)
 
     def __init__(self, provider: ContextProvider) -> None:
@@ -142,6 +159,8 @@ class _ToolsAccessor:
 
 @runtime_checkable
 class ContextProvider(Protocol):
+    """Protocol for providing runtime context to virtual imports."""
+
     @property
     def run(self) -> RunCtx: ...
     @property
@@ -186,6 +205,8 @@ def _make_tool_module(alias: str, descriptors: list[ToolDescriptor], invoker: Ca
 
 
 class DirectContextProvider:
+    """In-process ``ContextProvider`` backed by a ``BeforeToolCallCtx``."""
+
     __slots__ = ("_ctx",)
 
     def __init__(self, ctx: BeforeToolCallCtx) -> None:

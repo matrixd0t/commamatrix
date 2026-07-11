@@ -1,5 +1,7 @@
 # builtin/codeact/executor/systemd.py
 
+"""Systemd execution backend — reserved for service-manager-isolated CodeAct."""
+
 from __future__ import annotations
 
 from typing import Any

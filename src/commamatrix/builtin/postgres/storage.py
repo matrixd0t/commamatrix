@@ -6,13 +6,16 @@ from typing import Any
 import asyncpg
 
 from ..sql.storage import SqlStorage
+from ...api.config import ConfigField
+
+postgres_dsn = ConfigField[str](init=True, description='PostgreSQL connection DSN')
 
 
 class PostgresStorage(SqlStorage):
 
-    def __init__(self, dsn: str) -> None:
+    def __init__(self, dsn: str | ConfigField[str] = postgres_dsn) -> None:
         super().__init__()
-        self._dsn = dsn
+        self._dsn = dsn.get() if isinstance(dsn, ConfigField) else dsn
 
     async def _connect(self) -> asyncpg.Connection:
         return await asyncpg.connect(dsn=self._dsn)

@@ -1,5 +1,7 @@
 # builtin/codeact/executor/docker.py
 
+"""Docker execution backend — reserved for container-isolated CodeAct."""
+
 from __future__ import annotations
 
 from typing import Any
