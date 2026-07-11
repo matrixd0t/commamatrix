@@ -48,14 +48,6 @@ class ExtensionDescriptor:
     _source_ref: weakref.ReferenceType[ExtensionSource] = field(repr=False)
 
     @property
-    def source(self) -> ExtensionSource:
-        """Return the ExtensionSource that owns this descriptor."""
-        src = self._source_ref()
-        if src is None:
-            raise RuntimeError("ExtensionSource has been unloaded.")
-        return src
-
-    @property
     def fingerprint(self) -> str:
         """
         Deterministic hash of the descriptor's semantic content.
@@ -102,6 +94,20 @@ class ExtensionRuntime(Generic[D]):
     def descriptors(self) -> ValuesView[D]:
         """Live view of all currently registered descriptors."""
         return self._descriptors.values()
+
+    def _source_of(self, descriptor: D) -> ExtensionSource[D]:
+        """
+        Resolve the live `ExtensionSource` that owns *descriptor*.
+
+        Single point where the weak reference is dereferenced for
+        execution. Raises if the owning source has been unloaded.
+        All descriptor execution must funnel through here so that no
+        external code invokes a descriptor by reaching into its source.
+        """
+        src = descriptor._source_ref()
+        if src is None:
+            raise RuntimeError("ExtensionSource has been unloaded.")
+        return src
 
     def mount(self, source: ExtensionSource[D]) -> None:
         """Register a new extension source. Does NOT trigger a re-scan."""

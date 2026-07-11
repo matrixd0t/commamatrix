@@ -61,6 +61,11 @@ class ConfigField(Generic[T]):
                         break
 
     @classmethod
+    def validate(cls) -> str | None:
+        """Return a diagnostic string when required fields are missing."""
+        return cls._validate()
+
+    @classmethod
     def _validate(cls) -> str | None:
         for field in cls._FIELD_REGISTRY:
             if field._init and field._value is None and field._default is None:

@@ -150,7 +150,6 @@ class LLMResponse:
 
 
 class LLMAdapter(ABC):
-    @classmethod
     @abstractmethod
-    async def ask_llm(cls, ctx: BeforeLlmCallCtx) -> LLMResponse:
+    async def ask_llm(self, ctx: BeforeLlmCallCtx) -> LLMResponse:
         ...

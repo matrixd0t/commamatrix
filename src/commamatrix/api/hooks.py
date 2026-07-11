@@ -12,19 +12,18 @@ from collections.abc import Awaitable, Callable
 from .connector import Connector
 from .dialog import DialogItem, DialogOrigin
 from ..core.extension_runtime import ExtensionDescriptor, ExtensionSource
-from .llm_adapter import LLMResponse, ToolCallResult, ToolCall, LLMAdapter
+from .llm_adapter import LLMResponse, ToolCallResult, ToolCall
+from .tool import ToolDescriptor
 
 if TYPE_CHECKING:
     from ..core.agent import Agent
-    from ..core.tool_runtime import ToolRuntime
 
 CtxT = TypeVar("CtxT")
 
 type Handler[CtxT] = Callable[[CtxT], object | Awaitable[object]]
 
 HOOK_ATTRIBUTE = "__commamatrix_hook__"
-HOOK_HANDLER_METADATA_KEY = "__handler__"
-KNOWN_HOOK_MODULES: set[str] = set()
+HOOK_MODULES: set[str] = set()
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +33,7 @@ class Hook(Generic[CtxT]):
 
     Does NOT register handlers directly — only stamps the function with
     metadata (``HOOK_ATTRIBUTE``) and records its module in
-    ``KNOWN_HOOK_MODULES``.  Actual registration happens when a
+    ``HOOK_MODULES``.  Actual registration happens when a
     ``PythonHookSource`` scans those modules.
 
     Usage::
@@ -55,7 +54,7 @@ class Hook(Generic[CtxT]):
                 "event": self._event,
                 "priority": priority,
             })
-            KNOWN_HOOK_MODULES.add(f.__module__)
+            HOOK_MODULES.add(f.__module__)
             return f
 
         if fn is not None:
@@ -73,9 +72,8 @@ class HookDescriptor(ExtensionDescriptor):
 
     Unlike the old registry-based approach, this descriptor is completely
     source-agnostic — it only declares *when* to fire (``event``) and in
-    what *order* (``priority``).  The actual handler function is stored
-    in ``metadata[HOOK_HANDLER_METADATA_KEY]`` by Python-based sources;
-    non-Python sources (MCP, HTTP webhooks) may use a different mechanism.
+    what *order* (``priority``).  The owning source keeps the executable
+    handler separately from the descriptor.
 
     Fields:
         event:  Event identifier (e.g. ``"before_llm_call"``).
@@ -92,37 +90,26 @@ class HookDescriptor(ExtensionDescriptor):
             "id": self.id,
             "event": self.event,
             "priority": self.priority,
+            "metadata": self.metadata,
         }
 
 
 class HookSource(ExtensionSource[HookDescriptor]):
-    """Abstract source of hook descriptors."""
+    """Abstract source of hook descriptors and their handlers."""
 
     @abstractmethod
     def scan(self) -> list[HookDescriptor]:
         raise NotImplementedError
 
+    @abstractmethod
     async def invoke(self, descriptor: HookDescriptor, ctx: object) -> object:
-        """
-        Execute the handler described by *descriptor*.
-
-        Default implementation looks up ``HOOK_HANDLER_METADATA_KEY`` in
-        ``descriptor.metadata`` and calls the stored callable.  Supports
-        both sync and async handlers — if the result is awaitable it is
-        awaited automatically.
-        """
-        fn = descriptor.metadata.get(HOOK_HANDLER_METADATA_KEY)
-        if fn is None:
-            return None
-        result = fn(ctx)
-        if hasattr(result, '__await__'):
-            result = await result
-        return result
+        raise NotImplementedError
 
 
 class HookEventType(StrEnum):
     """Well-known hook event identifiers used by the agent loop."""
 
+    ON_AGENT_START = 'on_agent_start'
     ON_PARSED = 'on_parsed'
     BEFORE_RUN = 'before_run'
     BEFORE_LLM_CALL = 'before_llm_call'
@@ -147,10 +134,11 @@ class RunCtx:
 
     Created once per ``Agent.run()`` invocation and passed through all
     hooks in that run.  Hooks can read/write ``state`` to share data
-    across lifecycle stages.
+    across lifecycle stages.  ``agent`` provides access to the full
+    Agent, its ToolRuntime, Storage, hooks, etc.
     """
     agent: Agent
-    connector: type[Connector] | None = None
+    connector: Connector | None = None
     origin: DialogOrigin
     user: str
     run_id: str = field(default_factory=lambda: uuid4().hex)
@@ -159,10 +147,16 @@ class RunCtx:
 
 
 @dataclass(slots=True, kw_only=True)
+class OnAgentStartCtx(BaseEventCtx):
+    """Fired on ``Agent.start()``"""
+    agent: Agent
+
+
+@dataclass(slots=True, kw_only=True)
 class OnParsedCtx(BaseEventCtx):
     """Fired after a connector parses an incoming raw event into dialog items."""
     agent: Agent
-    connector: type[Connector]
+    connector: Connector
     raw: dict
     dialog_items: list[DialogItem]
     previous_external_id: str | None = None
@@ -180,7 +174,7 @@ class BeforeLlmCallCtx(BaseEventCtx):
     """Fired before each LLM call. Hooks can modify dialog, tools, or params."""
     run: RunCtx
     dialog: list[DialogItem]
-    tools: 'ToolRuntime'
+    tools: list[ToolDescriptor]
     llm_call_params: dict = field(default_factory=dict)
 
 
@@ -231,6 +225,7 @@ class AfterRunCtx(BaseEventCtx):
 
 
 # Typed decorator instances for each event
+on_agent_start = Hook(HookEventType.ON_AGENT_START, OnAgentStartCtx)
 on_parsed = Hook(HookEventType.ON_PARSED, OnParsedCtx)
 before_run = Hook(HookEventType.BEFORE_RUN, BeforeRunCtx)
 before_llm_call = Hook(HookEventType.BEFORE_LLM_CALL, BeforeLlmCallCtx)

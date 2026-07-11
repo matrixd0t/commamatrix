@@ -1,7 +1,9 @@
 # api/__init__.py
 
 from .dialog import DialogItem, DialogOrigin, DialogItemType, DialogRole, ORIGIN_REGISTRY
-from .connector import Connector, CONNECTOR_REGISTRY, ConnectorRegistry, ListensEvents, OnEvent
+from .connector import (
+    Connector, ConnectorDescriptor, ConnectorSource, CONNECTOR_ATTRIBUTE, CONNECTOR_MODULES, OnEvent,
+)
 from .storage import Storage
 from .file_storage import FileStorage
 from .llm_adapter import (
@@ -15,6 +17,7 @@ from .hooks import (
     Hook, HookEventType, HookDescriptor, HookSource,
     RunCtx,
     OnParsedCtx, on_parsed,
+    OnAgentStartCtx, on_agent_start,
     BeforeRunCtx, before_run,
     BeforeLlmCallCtx, before_llm_call,
     BeforeToolCallCtx, before_tool_call,
@@ -24,10 +27,9 @@ from .hooks import (
     OnErrorCtx, on_error,
     AfterRunCtx, after_run
 )
-
 __all__ = [
     'DialogItem', 'DialogOrigin', 'DialogItemType', 'DialogRole', 'ORIGIN_REGISTRY',
-    'Connector', 'CONNECTOR_REGISTRY', 'ConnectorRegistry', 'ListensEvents', 'OnEvent',
+    'Connector', 'ConnectorDescriptor', 'ConnectorSource', 'CONNECTOR_ATTRIBUTE', 'CONNECTOR_MODULES', 'OnEvent',
     'Storage', 'FileStorage',
     'LLMAdapter', 'LLMResponse', 'LLMResponseTextBlock', 'LLMResponseImageBlock', 'LLMResponseFileBlock', 'LLMResponseToolCallBlock', 'LLMResponseBlock',
     'StopReason', 'ToolCall', 'ToolCallResult', 'LLMError', 'LLMResponseError', 'LLMTruncatedError',
@@ -36,6 +38,7 @@ __all__ = [
     'tool', 'ToolSource', 'ToolDescriptor', 'DEFAULT_TOOL_SEARCH_AMOUNT',
     'Hook', 'HookEventType', 'HookDescriptor', 'HookSource', 'RunCtx',
     'OnParsedCtx', 'on_parsed',
+    'OnAgentStartCtx', 'on_agent_start',
     'BeforeRunCtx', 'before_run',
     'BeforeLlmCallCtx', 'before_llm_call',
     'BeforeToolCallCtx', 'before_tool_call',
@@ -43,5 +46,5 @@ __all__ = [
     'AfterLlmCallCtx', 'after_llm_call',
     'BeforeSendCtx', 'before_send',
     'OnErrorCtx', 'on_error',
-    'AfterRunCtx', 'after_run'
+    'AfterRunCtx', 'after_run',
 ]

@@ -28,7 +28,7 @@ class HookRuntime(ExtensionRuntime[HookDescriptor]):
         which supports both sync and async implementations.
         """
         for descriptor in self._handlers.get(event, []):
-            await descriptor.source.invoke(descriptor, ctx)
+            await self._source_of(descriptor).invoke(descriptor, ctx)
 
     def _rebuild(self) -> None:
         """Group all descriptors by event and sort by priority."""

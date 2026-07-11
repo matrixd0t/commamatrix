@@ -1,24 +1,30 @@
 # core/runner.py
 
+from __future__ import annotations
+
 import asyncio
+import json
 
 from ..api import DialogOrigin
 
 
 class AgentRunner:
-    _tasks: dict[str, asyncio.Task] = {}
+    def __init__(self) -> None:
+        self._tasks: dict[str, asyncio.Task] = {}
 
     @staticmethod
     def make_key(origin: DialogOrigin, user: str) -> str:
-        return ':'.join([str(v) for v in origin.model_dump().values()] + [user])
+        return json.dumps(
+            {'origin': origin.model_dump(mode='json'), 'user': user},
+            sort_keys=True, separators=(',', ':'),
+        )
 
-    @classmethod
-    async def submit(cls, key: str, coro) -> None:
-        old_task = cls._tasks.pop(key, None)
+    async def submit(self, key: str, coro) -> None:
+        old_task = self._tasks.pop(key, None)
         new_task = asyncio.create_task(coro)
-        cls._tasks[key] = new_task
+        self._tasks[key] = new_task
         new_task.add_done_callback(
-            lambda t: cls._tasks.pop(key, None) if cls._tasks.get(key) is t else None
+            lambda t: self._tasks.pop(key, None) if self._tasks.get(key) is t else None
         )
 
         if old_task and not old_task.done():
@@ -27,3 +33,12 @@ class AgentRunner:
                 await old_task
             except (asyncio.CancelledError, Exception):
                 pass
+
+    async def stop(self) -> None:
+        tasks = list(self._tasks.values())
+        self._tasks.clear()
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)

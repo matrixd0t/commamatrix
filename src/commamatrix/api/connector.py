@@ -3,59 +3,31 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, AsyncIterator, ClassVar, Generic, TYPE_CHECKING, TypeVar, get_args, get_origin, Callable, Awaitable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
+from typing import Any, AsyncIterator, ClassVar, Generic, TYPE_CHECKING, TypeVar, get_args, get_origin
 from contextlib import asynccontextmanager
 
 from .dialog import DialogItem, DialogOrigin
+from ..core.extension_runtime import ExtensionDescriptor, ExtensionSource
 
 if TYPE_CHECKING:
     from .hooks import OnParsedCtx
     from ..core.agent import Agent
 
+CONNECTOR_ATTRIBUTE = "__commamatrix_connector__"
+CONNECTOR_MODULES: set[str] = set()
+
 type OnEvent = Callable[[dict], Awaitable[None]]
 
-
-class ConnectorRegistry:
-    def __init__(self) -> None:
-        self._connectors: list[type[Connector]] = []
-        self._ctx_types: dict[type, type[Connector]] = {}
-
-    def register(self, connector_cls: type[Connector]) -> None:
-        ctx_type = connector_cls.origin_type
-        if ctx_type is None:
-            raise TypeError(f'{connector_cls.__name__} не параметризован. Используй Connector[MyContext].')
-
-        if existing := self._ctx_types.get(ctx_type):
-            raise RuntimeError(f'Для {ctx_type.__name__} уже зарегистрирован {existing.__name__}.')
-
-        self._ctx_types[ctx_type] = connector_cls
-        self._connectors.append(connector_cls)
-
-    async def parse_any(self, data: dict, agent: Agent) -> OnParsedCtx | None:
-        for connector_cls in self._connectors:
-            if ctx := await connector_cls.parse(data, agent):
-                return ctx
-        return None
-
-    def listening(self) -> list[type[ListensEvents]]:
-        return [c for c in self._connectors if issubclass(c, ListensEvents)]
-
-    def __iter__(self):
-        return iter(self._connectors)
-
-    def __len__(self) -> int:
-        return len(self._connectors)
-
-
-CONNECTOR_REGISTRY = ConnectorRegistry()
 
 OrgT = TypeVar('OrgT', bound=DialogOrigin)
 
 
 class Connector(ABC, Generic[OrgT]):
     """
-    Abstract connector. Concrete subclasses auto-register in __init_subclass__
-    and read config dynamically from ConfigField. All public methods are classmethods.
+    Abstract connector. Concrete subclasses auto-register their module
+    in __init_subclass__ for later scanning by PythonConnectorSource.
     """
     origin_type: ClassVar[type | None] = None
 
@@ -71,24 +43,39 @@ class Connector(ABC, Generic[OrgT]):
                     break
 
         if not getattr(cls, '__abstractmethods__', None):
-            CONNECTOR_REGISTRY.register(cls)
+            setattr(cls, CONNECTOR_ATTRIBUTE, True)
+            CONNECTOR_MODULES.add(cls.__module__)
 
-    @classmethod
     @abstractmethod
-    async def parse(cls, data: dict, agent: Agent) -> OnParsedCtx | None: ...
+    async def parse(self, data: dict, agent: Agent) -> OnParsedCtx | None: ...
 
-    @classmethod
     @abstractmethod
-    async def send(cls, origin: OrgT, item: DialogItem) -> str: ...
+    async def send(self, origin: OrgT, item: DialogItem) -> str: ...
 
-    @classmethod
     @asynccontextmanager
-    async def typing(cls, origin: OrgT) -> AsyncIterator[None]:
+    async def typing(self, origin: OrgT) -> AsyncIterator[None]:
         yield
 
+    async def listen(self, on_event: OnEvent) -> None:
+        pass
 
-class ListensEvents(ABC):
-    @classmethod
+
+@dataclass(frozen=True, slots=True)
+class ConnectorDescriptor(ExtensionDescriptor):
+    connector_cls: type[Connector]
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def _fingerprint_payload(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "connector_cls": self.connector_cls.__qualname__,
+        }
+
+
+class ConnectorSource(ExtensionSource[ConnectorDescriptor]):
     @abstractmethod
-    async def listen(cls, on_event: OnEvent) -> None:
-        ...
+    def scan(self) -> list[ConnectorDescriptor]:
+        raise NotImplementedError
+
+    async def invoke(self, descriptor: ConnectorDescriptor, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError
