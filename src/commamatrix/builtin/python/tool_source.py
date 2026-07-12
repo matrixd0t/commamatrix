@@ -55,13 +55,13 @@ class PythonToolSource(PythonExtensionSource[ToolDescriptor], ToolSource):
         fn = cast(AsyncOrSyncFunction, obj)
         raw_meta: dict[str, Any] = getattr(fn, TOOL_ATTRIBUTE)
         metadata = dict(raw_meta)
-        metadata["signature"] = _signature_metadata(fn)
+        metadata['signature'] = _signature_metadata(fn)
         descriptor_id = f"python://{fn.__module__}/{object_name}"
         self._functions[descriptor_id] = fn
 
         namespace: str = fn.__module__
-        alias: str = metadata.get("alias", namespace)
-        alias_for_doc: str | None = metadata.get("alias")
+        alias: str = metadata.get('alias', namespace)
+        alias_for_doc: str | None = metadata.get('alias')
 
         return ToolDescriptor(
             id=descriptor_id,
@@ -74,12 +74,7 @@ class PythonToolSource(PythonExtensionSource[ToolDescriptor], ToolSource):
             _source_ref=weakref.ref(self),
         )
 
-    async def invoke(
-        self,
-        descriptor: ToolDescriptor,
-        kwargs: dict[str, Any],
-        ctx: BeforeToolCallCtx | None = None,
-    ) -> object:
+    async def invoke(self, descriptor: ToolDescriptor, kwargs: dict[str, Any], ctx: BeforeToolCallCtx | None = None) -> object:
         """
         Execute the tool function with type-based injection.
 
@@ -128,9 +123,7 @@ def _injectable_params(fn: AsyncOrSyncFunction) -> dict[str, type]:
     }
 
 
-def _inject(
-    fn: AsyncOrSyncFunction, kwargs: dict[str, Any], ctx: BeforeToolCallCtx
-) -> dict[str, Any]:
+def _inject(fn: AsyncOrSyncFunction, kwargs: dict[str, Any], ctx: BeforeToolCallCtx) -> dict[str, Any]:
     """Return a copy of kwargs with injectable parameters filled from ctx."""
     result = dict(kwargs)
     for name, annotation in _injectable_params(fn).items():

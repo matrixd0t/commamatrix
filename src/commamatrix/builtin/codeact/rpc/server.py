@@ -101,9 +101,7 @@ class RPCServer:
                 tool_args=data.get("tool_args", {}),
             )
             runtime = self._ctx.run.agent.services.require(CodeActRuntime)
-            return await runtime.invoke_tool(
-                self._ctx, tool_call.tool_name, tool_call.tool_args
-            )
+            return await runtime.invoke_tool(self._ctx, tool_call.tool_name, tool_call.tool_args)
 
         if method == "search":
             from ..runtime import CodeActRuntime
@@ -141,9 +139,7 @@ class RPCServer:
                     "schema": descriptor.schema,
                     "metadata": descriptor.metadata,
                 }
-                for descriptor in self._ctx.run.agent.tool_manager.modules.get(
-                    alias, []
-                )
+                for descriptor in self._ctx.run.agent.tool_manager.modules.get(alias, [])
             ]
         raise RPCError(code=-32601, message=f"Unknown tools method: {method}")
 

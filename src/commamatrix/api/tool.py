@@ -34,12 +34,7 @@ class ToolSource(ExtensionSource["ToolDescriptor"]):
     def scan(self) -> Iterable[ToolDescriptor]:
         raise NotImplementedError
 
-    async def invoke(
-        self,
-        descriptor: ToolDescriptor,
-        kwargs: dict[str, Any],
-        ctx: BeforeToolCallCtx | None = None,
-    ) -> object:
+    async def invoke(self, descriptor: ToolDescriptor, kwargs: dict[str, Any], ctx: BeforeToolCallCtx | None = None) -> object:
         """
         Execute the tool described by *descriptor* with the given *kwargs*.
 

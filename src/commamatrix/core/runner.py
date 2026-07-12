@@ -23,6 +23,7 @@ class AgentRunner:
         old_task = self._tasks.pop(key, None)
         new_task = asyncio.create_task(coro)
         self._tasks[key] = new_task
+
         new_task.add_done_callback(
             lambda t: self._tasks.pop(key, None) if self._tasks.get(key) is t else None
         )

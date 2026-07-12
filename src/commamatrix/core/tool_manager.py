@@ -8,7 +8,7 @@ from typing import Any
 from .extension_manager import ExtensionManager
 from ..api.hooks import BeforeToolCallCtx
 from ..api.llm_adapter import ToolCall, ToolCallResult
-from ..api.tool import ToolDescriptor
+from ..api.tool import ToolDescriptor, ToolSource
 from ..builtin.python.tool_source import PythonToolSource
 
 
@@ -81,12 +81,7 @@ class ToolManager(ExtensionManager[ToolDescriptor]):
         """
         return self._by_alias.get(alias, [])
 
-    async def invoke(
-        self,
-        descriptor: ToolDescriptor,
-        kwargs: dict[str, Any],
-        ctx: BeforeToolCallCtx | None = None,
-    ) -> Any:
+    async def invoke(self, descriptor: ToolDescriptor, kwargs: dict[str, Any], ctx: BeforeToolCallCtx | None = None) -> Any:
         """
         Execute a tool and return the **raw** result (not wrapped in ``ToolCallResult``).
 
@@ -99,16 +94,14 @@ class ToolManager(ExtensionManager[ToolDescriptor]):
         """
         return await self._source_of(descriptor).invoke(descriptor, kwargs, ctx=ctx)
 
-    async def call(
-        self, tool_call: ToolCall, ctx: BeforeToolCallCtx | None = None
-    ) -> ToolCallResult:
+    async def call(self, tool_call: ToolCall, ctx: BeforeToolCallCtx | None = None) -> ToolCallResult:
         """
         Resolve a tool by ``tool_call.tool_name`` and execute it.
 
         Returns a ``ToolCallResult`` with stringified content and graceful
         error handling — designed for the standard (non-CodeAct) agent loop.
 
-        *ctx* is forwarded to the underlying ``ToolSource.invoke()`` for
+        ctx is forwarded to the underlying ``ToolSource.invoke()`` for
         type-based injection into the tool function.
 
         Errors during execution are caught and returned as a ``ToolCallResult``
@@ -122,9 +115,8 @@ class ToolManager(ExtensionManager[ToolDescriptor]):
             )
 
         try:
-            result = await self._source_of(descriptor).invoke(
-                descriptor, tool_call.tool_args, ctx=ctx
-            )
+            tool_source: ToolSource = self._source_of(descriptor)
+            result = await tool_source.invoke(descriptor, tool_call.tool_args, ctx=ctx)
         except Exception as exc:
             return ToolCallResult(
                 tool_call_id=tool_call.tool_call_id,

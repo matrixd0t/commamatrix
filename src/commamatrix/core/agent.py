@@ -187,9 +187,7 @@ class Agent:
                 self.run(run, history=history),
             )
 
-    async def run(
-        self, run: RunCtx, history: list[DialogItem] | None = None
-    ) -> AfterLlmCallCtx | None:
+    async def run(self, run: RunCtx, history: list[DialogItem] | None = None) -> AfterLlmCallCtx | None:
         """Initialize extensions, then run: LLM call → tools → send until no calls remain."""
         await self._ensure_started()
         error: Exception | None = None
@@ -206,16 +204,12 @@ class Agent:
 
                 after_llm_ctx = await self._call_llm(run, last_item_id)
 
-                last_item_id, used_tools = await self._execute_tools(
-                    run, after_llm_ctx.response, last_item_id
-                )
+                last_item_id, used_tools = await self._execute_tools(run, after_llm_ctx.response, last_item_id)
 
                 if used_tools:
                     continue
 
-                await self._send_blocks(
-                    run, after_llm_ctx.response.content, last_item_id
-                )
+                await self._send_blocks(run, after_llm_ctx.response.content, last_item_id)
 
                 return after_llm_ctx
 
@@ -229,7 +223,7 @@ class Agent:
         finally:
             await self.hook_manager.fire(
                 HookEventType.AFTER_RUN.value,
-                AfterRunCtx(run=run, error=error),
+                AfterRunCtx(run=run, error=error)
             )
 
     # ------------------------------------------------------------------
@@ -279,6 +273,7 @@ class Agent:
     async def _resolve_previous_item(self, parsed: OnParsedCtx) -> None:
         """Link the first dialog item to its replied-to message if ``previous_external_id`` is set."""
         if parsed.previous_external_id and parsed.dialog_items:
+
             replied_item_id = await self.storage.find_item_id_by_external_id(
                 parsed.previous_external_id,
                 parsed.dialog_items[0].origin,
@@ -298,14 +293,19 @@ class Agent:
 
         tools_list = list(self.tool_manager.descriptors)
         before_llm_ctx = BeforeLlmCallCtx(run=run, dialog=dialog, tools=tools_list)
+
         await self.hook_manager.fire(
-            HookEventType.BEFORE_LLM_CALL.value, before_llm_ctx
+            HookEventType.BEFORE_LLM_CALL.value,
+            before_llm_ctx
         )
 
         llm_response = await self.llm_adapter.ask_llm(before_llm_ctx)
-
         after_llm_ctx = AfterLlmCallCtx(run=run, response=llm_response)
-        await self.hook_manager.fire(HookEventType.AFTER_LLM_CALL.value, after_llm_ctx)
+
+        await self.hook_manager.fire(
+            HookEventType.AFTER_LLM_CALL.value,
+            after_llm_ctx
+        )
 
         self._validate_response(after_llm_ctx.response, run)
 
@@ -319,24 +319,19 @@ class Agent:
         if response.stop_reason == StopReason.ERROR:
             raise LLMResponseError(f"LLM error at iteration {run.iteration}")
 
-    async def _execute_tool(
-        self, run: RunCtx, block: LLMResponseToolCallBlock
-    ) -> tuple[ToolCall, ToolCallResult]:
+    async def _execute_tool(self, run: RunCtx, block: LLMResponseToolCallBlock) -> tuple[ToolCall, ToolCallResult]:
         """Fire tool hooks and execute one call without persisting it."""
-        tool_call = ToolCall(
+        before_ctx = BeforeToolCallCtx(run=run, tool_call=ToolCall(
             tool_call_id=block.tool_call_id,
             tool_name=block.tool_name,
             tool_args=block.tool_args,
-        )
+        ))
 
-        before_ctx = BeforeToolCallCtx(run=run, tool_call=tool_call)
         await self.hook_manager.fire(HookEventType.BEFORE_TOOL_CALL.value, before_ctx)
         tool_call = before_ctx.tool_call
 
         if before_ctx.abort_tool_call:
-            result = ToolCallResult.aborted(
-                tool_call.tool_call_id, before_ctx.abort_reason
-            )
+            result = ToolCallResult.aborted(tool_call.tool_call_id, before_ctx.abort_reason)
         else:
             result = await self.tool_manager.call(tool_call, ctx=before_ctx)
 
@@ -344,9 +339,7 @@ class Agent:
         await self.hook_manager.fire(HookEventType.AFTER_TOOL_CALL.value, after_ctx)
         return after_ctx.tool_call, after_ctx.result
 
-    async def _execute_tools(
-        self, run: RunCtx, response: LLMResponse, last_item_id: int | None
-    ) -> tuple[int | None, bool]:
+    async def _execute_tools(self, run: RunCtx, response: LLMResponse, last_item_id: int | None) -> tuple[int | None, bool]:
         """Persist the assistant response, execute calls concurrently, then persist results."""
         tool_blocks = [
             block
@@ -357,6 +350,7 @@ class Agent:
             return last_item_id, False
 
         for block in response.content:
+
             if isinstance(block, LLMResponseToolCallBlock):
                 content = ToolCall(
                     tool_call_id=block.tool_call_id,
@@ -367,6 +361,7 @@ class Agent:
             else:
                 content = block.content_str()
                 item_type = block.item_type()
+
             last_item_id = await self.storage.save_event(
                 DialogItem(
                     content=content,
@@ -395,9 +390,7 @@ class Agent:
 
         return last_item_id, True
 
-    async def _send_block(
-        self, run: RunCtx, block: LLMResponseBlock, last_item_id: int | None
-    ) -> int | None:
+    async def _send_block(self, run: RunCtx, block: LLMResponseBlock, last_item_id: int | None) -> int | None:
         """Fire before_send hook → send via connector → persist and return new item id."""
         item = DialogItem(
             content=block.content_str(),
@@ -421,9 +414,7 @@ class Agent:
             before_send_ctx.dialog_item.model_copy(update={"external_id": external_id})
         )
 
-    async def _send_blocks(
-        self, run: RunCtx, blocks: list[LLMResponseBlock], last_item_id: int | None
-    ) -> int | None:
+    async def _send_blocks(self, run: RunCtx, blocks: list[LLMResponseBlock], last_item_id: int | None) -> int | None:
         """Send all non-tool blocks to the user and persist them."""
         for block in blocks:
             last_item_id = await self._send_block(run, block, last_item_id)
@@ -451,5 +442,5 @@ class Agent:
                     origin=origin,
                     user=items[-1].user,
                 ),
-                items,
+                items
             )

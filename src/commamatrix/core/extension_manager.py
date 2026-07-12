@@ -37,26 +37,19 @@ class ExtensionManager(Generic[D]):
     def _source_of(self, descriptor: D) -> ExtensionSource[D]:
         """Return the live source after checking descriptor freshness."""
         self._ensure_current(descriptor)
-        source = descriptor._source_ref()
-        if source is None:
-            raise ExtensionUnavailableError("ExtensionSource has been unloaded.")
-        return source
+        return descriptor._source_ref()
 
     def _ensure_current(self, descriptor: D) -> None:
         current = self._descriptors.get(descriptor.id)
         if current is not descriptor:
-            raise StaleExtensionError(
-                f"Extension descriptor is no longer active: {descriptor.id}"
-            )
+            raise StaleExtensionError(f"Extension descriptor is no longer active: {descriptor.id}")
 
         source = descriptor._source_ref()
         if source is None or not source.available:
-            raise ExtensionUnavailableError(
-                f"Extension source is unavailable: {descriptor.id}"
-            )
+            raise ExtensionUnavailableError(f"Extension source is unavailable: {descriptor.id}")
 
     def is_current(self, descriptor: D) -> bool:
-        """Return whether *descriptor* is still active in this manager."""
+        """Return whether descriptor is still active in this manager."""
         try:
             self._ensure_current(descriptor)
         except (ExtensionUnavailableError, StaleExtensionError):
