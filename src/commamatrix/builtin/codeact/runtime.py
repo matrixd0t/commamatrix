@@ -35,7 +35,7 @@ class CodeActRuntime:
         await self.backend.stop()
 
     async def rebuild(self, tools: list[ToolDescriptor], run: RunCtx) -> None:
-        fingerprint = run.agent.tool_runtime.fingerprint
+        fingerprint = run.agent.tool_manager.fingerprint
         if fingerprint is not None:
             self.searcher.rebuild(fingerprint, tools)
 
@@ -47,22 +47,22 @@ class CodeActRuntime:
         """Invoke a nested tool through the normal hook and policy lifecycle."""
         tool_call = ToolCall(tool_call_id=uuid4().hex, tool_name=name, tool_args=args)
         before_ctx = BeforeToolCallCtx(run=ctx.run, tool_call=tool_call)
-        await ctx.run.agent.hook_runtime.fire(HookEventType.BEFORE_TOOL_CALL.value, before_ctx)
+        await ctx.run.agent.hook_manager.fire(HookEventType.BEFORE_TOOL_CALL.value, before_ctx)
         tool_call = before_ctx.tool_call
 
         if before_ctx.abort_tool_call:
             result = ToolCallResult.aborted(tool_call.tool_call_id, before_ctx.abort_reason)
             after_ctx = AfterToolCallCtx(run=ctx.run, tool_call=tool_call, result=result)
-            await ctx.run.agent.hook_runtime.fire(HookEventType.AFTER_TOOL_CALL.value, after_ctx)
+            await ctx.run.agent.hook_manager.fire(HookEventType.AFTER_TOOL_CALL.value, after_ctx)
             return after_ctx.result.content
 
         raw_result: Any = None
         succeeded = False
         try:
-            descriptor = ctx.run.agent.tool_runtime.resolve(tool_call.tool_name)
+            descriptor = ctx.run.agent.tool_manager.resolve(tool_call.tool_name)
             if descriptor is None:
                 raise LookupError(f'Tool not found: {tool_call.tool_name!r}')
-            raw_result = await ctx.run.agent.tool_runtime.invoke(
+            raw_result = await ctx.run.agent.tool_manager.invoke(
                 descriptor, tool_call.tool_args, ctx=before_ctx,
             )
             content = raw_result if isinstance(raw_result, str) else json.dumps(
@@ -77,7 +77,7 @@ class CodeActRuntime:
             )
 
         after_ctx = AfterToolCallCtx(run=ctx.run, tool_call=tool_call, result=result)
-        await ctx.run.agent.hook_runtime.fire(HookEventType.AFTER_TOOL_CALL.value, after_ctx)
+        await ctx.run.agent.hook_manager.fire(HookEventType.AFTER_TOOL_CALL.value, after_ctx)
         if not succeeded or after_ctx.result.content != result.content:
             return after_ctx.result.content
         return raw_result

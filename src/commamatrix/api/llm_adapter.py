@@ -11,6 +11,7 @@ from json import dumps
 from .dialog import DialogItem, DialogItemType, DialogRole, DialogOrigin
 
 if TYPE_CHECKING:
+    from .config import Config
     from .hooks import BeforeLlmCallCtx
 
 
@@ -150,6 +151,9 @@ class LLMResponse:
 
 
 class LLMAdapter(ABC):
+    def __init__(self, config: Config) -> None:
+        """Initialize from per-agent Config. Subclasses read their fields via config.get(field)."""
+
     @abstractmethod
     async def ask_llm(self, ctx: BeforeLlmCallCtx) -> LLMResponse:
         ...

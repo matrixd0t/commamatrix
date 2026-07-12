@@ -1,16 +1,17 @@
-# core/hook_runtime.py
+# core/hook_manager.py
 
 from __future__ import annotations
 
 from typing import Any
 
-from .extension_runtime import ExtensionRuntime
+from .extension_manager import ExtensionManager
 from ..api.hooks import HookDescriptor
+from ..builtin.python.hook_source import PythonHookSource
 
 
-class HookRuntime(ExtensionRuntime[HookDescriptor]):
+class HookManager(ExtensionManager[HookDescriptor]):
     """
-    Runtime for hook descriptors.
+    Manager for hook descriptors.
 
     Groups descriptors by ``event`` and fires them in priority order
     via their source's ``invoke()`` method.
@@ -18,6 +19,7 @@ class HookRuntime(ExtensionRuntime[HookDescriptor]):
 
     def __init__(self) -> None:
         super().__init__()
+        self.mount(PythonHookSource())
         self._handlers: dict[str, list[HookDescriptor]] = {}
 
     async def fire(self, event: str, ctx: Any) -> None:

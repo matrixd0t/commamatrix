@@ -11,7 +11,7 @@ from collections.abc import Awaitable, Callable
 
 from .connector import Connector
 from .dialog import DialogItem, DialogOrigin
-from ..core.extension_runtime import ExtensionDescriptor, ExtensionSource
+from ..extensions import ExtensionDescriptor, ExtensionSource
 from .llm_adapter import LLMResponse, ToolCallResult, ToolCall
 from .tool import ToolDescriptor
 
@@ -48,12 +48,18 @@ class Hook(Generic[CtxT]):
     _event: HookEventType
     _ctx_type: type[CtxT]
 
-    def __call__(self, fn: Handler[CtxT] | None = None, /, priority: int = 0) -> Handler[CtxT]:
+    def __call__(
+        self, fn: Handler[CtxT] | None = None, /, priority: int = 0
+    ) -> Handler[CtxT]:
         def decorator(f: Handler[CtxT]) -> Handler[CtxT]:
-            setattr(f, HOOK_ATTRIBUTE, {
-                "event": self._event,
-                "priority": priority,
-            })
+            setattr(
+                f,
+                HOOK_ATTRIBUTE,
+                {
+                    "event": self._event,
+                    "priority": priority,
+                },
+            )
             HOOK_MODULES.add(f.__module__)
             return f
 
@@ -62,7 +68,7 @@ class Hook(Generic[CtxT]):
         return decorator
 
     def __repr__(self) -> str:
-        return f'Hook[{self._ctx_type.__name__}](event={self._event!r})'
+        return f"Hook[{self._ctx_type.__name__}](event={self._event!r})"
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,21 +115,22 @@ class HookSource(ExtensionSource[HookDescriptor]):
 class HookEventType(StrEnum):
     """Well-known hook event identifiers used by the agent loop."""
 
-    ON_AGENT_START = 'on_agent_start'
-    ON_PARSED = 'on_parsed'
-    BEFORE_RUN = 'before_run'
-    BEFORE_LLM_CALL = 'before_llm_call'
-    AFTER_LLM_CALL = 'after_llm_call'
-    BEFORE_TOOL_CALL = 'before_tool_call'
-    AFTER_TOOL_CALL = 'after_tool_call'
-    BEFORE_SEND = 'before_send'
-    ON_ERROR = 'on_error'
-    AFTER_RUN = 'after_run'
+    ON_AGENT_START = "on_agent_start"
+    ON_PARSED = "on_parsed"
+    BEFORE_RUN = "before_run"
+    BEFORE_LLM_CALL = "before_llm_call"
+    AFTER_LLM_CALL = "after_llm_call"
+    BEFORE_TOOL_CALL = "before_tool_call"
+    AFTER_TOOL_CALL = "after_tool_call"
+    BEFORE_SEND = "before_send"
+    ON_ERROR = "on_error"
+    AFTER_RUN = "after_run"
 
 
 @dataclass(slots=True, kw_only=True)
 class BaseEventCtx:
     """Base class for all hook event contexts."""
+
     meta: dict[str, Any] = field(default_factory=dict)
 
 
@@ -135,8 +142,9 @@ class RunCtx:
     Created once per ``Agent.run()`` invocation and passed through all
     hooks in that run.  Hooks can read/write ``state`` to share data
     across lifecycle stages.  ``agent`` provides access to the full
-    Agent, its ToolRuntime, Storage, hooks, etc.
+    Agent, its ToolManager, Storage, hooks, etc.
     """
+
     agent: Agent
     connector: Connector | None = None
     origin: DialogOrigin
@@ -149,12 +157,14 @@ class RunCtx:
 @dataclass(slots=True, kw_only=True)
 class OnAgentStartCtx(BaseEventCtx):
     """Fired on ``Agent.start()``"""
+
     agent: Agent
 
 
 @dataclass(slots=True, kw_only=True)
 class OnParsedCtx(BaseEventCtx):
     """Fired after a connector parses an incoming raw event into dialog items."""
+
     agent: Agent
     connector: Connector
     raw: dict
@@ -165,14 +175,17 @@ class OnParsedCtx(BaseEventCtx):
 @dataclass(slots=True, kw_only=True)
 class BeforeRunCtx(BaseEventCtx):
     """Fired before the agentic loop starts. Set ``abort=True`` to skip the run."""
+
     run: RunCtx
     abort: bool = False
 
 
 @dataclass(slots=True, kw_only=True)
 class BeforeLlmCallCtx(BaseEventCtx):
-    """Fired before each LLM call. Hooks can modify dialog, tools, or params."""
+    """Fired before each LLM call. Hooks can modify model, dialog, tools, or params."""
+
     run: RunCtx
+    model: str | None = None
     dialog: list[DialogItem]
     tools: list[ToolDescriptor]
     llm_call_params: dict = field(default_factory=dict)
@@ -181,6 +194,7 @@ class BeforeLlmCallCtx(BaseEventCtx):
 @dataclass(slots=True, kw_only=True)
 class AfterLlmCallCtx(BaseEventCtx):
     """Fired after the LLM returns a response. Hooks can inspect or modify the response."""
+
     run: RunCtx
     response: LLMResponse
 
@@ -188,15 +202,17 @@ class AfterLlmCallCtx(BaseEventCtx):
 @dataclass(slots=True, kw_only=True)
 class BeforeToolCallCtx(BaseEventCtx):
     """Fired before a tool is executed. Set ``abort_tool_call=True`` to skip it."""
+
     run: RunCtx
     tool_call: ToolCall
     abort_tool_call: bool = False
-    abort_reason: str = ''
+    abort_reason: str = ""
 
 
 @dataclass(slots=True, kw_only=True)
 class AfterToolCallCtx(BaseEventCtx):
     """Fired after a tool call completes, with the result."""
+
     run: RunCtx
     tool_call: ToolCall
     result: ToolCallResult
@@ -205,6 +221,7 @@ class AfterToolCallCtx(BaseEventCtx):
 @dataclass(slots=True, kw_only=True)
 class BeforeSendCtx(BaseEventCtx):
     """Fired before a dialog item is sent to the user via the connector."""
+
     run: RunCtx
     dialog_item: DialogItem
 
@@ -212,6 +229,7 @@ class BeforeSendCtx(BaseEventCtx):
 @dataclass(slots=True, kw_only=True)
 class OnErrorCtx(BaseEventCtx):
     """Fired when an exception occurs during the run. Set ``suppress=True`` to swallow it."""
+
     run: RunCtx
     error: Exception
     suppress: bool = False
@@ -220,6 +238,7 @@ class OnErrorCtx(BaseEventCtx):
 @dataclass(slots=True, kw_only=True)
 class AfterRunCtx(BaseEventCtx):
     """Fired after the run finishes (always, even on error — in ``finally``)."""
+
     run: RunCtx
     error: Exception | None = None
 

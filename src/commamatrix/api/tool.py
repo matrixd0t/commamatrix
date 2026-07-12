@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, overload
 
-from ..core.extension_runtime import ExtensionDescriptor, ExtensionSource
+from ..extensions import ExtensionDescriptor, ExtensionSource
 
 if TYPE_CHECKING:
     from .hooks import BeforeToolCallCtx
@@ -17,7 +17,7 @@ TOOL_ATTRIBUTE = "__commamatrix_tool__"
 TOOL_MODULES: set[str] = set()
 
 
-type AsyncOrSyncFunction = (Callable[..., object] | Callable[..., Awaitable[object]])
+type AsyncOrSyncFunction = Callable[..., object] | Callable[..., Awaitable[object]]
 type Decorator[F: AsyncOrSyncFunction] = Callable[[F], F]
 
 
@@ -34,7 +34,12 @@ class ToolSource(ExtensionSource["ToolDescriptor"]):
     def scan(self) -> Iterable[ToolDescriptor]:
         raise NotImplementedError
 
-    async def invoke(self, descriptor: ToolDescriptor, kwargs: dict[str, Any], ctx: BeforeToolCallCtx | None = None) -> object:
+    async def invoke(
+        self,
+        descriptor: ToolDescriptor,
+        kwargs: dict[str, Any],
+        ctx: BeforeToolCallCtx | None = None,
+    ) -> object:
         """
         Execute the tool described by *descriptor* with the given *kwargs*.
 
@@ -89,13 +94,11 @@ class ToolDescriptor(ExtensionDescriptor):
 
 
 @overload
-def tool(fn: AsyncOrSyncFunction) -> AsyncOrSyncFunction:
-    ...
+def tool(fn: AsyncOrSyncFunction) -> AsyncOrSyncFunction: ...
 
 
 @overload
-def tool(**metadata: Any) -> Decorator:
-    ...
+def tool(**metadata: Any) -> Decorator: ...
 
 
 def tool(arg: AsyncOrSyncFunction | None = None, **meta: Any):

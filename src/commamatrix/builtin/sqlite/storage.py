@@ -6,29 +6,40 @@ from typing import Any
 import aiosqlite
 
 from ..sql.storage import SqlStorage
-from ...api.config import ConfigField
+from ...api.config import ConfigField, Config
 
-sqlite_path = ConfigField[str](default='db.sqlite', description='Path to SQLite database file')
+sqlite_path = ConfigField[str](
+    default="db.sqlite", description="Path to SQLite database file"
+)
 
 
 class SqliteStorage(SqlStorage):
-
-    def __init__(self, path: str | ConfigField[str] = sqlite_path) -> None:
-        super().__init__()
-        self._path = path.get() if isinstance(path, ConfigField) else path
+    def __init__(self, config: Config) -> None:
+        super().__init__(config)
+        self._path = config.get(sqlite_path)
 
     async def _connect(self) -> aiosqlite.Connection:
         db = await aiosqlite.connect(self._path)
         db.row_factory = aiosqlite.Row
         return db
 
-    async def _execute(self, db: aiosqlite.Connection, query: str, params: tuple = ()) -> Any:
+    async def _execute(
+        self, db: aiosqlite.Connection, query: str, params: tuple = ()
+    ) -> Any:
         return await db.execute(query, params)
 
-    async def _fetchall(self, db: aiosqlite.Connection, query: str, params: tuple = ()) -> list:
+    async def _fetchall(
+        self, db: aiosqlite.Connection, query: str, params: tuple = ()
+    ) -> list:
         return list(await db.execute_fetchall(query, params))
 
-    async def _insert(self, db: aiosqlite.Connection, query: str, params: tuple = ()) -> int | None:
+    async def _columns(self, db: aiosqlite.Connection) -> set[str]:
+        rows = await db.execute_fetchall("PRAGMA table_info(dialog_items)")
+        return {row[1] for row in rows}
+
+    async def _insert(
+        self, db: aiosqlite.Connection, query: str, params: tuple = ()
+    ) -> int | None:
         cursor = await db.execute(query, params)
         await self._commit(db)
         return cursor.lastrowid

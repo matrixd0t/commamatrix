@@ -10,15 +10,15 @@ Intentionally **not** a security sandbox.
 from __future__ import annotations
 
 import asyncio
-import json
 import sys
 from typing import Any
 
 from .backend import ExecutionBackend, ExecutionResult
 from ..rpc.server import RPCServer
+from ..rpc.stdio import StdioTransport
 
 
-_ENTRY_POINT = r'''\
+_ENTRY_POINT = r"""\
 import ast, asyncio, contextlib, inspect, io, json, os, sys, threading, time
 from importlib.abc import MetaPathFinder
 from importlib.machinery import ModuleSpec
@@ -225,7 +225,7 @@ response = {"id": "", "result": {
 }}
 stdout_bin.write(json.dumps(response, ensure_ascii=False).encode("utf-8") + b"\n")
 stdout_bin.flush()
-'''
+"""
 
 
 class SubprocessBackend(ExecutionBackend):
@@ -240,66 +240,78 @@ class SubprocessBackend(ExecutionBackend):
     async def stop(self) -> None:
         pass
 
-    async def execute(self, code: str, ctx: object | None = None, namespace: dict[str, Any] | None = None) -> ExecutionResult:
-        from ....api.hooks import BeforeToolCallCtx
-        if not isinstance(ctx, BeforeToolCallCtx):
-            return ExecutionResult(stderr='SubprocessBackend requires BeforeToolCallCtx', returncode=1)
-
+    async def execute(
+        self,
+        code: str,
+        ctx: BeforeToolCallCtx,
+        namespace: dict[str, Any] | None = None,
+    ) -> ExecutionResult:
         server = RPCServer(ctx)
-        payload = json.dumps({
-            'code': code,
-            'namespace': namespace or {'__name__': '__codeact__'},
-            'timeout': self._timeout,
-        }, ensure_ascii=False).encode('utf-8') + b'\n'
+        payload = {
+            "code": code,
+            "namespace": namespace or {"__name__": "__codeact__"},
+            "timeout": self._timeout,
+        }
 
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, '-c', _ENTRY_POINT,
+            sys.executable,
+            "-c",
+            _ENTRY_POINT,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
 
-        assert proc.stdin is not None and proc.stdout is not None and proc.stderr is not None
-        stdin = proc.stdin
-        stdout = proc.stdout
+        assert (
+            proc.stdin is not None
+            and proc.stdout is not None
+            and proc.stderr is not None
+        )
+        transport = StdioTransport(proc)
         stderr_stream = proc.stderr
-        stdin.write(payload)
-        await stdin.drain()
+        await transport.send(payload)
 
         async def run_server() -> tuple[dict[str, Any] | None, str, int]:
             response_data = None
-            async for line in stdout:
-                message = json.loads(line.decode('utf-8'))
-                if 'method' in message:
-                    rpc_response = await server.handle(message)
-                    stdin.write(json.dumps(rpc_response, ensure_ascii=False).encode('utf-8') + b'\n')
-                    await stdin.drain()
-                elif 'result' in message or 'error' in message:
-                    response_data = message
-            if not stdin.is_closing():
-                stdin.close()
+            try:
+                while True:
+                    message = await transport.recv()
+                    if "method" in message:
+                        rpc_response = await server.handle(message)
+                        await transport.send(rpc_response)
+                    elif "result" in message or "error" in message:
+                        response_data = message
+                        break
+            except ConnectionError:
+                pass
+            await transport.close()
             stderr = await stderr_stream.read()
             await proc.wait()
-            return response_data, stderr.decode('utf-8'), proc.returncode or 0
+            return response_data, stderr.decode("utf-8"), proc.returncode or 0
 
         try:
             response, stderr_text, returncode = await asyncio.wait_for(
-                run_server(), timeout=self._timeout + 5.0,
+                run_server(),
+                timeout=self._timeout + 5.0,
             )
         except asyncio.TimeoutError:
-            proc.kill()
+            await transport.close()
             await proc.wait()
             return ExecutionResult(
-                stderr='Execution timed out', returncode=124, duration_ms=self._timeout * 1000,
+                stderr="Execution timed out",
+                returncode=124,
+                duration_ms=self._timeout * 1000,
             )
 
-        if response and 'result' in response:
-            result = response['result']
+        if response and "result" in response:
+            result = response["result"]
             return ExecutionResult(
-                stdout=result.get('stdout', ''),
-                stderr=stderr_text + result.get('stderr', ''),
-                returncode=result.get('returncode', returncode),
-                duration_ms=result.get('elapsed'),
+                stdout=result.get("stdout", ""),
+                stderr=stderr_text + result.get("stderr", ""),
+                returncode=result.get("returncode", returncode),
+                duration_ms=result.get("elapsed"),
             )
 
-        return ExecutionResult(stderr=stderr_text or 'Child process crashed', returncode=returncode or 1)
+        return ExecutionResult(
+            stderr=stderr_text or "Child process crashed", returncode=returncode or 1
+        )

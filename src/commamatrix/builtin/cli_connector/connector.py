@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from ...api.connector import Connector, OnEvent
-from ...api.config import ConfigField
+from ...api.config import ConfigField, Config
 from ...api.dialog import DialogItem, DialogItemType, DialogRole
 from ...api.hooks import OnParsedCtx
 
@@ -25,9 +25,10 @@ cli_port = ConfigField[int](default=0, description='TCP port (0 = any free)')
 
 class CliConnector(Connector[CliOrigin]):
 
-    def __init__(self, host: str | ConfigField[str] = cli_host, port: int | ConfigField[int] = cli_port) -> None:
-        self._host = host.get() if isinstance(host, ConfigField) else host
-        self._port = port.get() if isinstance(port, ConfigField) else port
+    def __init__(self, config: Config) -> None:
+        super().__init__(config)
+        self._host = config.get(cli_host)
+        self._port = config.get(cli_port)
         self._writers: dict[str, asyncio.StreamWriter] = {}
         self._server_addr: tuple[str, int] | None = None
         self._last_external_id: dict[str, str] = {}

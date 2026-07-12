@@ -5,8 +5,12 @@
 from __future__ import annotations
 
 from typing import Any
+from typing import TYPE_CHECKING
 
 from .backend import ExecutionBackend, ExecutionResult
+
+if TYPE_CHECKING:
+    from ....api.hooks import BeforeToolCallCtx
 
 
 class SystemdBackend(ExecutionBackend):
@@ -18,5 +22,7 @@ class SystemdBackend(ExecutionBackend):
     async def stop(self) -> None:
         pass
 
-    async def execute(self, code: str, ctx: object | None = None, namespace: dict[str, Any] | None = None) -> ExecutionResult:
+    async def execute(
+        self, code: str, ctx: BeforeToolCallCtx, namespace: dict[str, Any] | None = None
+    ) -> ExecutionResult:
         raise NotImplementedError

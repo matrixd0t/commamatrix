@@ -12,6 +12,7 @@ from .extension_source import PythonExtensionSource
 
 class PythonHookSource(PythonExtensionSource[HookDescriptor], HookSource):
     def __init__(self) -> None:
+        super().__init__()
         self._handlers: dict[str, Any] = {}
 
     def scan(self) -> list[HookDescriptor]:
@@ -28,12 +29,12 @@ class PythonHookSource(PythonExtensionSource[HookDescriptor], HookSource):
 
     def build_descriptor(self, object_name: str, obj: object) -> HookDescriptor | None:
         params = getattr(obj, HOOK_ATTRIBUTE)
-        descriptor_id = f'hook://{obj.__module__}/{object_name}'
+        descriptor_id = f"hook://{obj.__module__}/{object_name}"
         self._handlers[descriptor_id] = cast(Any, obj)
         return HookDescriptor(
             id=descriptor_id,
-            event=params['event'],
-            priority=params.get('priority', 0),
+            event=params["event"],
+            priority=params.get("priority", 0),
             metadata={},
             _source_ref=weakref.ref(self),
         )
@@ -41,7 +42,7 @@ class PythonHookSource(PythonExtensionSource[HookDescriptor], HookSource):
     async def invoke(self, descriptor: HookDescriptor, ctx: object) -> object:
         handler = self._handlers.get(descriptor.id)
         if handler is None:
-            raise RuntimeError(f'Hook {descriptor.id} is not owned by this source')
+            raise RuntimeError(f"Hook {descriptor.id} is not owned by this source")
         result = handler(ctx)
         if inspect.isawaitable(result):
             return await result

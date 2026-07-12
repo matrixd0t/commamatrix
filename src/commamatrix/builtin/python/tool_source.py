@@ -36,6 +36,7 @@ class PythonToolSource(PythonExtensionSource[ToolDescriptor], ToolSource):
     """
 
     def __init__(self) -> None:
+        super().__init__()
         self._functions: dict[str, AsyncOrSyncFunction] = {}
 
     def scan(self) -> list[ToolDescriptor]:
@@ -54,7 +55,7 @@ class PythonToolSource(PythonExtensionSource[ToolDescriptor], ToolSource):
         fn = cast(AsyncOrSyncFunction, obj)
         raw_meta: dict[str, Any] = getattr(fn, TOOL_ATTRIBUTE)
         metadata = dict(raw_meta)
-        metadata['signature'] = _signature_metadata(fn)
+        metadata["signature"] = _signature_metadata(fn)
         descriptor_id = f"python://{fn.__module__}/{object_name}"
         self._functions[descriptor_id] = fn
 
@@ -73,7 +74,12 @@ class PythonToolSource(PythonExtensionSource[ToolDescriptor], ToolSource):
             _source_ref=weakref.ref(self),
         )
 
-    async def invoke(self, descriptor: ToolDescriptor, kwargs: dict[str, Any], ctx: BeforeToolCallCtx | None = None) -> object:
+    async def invoke(
+        self,
+        descriptor: ToolDescriptor,
+        kwargs: dict[str, Any],
+        ctx: BeforeToolCallCtx | None = None,
+    ) -> object:
         """
         Execute the tool function with type-based injection.
 
@@ -97,14 +103,14 @@ class PythonToolSource(PythonExtensionSource[ToolDescriptor], ToolSource):
     def _build_doc(fn: AsyncOrSyncFunction, alias: str | None = None) -> str:
         parts: list[str] = []
         if alias is not None:
-            parts.append(f'[ alias: {alias} ]')
+            parts.append(f"[ alias: {alias} ]")
 
-        prefix = 'async ' if inspect.iscoroutinefunction(fn) else ''
-        parts.append(f'{prefix}def {fn.__name__}{inspect.signature(_schema_fn(fn))}:')
+        prefix = "async " if inspect.iscoroutinefunction(fn) else ""
+        parts.append(f"{prefix}def {fn.__name__}{inspect.signature(_schema_fn(fn))}:")
         parts.append('"""')
-        parts.append(inspect.getdoc(fn) or '')
+        parts.append(inspect.getdoc(fn) or "")
         parts.append('"""')
-        return '\n'.join(parts)
+        return "\n".join(parts)
 
 
 def _is_injectable(annotation: Any) -> bool:
@@ -115,11 +121,16 @@ def _is_injectable(annotation: Any) -> bool:
 def _injectable_params(fn: AsyncOrSyncFunction) -> dict[str, type]:
     """Return ``{param_name: type}`` for parameters with injectable annotations."""
     hints = _type_hints(fn)
-    return {name: hints[name] for name, param in inspect.signature(fn).parameters.items()
-            if name in hints and _is_injectable(hints[name])}
+    return {
+        name: hints[name]
+        for name, param in inspect.signature(fn).parameters.items()
+        if name in hints and _is_injectable(hints[name])
+    }
 
 
-def _inject(fn: AsyncOrSyncFunction, kwargs: dict[str, Any], ctx: BeforeToolCallCtx) -> dict[str, Any]:
+def _inject(
+    fn: AsyncOrSyncFunction, kwargs: dict[str, Any], ctx: BeforeToolCallCtx
+) -> dict[str, Any]:
     """Return a copy of kwargs with injectable parameters filled from ctx."""
     result = dict(kwargs)
     for name, annotation in _injectable_params(fn).items():
@@ -150,13 +161,19 @@ def _signature_metadata(fn: AsyncOrSyncFunction) -> list[dict[str, Any]]:
         if name in _injectable_params(fn):
             continue
         item = {
-            'name': name,
-            'kind': parameter.kind.name,
-            'annotation': getattr(hints.get(name), '__name__', str(hints.get(name, 'Any'))),
+            "name": name,
+            "kind": parameter.kind.name,
+            "annotation": getattr(
+                hints.get(name), "__name__", str(hints.get(name, "Any"))
+            ),
         }
         if parameter.default is not inspect.Parameter.empty:
             default = parameter.default
-            item['default'] = default if default is None or isinstance(default, (bool, int, float, str)) else repr(default)
+            item["default"] = (
+                default
+                if default is None or isinstance(default, (bool, int, float, str))
+                else repr(default)
+            )
         result.append(item)
     return result
 
@@ -164,6 +181,6 @@ def _signature_metadata(fn: AsyncOrSyncFunction) -> list[dict[str, Any]]:
 def _type_hints(fn: AsyncOrSyncFunction) -> dict[str, Any]:
     """Resolve postponed annotations for injection and schema generation."""
     try:
-        return {k: v for k, v in get_type_hints(fn).items() if k != 'return'}
+        return {k: v for k, v in get_type_hints(fn).items() if k != "return"}
     except Exception:
-        return dict(getattr(fn, '__annotations__', {}))
+        return dict(getattr(fn, "__annotations__", {}))

@@ -8,7 +8,7 @@ from abc import abstractmethod
 from collections.abc import Iterable
 from typing import Generic, TypeVar
 
-from ...core.extension_runtime import ExtensionDescriptor, ExtensionSource
+from ...extensions import ExtensionDescriptor, ExtensionSource
 
 
 D = TypeVar("D", bound=ExtensionDescriptor)
@@ -24,17 +24,14 @@ class PythonExtensionSource(ExtensionSource[D], Generic[D]):
 
     @property
     @abstractmethod
-    def extension_modules(self) -> set[str]:
-        ...
+    def extension_modules(self) -> set[str]: ...
 
     @property
     @abstractmethod
-    def marker_attribute(self) -> str:
-        ...
+    def marker_attribute(self) -> str: ...
 
     @abstractmethod
-    def build_descriptor(self, object_name: str, obj: object) -> D | None:
-        ...
+    def build_descriptor(self, object_name: str, obj: object) -> D | None: ...
 
     def iter_objects(self) -> Iterable[tuple[str, object]]:
         for module_name in sorted(self.extension_modules):

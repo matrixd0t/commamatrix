@@ -7,16 +7,17 @@ import aiofiles
 from pathlib import Path
 
 from ...api.file_storage import FileStorage
-from ...api.config import ConfigField
+from ...api.config import ConfigField, Config
 
 files_directory = ConfigField[str](default='files', description='Directory for file storage')
 
 
 class SimpleFileStorage(FileStorage):
 
-    def __init__(self, directory: str | ConfigField[str] = files_directory, prefix: str = 'file_') -> None:
-        self._directory = Path(directory.get() if isinstance(directory, ConfigField) else directory)
-        self._prefix = prefix
+    def __init__(self, config: Config) -> None:
+        super().__init__(config)
+        self._directory = Path(config.get(files_directory))
+        self._prefix = 'file_'
 
     async def save(self, data: bytes, ext: str | None = None) -> str:
         self._directory.mkdir(parents=True, exist_ok=True)

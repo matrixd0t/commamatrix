@@ -16,8 +16,8 @@ async def install_codeact(ctx: OnAgentStartCtx) -> None:
     runtime = CodeActRuntime(backend=SubprocessBackend(), searcher=BM25ToolSearcher())
     await runtime.start()
     ctx.agent.services[CodeActRuntime] = runtime
-    ctx.agent.tool_runtime.scan()
-    ctx.agent.hook_runtime.scan()
+    ctx.agent.tool_manager.scan()
+    ctx.agent.hook_manager.scan()
 
 
 @before_llm_call

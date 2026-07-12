@@ -1,19 +1,20 @@
-# core/tool_runtime.py
+# core/tool_manager.py
 
 from __future__ import annotations
 
 import json
 from typing import Any
 
-from .extension_runtime import ExtensionRuntime
+from .extension_manager import ExtensionManager
 from ..api.hooks import BeforeToolCallCtx
 from ..api.llm_adapter import ToolCall, ToolCallResult
 from ..api.tool import ToolDescriptor
+from ..builtin.python.tool_source import PythonToolSource
 
 
-class ToolRuntime(ExtensionRuntime[ToolDescriptor]):
+class ToolManager(ExtensionManager[ToolDescriptor]):
     """
-    Runtime for tool descriptors.
+    Manager for tool descriptors.
 
     Maintains an alias → descriptors map for virtual imports and
     provides both raw ``invoke()`` and agent-loop-safe ``call()``
@@ -22,6 +23,7 @@ class ToolRuntime(ExtensionRuntime[ToolDescriptor]):
 
     def __init__(self) -> None:
         super().__init__()
+        self.mount(PythonToolSource())
         self._by_alias: dict[str, list[ToolDescriptor]] = {}
         self._by_name: dict[str, list[ToolDescriptor]] = {}
         self._schemas: list[dict[str, Any]] = []
@@ -79,7 +81,12 @@ class ToolRuntime(ExtensionRuntime[ToolDescriptor]):
         """
         return self._by_alias.get(alias, [])
 
-    async def invoke(self, descriptor: ToolDescriptor, kwargs: dict[str, Any], ctx: BeforeToolCallCtx | None = None) -> Any:
+    async def invoke(
+        self,
+        descriptor: ToolDescriptor,
+        kwargs: dict[str, Any],
+        ctx: BeforeToolCallCtx | None = None,
+    ) -> Any:
         """
         Execute a tool and return the **raw** result (not wrapped in ``ToolCallResult``).
 
@@ -92,7 +99,9 @@ class ToolRuntime(ExtensionRuntime[ToolDescriptor]):
         """
         return await self._source_of(descriptor).invoke(descriptor, kwargs, ctx=ctx)
 
-    async def call(self, tool_call: ToolCall, ctx: BeforeToolCallCtx | None = None) -> ToolCallResult:
+    async def call(
+        self, tool_call: ToolCall, ctx: BeforeToolCallCtx | None = None
+    ) -> ToolCallResult:
         """
         Resolve a tool by ``tool_call.tool_name`` and execute it.
 
@@ -113,7 +122,9 @@ class ToolRuntime(ExtensionRuntime[ToolDescriptor]):
             )
 
         try:
-            result = await self._source_of(descriptor).invoke(descriptor, tool_call.tool_args, ctx=ctx)
+            result = await self._source_of(descriptor).invoke(
+                descriptor, tool_call.tool_args, ctx=ctx
+            )
         except Exception as exc:
             return ToolCallResult(
                 tool_call_id=tool_call.tool_call_id,

@@ -5,8 +5,11 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ....api.hooks import BeforeToolCallCtx
 
 
 @dataclass(slots=True)
@@ -47,5 +50,7 @@ class ExecutionBackend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def execute(self, code: str, ctx: object | None = None, namespace: dict[str, Any] | None = None) -> ExecutionResult:
+    async def execute(
+        self, code: str, ctx: BeforeToolCallCtx, namespace: dict[str, Any] | None = None
+    ) -> ExecutionResult:
         raise NotImplementedError
