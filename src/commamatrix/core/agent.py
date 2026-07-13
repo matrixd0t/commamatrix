@@ -319,23 +319,20 @@ class Agent:
         if response.stop_reason == StopReason.ERROR:
             raise LLMResponseError(f"LLM error at iteration {run.iteration}")
 
-    async def _execute_tool(self, run: RunCtx, block: LLMResponseToolCallBlock) -> tuple[ToolCall, ToolCallResult]:
-        """Fire tool hooks and execute one call without persisting it."""
-        before_ctx = BeforeToolCallCtx(run=run, tool_call=ToolCall(
-            tool_call_id=block.tool_call_id,
-            tool_name=block.tool_name,
-            tool_args=block.tool_args,
-        ))
+    async def _run_tool_lifecycle(self, run: RunCtx, tool_call: ToolCall) -> tuple[ToolCall, ToolCallResult]:
+        """Unified tool call lifecycle: before_hook → execute → after_hook.
 
+        Used by both the standard agent loop and CodeAct nested tool invocation.
+        """
+        before_ctx = BeforeToolCallCtx(run=run, tool_call=tool_call)
         await self.hook_manager.fire(HookEventType.BEFORE_TOOL_CALL.value, before_ctx)
-        tool_call = before_ctx.tool_call
 
         if before_ctx.abort_tool_call:
-            result = ToolCallResult.aborted(tool_call.tool_call_id, before_ctx.abort_reason)
+            result = ToolCallResult.aborted(before_ctx.tool_call.tool_call_id, before_ctx.abort_reason)
         else:
-            result = await self.tool_manager.call(tool_call, ctx=before_ctx)
+            result = await self.tool_manager.call(before_ctx.tool_call, ctx=before_ctx)
 
-        after_ctx = AfterToolCallCtx(run=run, tool_call=tool_call, result=result)
+        after_ctx = AfterToolCallCtx(run=run, tool_call=before_ctx.tool_call, result=result)
         await self.hook_manager.fire(HookEventType.AFTER_TOOL_CALL.value, after_ctx)
         return after_ctx.tool_call, after_ctx.result
 
@@ -374,7 +371,11 @@ class Agent:
             )
 
         executed = await asyncio.gather(
-            *(self._execute_tool(run, block) for block in tool_blocks)
+            *(self._run_tool_lifecycle(run, ToolCall(
+                tool_call_id=block.tool_call_id,
+                tool_name=block.tool_name,
+                tool_args=block.tool_args,
+            )) for block in tool_blocks)
         )
         for tool_call, result in executed:
             last_item_id = await self.storage.save_event(

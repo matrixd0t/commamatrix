@@ -31,7 +31,7 @@ class ExecutionResult:
             parts.append(f"exit code: {self.returncode}")
         if self.duration_ms is not None:
             parts.append(f"({self.duration_ms:.0f}ms)")
-        return "\n".join(parts)
+        return "\n\n".join(parts)
 
 
 class ExecutionBackend(ABC):

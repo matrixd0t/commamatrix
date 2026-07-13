@@ -9,6 +9,7 @@ from enum import Enum
 from typing import Any, TYPE_CHECKING
 
 from .protocol import RPCError, RPCRequest, RPCResponse
+from ....api.serialization import to_jsonable
 
 if TYPE_CHECKING:
     from ....api.hooks import BeforeToolCallCtx
@@ -19,9 +20,11 @@ class RPCServer:
 
     def __init__(self, ctx: BeforeToolCallCtx) -> None:
         self._ctx = ctx
+        self._request_id: str = ""
 
     async def handle(self, raw: dict[str, Any]) -> dict[str, Any]:
         request = _deserialize_request(raw)
+        self._request_id = request.id
         try:
             result = await self._dispatch(request.method, request.params)
             response = RPCResponse(id=request.id, result=_make_serializable(result))
@@ -91,24 +94,25 @@ class RPCServer:
         method = path[0]
 
         if method == "invoke":
-            from ..runtime import CodeActRuntime
+            from ..manager import CodeActManager
             from ....api.llm_adapter import ToolCall
 
             data = params.get("tool_call", params)
             tool_call = ToolCall(
-                tool_call_id=data.get("tool_call_id", ""),
+                tool_call_id=data.get("tool_call_id") or self._request_id,
                 tool_name=data["tool_name"],
                 tool_args=data.get("tool_args", {}),
             )
-            runtime = self._ctx.run.agent.services.require(CodeActRuntime)
-            return await runtime.invoke_tool(self._ctx, tool_call.tool_name, tool_call.tool_args)
+            runtime = self._ctx.run.agent.services.require(CodeActManager)
+            result = await runtime.invoke_tool(self._ctx, tool_call)
+            return to_jsonable(result)
 
         if method == "search":
-            from ..runtime import CodeActRuntime
+            from ..manager import CodeActManager
 
-            runtime = self._ctx.run.agent.services.get(CodeActRuntime)
+            runtime = self._ctx.run.agent.services.get(CodeActManager)
             if runtime is None:
-                raise RPCError(code=-32603, message="CodeActRuntime not available")
+                raise RPCError(code=-32603, message="CodeActManager not available")
             return runtime.searcher.search(
                 params["query"], limit=params.get("limit", 5)
             )

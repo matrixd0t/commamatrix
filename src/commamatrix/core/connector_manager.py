@@ -26,6 +26,4 @@ class ConnectorManager(ExtensionManager[ConnectorDescriptor]):
         classes = config.get(connector_classes)
         if classes is not None:
             return [cls(config=config) for cls in classes]
-        return [
-            descriptor.connector_cls(config=config) for descriptor in self.descriptors
-        ]
+        return [descriptor.connector_cls(config=config) for descriptor in self.descriptors]

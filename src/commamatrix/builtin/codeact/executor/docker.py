@@ -22,7 +22,5 @@ class DockerBackend(ExecutionBackend):
     async def stop(self) -> None:
         pass
 
-    async def execute(
-        self, code: str, ctx: BeforeToolCallCtx, namespace: dict[str, Any] | None = None
-    ) -> ExecutionResult:
+    async def execute(self, code: str, ctx: BeforeToolCallCtx, namespace: dict[str, Any] | None = None) -> ExecutionResult:
         raise NotImplementedError

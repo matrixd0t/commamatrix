@@ -9,6 +9,7 @@ from typing import Any, TYPE_CHECKING
 from json import dumps
 
 from .dialog import DialogItem, DialogItemType, DialogRole, DialogOrigin
+from .serialization import to_jsonable
 
 if TYPE_CHECKING:
     from .config import Config
@@ -34,13 +35,13 @@ class ToolCall:
     tool_args: dict[str, Any]
 
     def dump_json(self) -> str:
-        return dumps({'tool_call_id': self.tool_call_id, 'tool_name': self.tool_name, 'tool_args': self.tool_args}, ensure_ascii=False)
+        return dumps(to_jsonable({'tool_call_id': self.tool_call_id, 'tool_name': self.tool_name, 'tool_args': self.tool_args}), ensure_ascii=False)
 
 
 @dataclass(slots=True, kw_only=True)
 class ToolCallResult:
     tool_call_id: str
-    content: str
+    content: Any
     abort: bool = False
 
     @classmethod
@@ -48,7 +49,7 @@ class ToolCallResult:
         return cls(tool_call_id=tool_call_id, abort=True, content=f'Tool call aborted: {reason}')
 
     def dump_json(self) -> str:
-        return dumps({'tool_call_id': self.tool_call_id, 'content': self.content}, ensure_ascii=False)
+        return dumps({'tool_call_id': self.tool_call_id, 'content': to_jsonable(self.content)}, ensure_ascii=False)
 
 
 class StopReason(StrEnum):
@@ -60,6 +61,7 @@ class StopReason(StrEnum):
 
 @dataclass(slots=True, kw_only=True)
 class Usage:
+    usd: float
     input_tokens: int
     output_tokens: int
     cache_read_tokens: int = 0
@@ -73,13 +75,7 @@ class LLMResponseBlock(ABC):
     @abstractmethod
     def item_type(self) -> DialogItemType: ...
 
-    def to_dialog_item(
-        self,
-        role: DialogRole,
-        user: str,
-        origin: DialogOrigin,
-        previous_item_id: int | None = None,
-    ) -> DialogItem:
+    def to_dialog_item(self, role: DialogRole, user: str, origin: DialogOrigin, previous_item_id: int | None = None) -> DialogItem:
         return DialogItem(
             content=self.content_str(),
             item_type=self.item_type(),

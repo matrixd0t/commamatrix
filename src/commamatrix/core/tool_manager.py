@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from .extension_manager import ExtensionManager
@@ -98,8 +97,8 @@ class ToolManager(ExtensionManager[ToolDescriptor]):
         """
         Resolve a tool by ``tool_call.tool_name`` and execute it.
 
-        Returns a ``ToolCallResult`` with stringified content and graceful
-        error handling — designed for the standard (non-CodeAct) agent loop.
+        Returns a ``ToolCallResult`` with the raw Python result in ``content``
+        and graceful error handling — designed for the standard agent loop.
 
         ctx is forwarded to the underlying ``ToolSource.invoke()`` for
         type-based injection into the tool function.
@@ -123,14 +122,9 @@ class ToolManager(ExtensionManager[ToolDescriptor]):
                 content=f"Error executing tool {tool_call.tool_name!r}: {exc}",
             )
 
-        if isinstance(result, str):
-            content = result
-        else:
-            content = json.dumps(result, ensure_ascii=False, default=str)
-
         return ToolCallResult(
             tool_call_id=tool_call.tool_call_id,
-            content=content,
+            content=result,
         )
 
     def _rebuild(self) -> None:

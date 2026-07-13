@@ -1,6 +1,6 @@
 # builtin/codeact/search/bm25.py
 
-"""BM25-backed tool searcher using ``bm25s`` for tokenisation and retrieval."""
+"""BM25-backed tool searcher using ``bm25s`` for tokenization and retrieval."""
 
 from __future__ import annotations
 

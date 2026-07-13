@@ -9,7 +9,7 @@ from typing import Any
 
 
 class Transport(ABC):
-    """Send and receive JSON-serialisable message dicts over a byte stream."""
+    """Send and receive JSON-serializable message dicts over a byte stream."""
 
     @abstractmethod
     async def send(self, message: dict[str, Any]) -> None:

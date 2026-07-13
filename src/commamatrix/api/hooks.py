@@ -183,7 +183,6 @@ class BeforeRunCtx(BaseEventCtx):
 @dataclass(slots=True, kw_only=True)
 class BeforeLlmCallCtx(BaseEventCtx):
     """Fired before each LLM call. Hooks can modify model, dialog, tools, or params."""
-
     run: RunCtx
     model: str | None = None
     dialog: list[DialogItem]
