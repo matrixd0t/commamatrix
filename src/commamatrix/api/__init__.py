@@ -13,13 +13,13 @@ from .connector import (
     ConnectorDescriptor,
     ConnectorSource,
     CONNECTOR_ATTRIBUTE,
-    CONNECTOR_MODULES,
     OnEvent,
 )
-from .storage import Storage
-from .file_storage import FileStorage
+from .storage import Storage, STORAGE_ATTRIBUTE
+from .file_storage import FileStorage, FILE_STORAGE_ATTRIBUTE
 from .llm_adapter import (
     LLMAdapter,
+    LLM_ADAPTER_ATTRIBUTE,
     LLMResponse,
     LLMResponseTextBlock,
     LLMResponseImageBlock,
@@ -33,14 +33,7 @@ from .llm_adapter import (
     LLMResponseError,
     LLMTruncatedError,
 )
-from .config import (
-    ConfigField,
-    Config,
-    storage_class,
-    file_storage_class,
-    llm_adapter_class,
-    connector_classes,
-)
+from .config import ConfigField, Config, active_storage, active_file_storage
 from .tool import tool, ToolSource, ToolDescriptor, DEFAULT_TOOL_SEARCH_AMOUNT
 from .hooks import (
     Hook,
@@ -69,6 +62,7 @@ from .hooks import (
     AfterRunCtx,
     after_run,
 )
+from .service import Service, ServiceDescriptor, ServiceSource, SERVICE_ATTRIBUTE
 
 __all__ = [
     "DialogItem",
@@ -81,11 +75,13 @@ __all__ = [
     "ConnectorDescriptor",
     "ConnectorSource",
     "CONNECTOR_ATTRIBUTE",
-    "CONNECTOR_MODULES",
     "OnEvent",
     "Storage",
+    "STORAGE_ATTRIBUTE",
     "FileStorage",
+    "FILE_STORAGE_ATTRIBUTE",
     "LLMAdapter",
+    "LLM_ADAPTER_ATTRIBUTE",
     "LLMResponse",
     "LLMResponseTextBlock",
     "LLMResponseImageBlock",
@@ -100,10 +96,8 @@ __all__ = [
     "LLMTruncatedError",
     "ConfigField",
     "Config",
-    "storage_class",
-    "file_storage_class",
-    "llm_adapter_class",
-    "connector_classes",
+    "active_storage",
+    "active_file_storage",
     "tool",
     "ToolSource",
     "ToolDescriptor",
@@ -133,4 +127,8 @@ __all__ = [
     "on_error",
     "AfterRunCtx",
     "after_run",
+    "Service",
+    "SERVICE_ATTRIBUTE",
+    "ServiceDescriptor",
+    "ServiceSource",
 ]

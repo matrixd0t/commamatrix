@@ -9,7 +9,7 @@ from pathlib import Path
 from ...api.file_storage import FileStorage
 from ...api.config import ConfigField, Config
 
-files_directory = ConfigField[str](default='files', description='Directory for file storage')
+files_directory = ConfigField[str](name="files_directory", default='files', description='Directory for file storage')
 
 
 class SimpleFileStorage(FileStorage):

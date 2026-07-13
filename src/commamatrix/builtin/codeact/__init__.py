@@ -2,10 +2,11 @@
 
 """CodeAct plugin — optional-by-import Python execution with virtual tool modules.
 
-Importing this package activates CodeAct: registers hooks that create the
-runtime on agent start and swap tool lists before each LLM call.
+Importing this package makes CodeAct available as a Service extension.
+The ``CodeActManager`` is discovered automatically and managed by the
+agent's ``ServiceManager`` when added via ``agent.add_extension``.
 """
 
 from . import hooks, tools, manager
 
-__all__ = ['hooks', 'tools', 'manager.py']
+__all__ = ['hooks', 'tools', 'manager']

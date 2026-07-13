@@ -9,7 +9,7 @@ from enum import Enum
 from typing import Any, TYPE_CHECKING
 
 from .protocol import RPCError, RPCRequest, RPCResponse
-from ....api.serialization import to_jsonable
+from ....api.utils import to_jsonable
 
 if TYPE_CHECKING:
     from ....api.hooks import BeforeToolCallCtx
@@ -98,9 +98,10 @@ class RPCServer:
             from ....api.llm_adapter import ToolCall
 
             data = params.get("tool_call", params)
+            tool_name = data.get("tool_id") or data["tool_name"]
             tool_call = ToolCall(
                 tool_call_id=data.get("tool_call_id") or self._request_id,
-                tool_name=data["tool_name"],
+                tool_name=tool_name,
                 tool_args=data.get("tool_args", {}),
             )
             runtime = self._ctx.run.agent.services.require(CodeActManager)

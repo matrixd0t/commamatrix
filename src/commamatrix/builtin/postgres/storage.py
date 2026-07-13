@@ -9,7 +9,7 @@ from ..sql.storage import SqlStorage
 from ...api.config import ConfigField, Config
 
 postgres_dsn = ConfigField[str](
-    description='PostgreSQL connection DSN: "user:password@host:port/database"'
+    name="postgres_dsn", description='PostgreSQL connection DSN: "user:password@host:port/database"'
 )
 
 

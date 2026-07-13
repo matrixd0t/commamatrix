@@ -2,18 +2,26 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Any, Optional, TYPE_CHECKING
 
 from .dialog import DialogItem, DialogOrigin
+from .service import Service
 
 if TYPE_CHECKING:
     from .config import Config
 
+STORAGE_ATTRIBUTE = "__commamatrix_storage__"
 
-class Storage(ABC):
+
+class Storage(Service):
     def __init__(self, config: Config) -> None:
-        """Initialize from per-agent Config. Subclasses read their fields via config.get(field)."""
+        super().__init__(config)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        if not getattr(cls, "__abstractmethods__", None):
+            setattr(cls, STORAGE_ATTRIBUTE, True)
 
     @abstractmethod
     async def save_event(self, entry: DialogItem) -> int | None: ...

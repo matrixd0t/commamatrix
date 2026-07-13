@@ -4,21 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-import inspect
+import json
+import sys
+import types
 from collections import defaultdict
-from collections.abc import Iterator
-from types import ModuleType
+from contextlib import asynccontextmanager
 from typing import Any
 
-from ..api.connector import Connector
-from ..api.config import (
-    Config,
-    ConfigField,
-    storage_class,
-    file_storage_class,
-    llm_adapter_class,
-)
-from ..api.dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
+from ..api.config import Config, ConfigField
+from ..api.dialog import DialogItem, DialogItemType, DialogRole
 from ..api.hooks import (
     AfterLlmCallCtx,
     AfterRunCtx,
@@ -44,109 +38,108 @@ from ..api.llm_adapter import (
     ToolCallResult,
 )
 from .runner import AgentRunner
-from .services import ServiceRegistry
-from .tool_manager import ToolManager
-from .hook_manager import HookManager
-from .connector_manager import ConnectorManager
+from .service import ServiceManager
 
 
 class Agent:
-    """
-    Orchestrates the agent lifecycle: parse → LLM → tools → send.
-    """
+    """Orchestrates the agent lifecycle: parse -> LLM -> tools -> send."""
 
-    def __init__(
-        self,
-        *,
-        config: dict[ConfigField, Any] | Config,
-        connector_manager: ConnectorManager | None = None,
-        tool_manager: ToolManager | None = None,
-        hook_manager: HookManager | None = None,
-    ):
-        from ..builtin.sqlite import SqliteStorage
-        from ..builtin.fs import SimpleFileStorage
-
-        agent_defaults = {
-            storage_class: SqliteStorage,
-            file_storage_class: SimpleFileStorage,
-        }
-
+    def __init__(self, *, config: dict[ConfigField, Any] | Config = {}):
         if isinstance(config, dict):
-            config = Config(overrides=config, defaults=agent_defaults)
-        else:
-            config.update_defaults(agent_defaults)
-
+            config = Config(overrides=config)
         self.config = config
 
-        self.llm_adapter = config.get(llm_adapter_class)(config)
-        self.storage = config.get(storage_class)(config)
-        self.file_storage = config.get(file_storage_class)(config)
-
-        self.connector_manager = connector_manager or ConnectorManager()
-        self.tool_manager = tool_manager or ToolManager()
-        self.hook_manager = hook_manager or HookManager()
-        self.services = ServiceRegistry()
-
-        self._connectors: list[Connector] = []
-        self._listener_tasks: list[asyncio.Task] = []
+        self.service_manager = ServiceManager(config=config, on_event=self.handle)
         self.runner = AgentRunner()
         self._started = False
         self._start_lock = asyncio.Lock()
+        self._extension_scope: list[str] = []
+
+    # ------------------------------------------------------------------
+    # Convenience aliases
+    # ------------------------------------------------------------------
+
+    @property
+    def tool_manager(self):
+        return self.service_manager.tool_manager
+
+    @property
+    def hook_manager(self):
+        return self.service_manager.hook_manager
+
+    @property
+    def connector_manager(self):
+        return self.service_manager.connector_manager
+
+    @property
+    def llm_adapter(self):
+        return self.service_manager.llm_adapter_manager
+
+    @property
+    def storage(self):
+        return self.service_manager.storage_manager
+
+    @property
+    def file_storage(self):
+        return self.service_manager.file_storage_manager
+
+    @property
+    def services(self):
+        return self.service_manager.registry
+
+    # ------------------------------------------------------------------
+    # Extension scope — the ONLY activation mechanism
+    # ------------------------------------------------------------------
+
+    def _resolve_module_name(self, module_or_name: str | types.ModuleType) -> str:
+        if isinstance(module_or_name, str):
+            return module_or_name
+        if isinstance(module_or_name, types.ModuleType):
+            return module_or_name.__name__
+        raise TypeError(f"Expected str or module, got {type(module_or_name).__name__}")
+
+    def add_extension(self, module_or_name: str | types.ModuleType) -> None:
+        """Import a module and register it with all its submodules in this agent's scope."""
+        module_name = self._resolve_module_name(module_or_name)
+        if module_name not in self._extension_scope:
+            self._extension_scope.append(module_name)
+        if module_name not in sys.modules:
+            importlib.import_module(module_name)
+
+        prefix = module_name + "."
+        for name in sorted(sys.modules):
+            if name.startswith(prefix) and name not in self._extension_scope:
+                self._extension_scope.append(name)
+
+    async def remove_extension(self, module_or_name: str | types.ModuleType) -> None:
+        """Remove a module and its submodules from this agent's scope and deactivate."""
+        module_name = self._resolve_module_name(module_or_name)
+        prefix = module_name + "."
+        self._extension_scope = [
+            m for m in self._extension_scope
+            if m != module_name and not m.startswith(prefix)
+        ]
+        if self._started:
+            self.service_manager.set_scope(self._extension_scope)
+            await self.service_manager.refresh()
+
+    async def refresh_extensions(self) -> None:
+        """Propagate scope and refresh all services."""
+        self.service_manager.set_scope(self._extension_scope)
+        await self.service_manager.refresh()
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    async def start(self) -> list[asyncio.Task]:
+    async def start(self) -> None:
         """Discover extensions, resolve connectors, and start listener tasks."""
         await self._ensure_started()
 
-        active_tasks: list[asyncio.Task] = []
-        for connector in self._connectors:
-            task = connector.listener_task
-            if task is not None and not task.done():
-                active_tasks.append(task)
-        if active_tasks:
-            self._listener_tasks = active_tasks
-            return active_tasks
-
-        self._listener_tasks = [
-            connector.start_listening(self.handle) for connector in self._connectors
-        ]
-        return self._listener_tasks
-
     async def stop(self) -> None:
         """Stop listeners, cancel active runs, and close agent-owned services."""
-        self._listener_tasks = []
-        await asyncio.gather(
-            *(connector.stop_listening() for connector in self._connectors),
-            return_exceptions=True,
-        )
         await self.runner.stop()
-
-        await asyncio.gather(
-            self.connector_manager.stop(),
-            self.tool_manager.stop(),
-            self.hook_manager.stop(),
-            return_exceptions=True,
-        )
-
-        for service in reversed(list(self.services.values())):
-            close = getattr(service, "stop", None) or getattr(service, "close", None)
-            if not callable(close):
-                continue
-            result = close()
-            if inspect.isawaitable(result):
-                await result
-
-        for resource in (self.file_storage, self.storage, self.llm_adapter):
-            close = getattr(resource, "stop", None) or getattr(resource, "close", None)
-            if not callable(close):
-                continue
-            result = close()
-            if inspect.isawaitable(result):
-                await result
-
+        await self.service_manager.stop()
         self._started = False
 
     async def __aenter__(self) -> Agent:
@@ -156,21 +149,12 @@ class Agent:
     async def __aexit__(self, exc_type, exc, traceback) -> None:
         await self.stop()
 
-    def add_extension(self, module: str | ModuleType) -> ModuleType:
-        """Import a Python extension before startup; discovery happens at start."""
-        if self._started:
-            raise RuntimeError("Python extensions must be added before Agent.start()")
-        if isinstance(module, str):
-            return importlib.import_module(module)
-        return module
-
     async def handle(self, raw: dict) -> None:
-        """Initialize extensions, parse an incoming event, and spawn runs per origin."""
+        """Parse an incoming event, and spawn runs per origin."""
         await self._ensure_started()
-        if self.connector_manager.scan():
-            self._connectors = self.connector_manager.resolve(self.config)
         parsed: OnParsedCtx | None = None
-        for connector in self._connectors:
+        connectors = self.connector_manager.resolve(self.config)
+        for connector in connectors:
             parsed = await connector.parse(raw, self)
             if parsed is not None:
                 break
@@ -187,31 +171,40 @@ class Agent:
                 self.run(run, history=history),
             )
 
+    @asynccontextmanager
+    async def _typing(self, run: RunCtx):
+        """Yield inside connector.typing() if connector is set, else yield directly."""
+        if run.connector:
+            async with run.connector.typing(run.origin):
+                yield
+        else:
+            yield
+
     async def run(self, run: RunCtx, history: list[DialogItem] | None = None) -> AfterLlmCallCtx | None:
-        """Initialize extensions, then run: LLM call → tools → send until no calls remain."""
+        """Run: LLM call -> tools -> send until no calls remain."""
         await self._ensure_started()
         error: Exception | None = None
 
         try:
-            if (await self._before_run(run)).abort:
-                return None
+            async with self._typing(run):
+                if (await self._before_run(run)).abort:
+                    return None
 
-            last_item_id = await self._store_history(history)
+                last_item_id = await self._store_history(history)
 
-            while True:
-                run.iteration += 1
-                self.tool_manager.scan()
+                while True:
+                    run.iteration += 1
 
-                after_llm_ctx = await self._call_llm(run, last_item_id)
+                    after_llm_ctx = await self._call_llm(run, last_item_id)
 
-                last_item_id, used_tools = await self._execute_tools(run, after_llm_ctx.response, last_item_id)
+                    last_item_id, used_tools = await self._execute_tools(run, after_llm_ctx.response, last_item_id)
 
-                if used_tools:
-                    continue
+                    if used_tools:
+                        continue
 
-                await self._send_blocks(run, after_llm_ctx.response.content, last_item_id)
+                    await self._send_blocks(run, after_llm_ctx.response.content, last_item_id)
 
-                return after_llm_ctx
+                    return after_llm_ctx
 
         except asyncio.CancelledError:
             raise
@@ -231,34 +224,25 @@ class Agent:
     # ------------------------------------------------------------------
 
     async def _ensure_started(self) -> None:
-        """Discover extensions and run one-time initialization hooks."""
         async with self._start_lock:
-            if self._started:
-                return
-
-            await asyncio.gather(
-                self.connector_manager.start(),
-                self.tool_manager.start(),
-                self.hook_manager.start(),
-            )
-            self.connector_manager.scan()
-            self._connectors = self.connector_manager.resolve(self.config)
-            self.tool_manager.scan()
-            self.hook_manager.scan()
-            await self.hook_manager.fire(
-                HookEventType.ON_AGENT_START.value,
-                OnAgentStartCtx(agent=self),
-            )
-            self._started = True
+            if not self._started:
+                self.add_extension("commamatrix.builtin.sqlite")
+                self.add_extension("commamatrix.builtin.fs")
+                self.service_manager.set_scope(self._extension_scope)
+                await self.service_manager.start()
+                await self.hook_manager.fire(
+                    HookEventType.ON_AGENT_START.value,
+                    OnAgentStartCtx(agent=self),
+                )
+                self._started = True
+            await self.refresh_extensions()
 
     async def _before_run(self, run: RunCtx) -> BeforeRunCtx:
-        """Fire before_run hook; caller checks ``.abort`` on the returned context."""
         ctx = BeforeRunCtx(run=run)
         await self.hook_manager.fire(HookEventType.BEFORE_RUN.value, ctx)
         return ctx
 
     async def _store_history(self, history: list[DialogItem] | None) -> int | None:
-        """Persist unsaved history items and return the history tip."""
         last_item_id: int | None = None
         if history is not None:
             for item in history:
@@ -271,9 +255,7 @@ class Agent:
         return last_item_id
 
     async def _resolve_previous_item(self, parsed: OnParsedCtx) -> None:
-        """Link the first dialog item to its replied-to message if ``previous_external_id`` is set."""
         if parsed.previous_external_id and parsed.dialog_items:
-
             replied_item_id = await self.storage.find_item_id_by_external_id(
                 parsed.previous_external_id,
                 parsed.dialog_items[0].origin,
@@ -282,166 +264,148 @@ class Agent:
                 parsed.dialog_items[0].previous_item_id = replied_item_id
 
     async def _load_dialog(self, last_item_id: int | None) -> list[DialogItem]:
-        """Load the full dialog branch from storage starting at the given tip, or [] if None."""
         if last_item_id is None:
             return []
         return await self.storage.get_branch(last_item_id)
 
     async def _call_llm(self, run: RunCtx, last_item_id: int | None) -> AfterLlmCallCtx:
-        """Load dialog → before_llm_call hook → LLM request → after_llm_call hook → validate."""
         dialog = await self._load_dialog(last_item_id)
 
         tools_list = list(self.tool_manager.descriptors)
         before_llm_ctx = BeforeLlmCallCtx(run=run, dialog=dialog, tools=tools_list)
 
-        await self.hook_manager.fire(
-            HookEventType.BEFORE_LLM_CALL.value,
-            before_llm_ctx
-        )
+        await self.hook_manager.fire(HookEventType.BEFORE_LLM_CALL.value, before_llm_ctx)
 
         llm_response = await self.llm_adapter.ask_llm(before_llm_ctx)
         after_llm_ctx = AfterLlmCallCtx(run=run, response=llm_response)
 
-        await self.hook_manager.fire(
-            HookEventType.AFTER_LLM_CALL.value,
-            after_llm_ctx
-        )
+        await self.hook_manager.fire(HookEventType.AFTER_LLM_CALL.value, after_llm_ctx)
 
         self._validate_response(after_llm_ctx.response, run)
-
         return after_llm_ctx
 
-    @staticmethod
-    def _validate_response(response: LLMResponse, run: RunCtx) -> None:
-        """Raise if the LLM response was truncated or errored."""
-        if response.stop_reason == StopReason.MAX_TOKENS:
-            raise LLMTruncatedError(f"Response truncated at iteration {run.iteration}")
-        if response.stop_reason == StopReason.ERROR:
-            raise LLMResponseError(f"LLM error at iteration {run.iteration}")
-
-    async def _run_tool_lifecycle(self, run: RunCtx, tool_call: ToolCall) -> tuple[ToolCall, ToolCallResult]:
-        """Unified tool call lifecycle: before_hook → execute → after_hook.
-
-        Used by both the standard agent loop and CodeAct nested tool invocation.
-        """
-        before_ctx = BeforeToolCallCtx(run=run, tool_call=tool_call)
-        await self.hook_manager.fire(HookEventType.BEFORE_TOOL_CALL.value, before_ctx)
-
-        if before_ctx.abort_tool_call:
-            result = ToolCallResult.aborted(before_ctx.tool_call.tool_call_id, before_ctx.abort_reason)
-        else:
-            result = await self.tool_manager.call(before_ctx.tool_call, ctx=before_ctx)
-
-        after_ctx = AfterToolCallCtx(run=run, tool_call=before_ctx.tool_call, result=result)
-        await self.hook_manager.fire(HookEventType.AFTER_TOOL_CALL.value, after_ctx)
-        return after_ctx.tool_call, after_ctx.result
-
-    async def _execute_tools(self, run: RunCtx, response: LLMResponse, last_item_id: int | None) -> tuple[int | None, bool]:
-        """Persist the assistant response, execute calls concurrently, then persist results."""
-        tool_blocks = [
-            block
-            for block in response.content
-            if isinstance(block, LLMResponseToolCallBlock)
-        ]
-        if not tool_blocks:
+    async def _execute_tools(
+        self, run: RunCtx, response: LLMResponse, last_item_id: int | None
+    ) -> tuple[int | None, bool]:
+        tool_calls = [b for b in response.content if isinstance(b, LLMResponseToolCallBlock)]
+        if not tool_calls:
             return last_item_id, False
 
-        for block in response.content:
-
-            if isinstance(block, LLMResponseToolCallBlock):
-                content = ToolCall(
-                    tool_call_id=block.tool_call_id,
-                    tool_name=block.tool_name,
-                    tool_args=block.tool_args,
-                ).dump_json()
-                item_type = DialogItemType.TOOL_CALL
-            else:
-                content = block.content_str()
-                item_type = block.item_type()
-
-            last_item_id = await self.storage.save_event(
-                DialogItem(
-                    content=content,
-                    item_type=item_type,
-                    role=DialogRole.ASSISTANT,
-                    user=run.user,
-                    origin=run.origin,
-                    previous_item_id=last_item_id,
-                )
+        for block in tool_calls:
+            # Persist assistant TOOL_CALL before executing
+            call_item = DialogItem(
+                content=block.content_str(),
+                item_type=DialogItemType.TOOL_CALL,
+                user=run.user,
+                role=DialogRole.ASSISTANT,
+                origin=run.origin,
+                previous_item_id=last_item_id,
             )
+            saved_id = await self.storage.save_event(call_item)
+            if saved_id is not None:
+                call_item.item_id = saved_id
+                last_item_id = saved_id
 
-        executed = await asyncio.gather(
-            *(self._run_tool_lifecycle(run, ToolCall(
+            tool_call = ToolCall(
                 tool_call_id=block.tool_call_id,
                 tool_name=block.tool_name,
                 tool_args=block.tool_args,
-            )) for block in tool_blocks)
-        )
-        for tool_call, result in executed:
-            last_item_id = await self.storage.save_event(
-                DialogItem(
-                    content=result.dump_json(),
-                    item_type=DialogItemType.TOOL_CALL_RESULT,
-                    role=DialogRole.TOOL,
-                    user=run.user,
-                    origin=run.origin,
-                    previous_item_id=last_item_id,
-                )
             )
+            last_item_id, _ = await self._run_tool_lifecycle(run, tool_call, last_item_id)
 
         return last_item_id, True
 
-    async def _send_block(self, run: RunCtx, block: LLMResponseBlock, last_item_id: int | None) -> int | None:
-        """Fire before_send hook → send via connector → persist and return new item id."""
-        item = DialogItem(
-            content=block.content_str(),
-            item_type=block.item_type(),
-            role=DialogRole.ASSISTANT,
+    async def _run_tool_lifecycle(
+        self, run: RunCtx, tool_call: ToolCall, last_item_id: int | None = None
+    ) -> tuple[int | None, ToolCallResult]:
+        before_ctx = BeforeToolCallCtx(run=run, tool_call=tool_call)
+        await self.hook_manager.fire(HookEventType.BEFORE_TOOL_CALL.value, before_ctx)
+
+        # Use potentially mutated tool_call from hook context
+        effective_call = before_ctx.tool_call
+
+        if before_ctx.abort_tool_call:
+            result = ToolCallResult.aborted(effective_call.tool_call_id, before_ctx.abort_reason)
+        else:
+            result = await self.tool_manager.call(effective_call, ctx=before_ctx)
+
+        after_ctx = AfterToolCallCtx(run=run, tool_call=effective_call, result=result)
+        await self.hook_manager.fire(HookEventType.AFTER_TOOL_CALL.value, after_ctx)
+
+        # Use potentially mutated result from hook context
+        final_result = after_ctx.result
+
+        result_item = DialogItem(
+            content=final_result.dump_json(),
+            item_type=DialogItemType.TOOL_CALL_RESULT,
             user=run.user,
+            role=DialogRole.TOOL,
             origin=run.origin,
             previous_item_id=last_item_id,
         )
-        before_send_ctx = BeforeSendCtx(run=run, dialog_item=item)
-        await self.hook_manager.fire(HookEventType.BEFORE_SEND.value, before_send_ctx)
+        saved_id = await self.storage.save_event(result_item)
+        if saved_id is not None:
+            result_item.item_id = saved_id
+            last_item_id = saved_id
 
-        if run.connector is not None:
-            external_id = await run.connector.send(
-                run.origin, before_send_ctx.dialog_item
-            )
-        else:
-            external_id = None
+        return last_item_id, final_result
 
-        return await self.storage.save_event(
-            before_send_ctx.dialog_item.model_copy(update={"external_id": external_id})
-        )
-
-    async def _send_blocks(self, run: RunCtx, blocks: list[LLMResponseBlock], last_item_id: int | None) -> int | None:
-        """Send all non-tool blocks to the user and persist them."""
+    async def _send_blocks(
+        self, run: RunCtx, blocks: list[LLMResponseBlock], last_item_id: int | None
+    ) -> None:
         for block in blocks:
-            last_item_id = await self._send_block(run, block, last_item_id)
-        return last_item_id
+            if isinstance(block, LLMResponseToolCallBlock):
+                continue
+
+            dialog_item = block.to_dialog_item(
+                role=DialogRole.ASSISTANT,
+                user=run.user,
+                origin=run.origin,
+                previous_item_id=last_item_id,
+            )
+
+            before_send_ctx = BeforeSendCtx(run=run, dialog_item=dialog_item)
+            await self.hook_manager.fire(HookEventType.BEFORE_SEND.value, before_send_ctx)
+
+            if run.connector:
+                external_id = await run.connector.send(run.origin, dialog_item)
+                dialog_item.external_id = external_id
+
+            saved_id = await self.storage.save_event(dialog_item)
+            if saved_id is not None:
+                dialog_item.item_id = saved_id
+                last_item_id = saved_id
 
     async def _handle_error(self, run: RunCtx, error: Exception) -> None:
-        """Fire on_error hook and re-raise unless a handler suppresses the exception."""
         ctx = OnErrorCtx(run=run, error=error)
         await self.hook_manager.fire(HookEventType.ON_ERROR.value, ctx)
         if not ctx.suppress:
             raise error
 
-    @staticmethod
-    def _split_runs(parsed: OnParsedCtx) -> Iterator[tuple[RunCtx, list[DialogItem]]]:
-        """Group parsed dialog items by origin and produce a RunCtx for each group."""
-        by_origin: dict[DialogOrigin, list[DialogItem]] = defaultdict(list)
-        for item in parsed.dialog_items:
-            by_origin[item.origin].append(item)
+    def _validate_response(self, response: LLMResponse, run: RunCtx) -> None:
+        if response.stop_reason == StopReason.ERROR:
+            raise LLMResponseError("LLM returned error stop reason")
+        if response.stop_reason == StopReason.MAX_TOKENS:
+            raise LLMTruncatedError("LLM response truncated (max_tokens)")
 
-        for origin, items in by_origin.items():
-            yield (
-                RunCtx(
-                    agent=parsed.agent,
-                    connector=parsed.connector,
-                    origin=origin,
-                    user=items[-1].user,
-                ),
-                items
+    def _split_runs(self, parsed: OnParsedCtx) -> list[tuple[RunCtx, list[DialogItem]]]:
+        by_origin: dict[str, list[DialogItem]] = defaultdict(list)
+        for item in parsed.dialog_items:
+            key = json.dumps(
+                item.origin.model_dump(mode="json"),
+                sort_keys=True,
+                separators=(",", ":"),
             )
+            by_origin[key].append(item)
+
+        result: list[tuple[RunCtx, list[DialogItem]]] = []
+        for items in by_origin.values():
+            first = items[0]
+            run = RunCtx(
+                agent=parsed.agent,
+                connector=parsed.connector,
+                origin=first.origin,
+                user=first.user,
+            )
+            result.append((run, items))
+        return result

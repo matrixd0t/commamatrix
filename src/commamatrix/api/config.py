@@ -2,30 +2,20 @@
 
 from __future__ import annotations
 
-import inspect
 from typing import Any, Generic, TypeVar
-
-from .storage import Storage
-from .file_storage import FileStorage
-from .llm_adapter import LLMAdapter
-from .connector import Connector
 
 T = TypeVar("T")
 _MISSING = object()
 
 
 class ConfigField(Generic[T]):
-    """A typed configuration schema field.
+    """Typed configuration schema field.
 
     Declare at module level as a schema for a configuration parameter.
     Used as dictionary keys in Agent config.
 
     A field without a default is intentionally validated lazily. The component
     that reads it owns the resulting runtime configuration error.
-
-    telegram_token = ConfigField[str](description="Bot token")
-
-    agent = Agent(config={telegram_token: "..."})
     """
 
     def __class_getitem__(cls, item):
@@ -37,24 +27,15 @@ class ConfigField(Generic[T]):
 
         return factory
 
-    def __init__(
-        self, default: T | None | object = _MISSING, *, description: str = ""
-    ) -> None:
+    def __init__(self, name: str = "", default: T | None | object = _MISSING, *, description: str = "") -> None:
         self._default = default
         self._description = description
-        self._name: str | None = None
+        self._name: str | None = name or None
 
-        frame = inspect.currentframe()
-        if frame is not None:
-            frame = frame.f_back
-        if frame is not None and frame.f_code.co_name == "factory":
-            frame = frame.f_back
-        if frame is not None:
-            for var_name, var_obj in frame.f_locals.items():
-                if var_obj is self:
-                    self._name = var_name
-                    break
-        del frame
+    def __set_name__(self, owner: type, name: str) -> None:
+        """Descriptor protocol: capture attribute name when used as a class variable."""
+        if not self._name:
+            self._name = name
 
     @property
     def default(self) -> T | None:
@@ -78,13 +59,7 @@ class Config:
 
     Resolves values from overrides first, then agent defaults, then field defaults.
     Plugin fields are not globally validated when a Config is created; missing
-    values fail when their owning component calls ``get()``.
-
-    agent = Agent(config={
-        storage_class: PostgresStorage,
-        postgres_dsn: "postgresql://...",
-        telegram_token: "bot-token",
-    })
+    values fail when their owning component calls get().
     """
 
     def __init__(
@@ -96,7 +71,6 @@ class Config:
         self._defaults: dict[ConfigField, Any] = dict(defaults or {})
 
     def get(self, field: ConfigField[T]) -> T:
-        """Resolve a field or raise when no value was configured."""
         if field in self._overrides:
             value = self._overrides[field]
         elif field in self._defaults:
@@ -111,24 +85,27 @@ class Config:
         raise RuntimeError(f"Missing configuration field: {field.name or '<unnamed>'}")
 
     def set(self, field: ConfigField[T], value: T) -> None:
-        """Override a field value at runtime."""
         self._overrides[field] = value
 
     def update_defaults(self, defaults: dict[ConfigField, Any]) -> None:
-        """Inject additional defaults (used by Agent for built-in services)."""
         for key, val in defaults.items():
             if key not in self._defaults:
                 self._defaults[key] = val
 
+    def has_override(self, field: ConfigField) -> bool:
+        return field in self._overrides
 
-# Builtin config field declarations for Agent services.
-# Values without defaults fail when the component first reads them. Components
-# own the timing and wording of configuration errors for their plugin.
-storage_class = ConfigField[type[Storage]](description="Storage backend class")
-file_storage_class = ConfigField[type[FileStorage]](
-    description="File storage backend class"
+    def __contains__(self, field: ConfigField) -> bool:
+        return field in self._overrides or field in self._defaults or field.has_default
+
+
+active_storage = ConfigField[str | None](
+    name="active_storage",
+    default=None,
+    description="Descriptor id of the active storage, or None for first available",
 )
-llm_adapter_class = ConfigField[type[LLMAdapter]](description="LLM adapter class")
-connector_classes = ConfigField[list[type[Connector]] | None](
-    default=None, description="Connector classes (None = auto-discover)"
+active_file_storage = ConfigField[str | None](
+    name="active_file_storage",
+    default=None,
+    description="Descriptor id of the active file storage, or None for first available",
 )

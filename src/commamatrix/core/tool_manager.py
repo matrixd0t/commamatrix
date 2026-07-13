@@ -12,20 +12,24 @@ from ..builtin.python.tool_source import PythonToolSource
 
 
 class ToolManager(ExtensionManager[ToolDescriptor]):
-    """
-    Manager for tool descriptors.
+    """Manager for tool descriptors.
 
-    Maintains an alias → descriptors map for virtual imports and
-    provides both raw ``invoke()`` and agent-loop-safe ``call()``
-    execution.
+    Maintains an alias -> descriptors map for virtual imports and
+    provides both raw invoke() and agent-loop-safe call() execution.
     """
 
     def __init__(self) -> None:
         super().__init__()
-        self.mount(PythonToolSource())
+        self._python_source = PythonToolSource()
+        self.mount(self._python_source)
         self._by_alias: dict[str, list[ToolDescriptor]] = {}
         self._by_name: dict[str, list[ToolDescriptor]] = {}
+        self._by_exported_name: dict[str, list[ToolDescriptor]] = {}
         self._schemas: list[dict[str, Any]] = []
+
+    def set_scope(self, scope: list[str]) -> None:
+        """Point the underlying Python source at scope."""
+        self._python_source.set_scope(scope)
 
     @property
     def fingerprint(self) -> str | None:
@@ -36,16 +40,20 @@ class ToolManager(ExtensionManager[ToolDescriptor]):
         return self._schemas
 
     def resolve(self, name: str) -> ToolDescriptor | None:
-        """
-        Resolve a tool by name.
+        """Resolve a tool by name.
 
         Resolution order:
-        1. Full ``id`` (e.g. ``python://ns/name``).
-        2. ``alias`` (O(1) via index).
-        3. ``name`` (O(1) via index, first match).
+        1. Full id (e.g. python://ns/name).
+        2. exported_name (O(1) via index).
+        3. alias (O(1) via index).
+        4. name (O(1) via index, first match).
         """
         if name in self._descriptors:
             return self._descriptors[name]
+
+        by_exported = self._by_exported_name.get(name)
+        if by_exported:
+            return by_exported[0]
 
         by_alias = self._by_alias.get(name)
         if by_alias:
@@ -59,12 +67,10 @@ class ToolManager(ExtensionManager[ToolDescriptor]):
 
     @property
     def modules(self) -> dict[str, list[ToolDescriptor]]:
-        """
-        Tools grouped by virtual module name.
+        """Tools grouped by virtual module name.
 
         Aliases and simple namespaces become virtual Python modules for
-        CodeAct (``from github import tool_name``). The descriptors under
-        each module name become its callable attributes.
+        CodeAct. The descriptors under each module name become its callable attributes.
         """
         return self._by_alias
 
@@ -73,38 +79,22 @@ class ToolManager(ExtensionManager[ToolDescriptor]):
         return alias in self._by_alias
 
     def find_alias(self, alias: str) -> list[ToolDescriptor]:
-        """
-        Return all descriptors under *alias*.
-
-        Returns an empty list if the alias is unknown.
-        """
+        """Return all descriptors under alias."""
         return self._by_alias.get(alias, [])
 
     async def invoke(self, descriptor: ToolDescriptor, kwargs: dict[str, Any], ctx: BeforeToolCallCtx | None = None) -> Any:
-        """
-        Execute a tool and return the **raw** result (not wrapped in ``ToolCallResult``).
+        """Execute a tool and return the raw result (not wrapped in ToolCallResult).
 
-        Used by CodeAct virtual-import proxy functions — they need the
-        actual return value (e.g. a dict, a list), not a stringified version.
-        Errors propagate upward for the CodeAct executor to handle.
-
-        *ctx* is forwarded to the underlying ``ToolSource.invoke()`` for
-        type-based injection into the tool function.
+        Used by CodeAct virtual-import proxy functions. Errors propagate upward.
+        ctx is forwarded to the underlying ToolSource.invoke() for type-based injection.
         """
         return await self._source_of(descriptor).invoke(descriptor, kwargs, ctx=ctx)
 
     async def call(self, tool_call: ToolCall, ctx: BeforeToolCallCtx | None = None) -> ToolCallResult:
-        """
-        Resolve a tool by ``tool_call.tool_name`` and execute it.
+        """Resolve a tool by tool_call.tool_name and execute it.
 
-        Returns a ``ToolCallResult`` with the raw Python result in ``content``
+        Returns a ToolCallResult with the raw Python result in content
         and graceful error handling — designed for the standard agent loop.
-
-        ctx is forwarded to the underlying ``ToolSource.invoke()`` for
-        type-based injection into the tool function.
-
-        Errors during execution are caught and returned as a ``ToolCallResult``
-        with an error message, rather than raising.
         """
         descriptor = self.resolve(tool_call.tool_name)
         if descriptor is None:
@@ -128,15 +118,45 @@ class ToolManager(ExtensionManager[ToolDescriptor]):
         )
 
     def _rebuild(self) -> None:
-        """Rebuild the alias/name → descriptors maps and schema cache."""
+        """Rebuild the alias/name -> descriptors maps and schema cache."""
         by_alias: dict[str, list[ToolDescriptor]] = {}
         by_name: dict[str, list[ToolDescriptor]] = {}
+        by_exported: dict[str, list[ToolDescriptor]] = {}
         for descriptor in self.descriptors:
             by_alias.setdefault(descriptor.alias, []).append(descriptor)
             if descriptor.namespace != descriptor.alias:
                 by_alias.setdefault(descriptor.namespace, []).append(descriptor)
             by_name.setdefault(descriptor.name, []).append(descriptor)
+            by_exported.setdefault(descriptor.exported_name, []).append(descriptor)
         self._by_alias = by_alias
         self._by_name = by_name
+        self._by_exported_name = by_exported
+        self._schemas = []
+        for descriptor in self.descriptors:
+            schema = dict(descriptor.schema)
+            schema["name"] = descriptor.exported_name
+            self._schemas.append(schema)
 
-        self._schemas = [descriptor.schema for descriptor in self.descriptors]
+    @property
+    def tool_tree(self) -> dict[str, Any]:
+        """Nested dict of alias -> {__tools__: [descriptor dicts]} for CodeAct worker."""
+        tree: dict[str, Any] = {}
+        for alias, descriptors in self._by_alias.items():
+            parts = alias.split(".")
+            node = tree
+            for part in parts[:-1]:
+                node = node.setdefault(part, {})
+            leaf = parts[-1]
+            node.setdefault(leaf, {})
+            node[leaf].setdefault("__tools__", [])
+            for d in descriptors:
+                if any(existing["id"] == d.id for existing in node[leaf]["__tools__"]):
+                    continue
+                node[leaf]["__tools__"].append({
+                    "id": d.id,
+                    "name": d.name,
+                    "doc": d.doc,
+                    "schema": d.schema,
+                    "metadata": d.metadata,
+                })
+        return tree

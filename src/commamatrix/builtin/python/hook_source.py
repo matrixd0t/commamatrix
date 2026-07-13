@@ -6,11 +6,17 @@ import inspect
 import weakref
 from typing import Any, cast
 
-from ...api.hooks import HOOK_ATTRIBUTE, HOOK_MODULES, HookDescriptor, HookSource
+from ...api.hooks import HOOK_ATTRIBUTE, HookDescriptor, HookSource
 from .extension_source import PythonExtensionSource
 
 
 class PythonHookSource(PythonExtensionSource[HookDescriptor], HookSource):
+    """Python-backed hook source.
+
+    Discovers @hook-decorated functions via module scanning and
+    stores their handlers for execution.
+    """
+
     def __init__(self) -> None:
         super().__init__()
         self._handlers: dict[str, Any] = {}
@@ -18,10 +24,6 @@ class PythonHookSource(PythonExtensionSource[HookDescriptor], HookSource):
     def scan(self) -> list[HookDescriptor]:
         self._handlers.clear()
         return super().scan()
-
-    @property
-    def extension_modules(self) -> set[str]:
-        return HOOK_MODULES
 
     @property
     def marker_attribute(self) -> str:

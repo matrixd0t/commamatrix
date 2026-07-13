@@ -7,7 +7,6 @@ from typing import cast
 
 from ...api.connector import (
     CONNECTOR_ATTRIBUTE,
-    CONNECTOR_MODULES,
     Connector,
     ConnectorDescriptor,
     ConnectorSource,
@@ -15,20 +14,20 @@ from ...api.connector import (
 from .extension_source import PythonExtensionSource
 
 
-class PythonConnectorSource(
-    PythonExtensionSource[ConnectorDescriptor], ConnectorSource
-):
-    @property
-    def extension_modules(self) -> set[str]:
-        return CONNECTOR_MODULES
+class PythonConnectorSource(PythonExtensionSource[ConnectorDescriptor], ConnectorSource):
+    """Python-backed connector source.
+
+    Discovers Connector subclasses via module scanning.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
 
     @property
     def marker_attribute(self) -> str:
         return CONNECTOR_ATTRIBUTE
 
-    def build_descriptor(
-        self, object_name: str, obj: object
-    ) -> ConnectorDescriptor | None:
+    def build_descriptor(self, object_name: str, obj: object) -> ConnectorDescriptor | None:
         connector_cls = cast(type[Connector], obj)
         return ConnectorDescriptor(
             id=f"connector://{connector_cls.__module__}/{object_name}",

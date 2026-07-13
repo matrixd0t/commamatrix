@@ -262,3 +262,6 @@ class SqlStorage(Storage, ABC):
 
     async def close(self) -> None:
         await self._close()
+
+    async def stop(self) -> None:
+        await self._close()

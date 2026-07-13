@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import StrEnum
 from uuid import uuid4
@@ -23,34 +23,20 @@ CtxT = TypeVar("CtxT")
 type Handler[CtxT] = Callable[[CtxT], object | Awaitable[object]]
 
 HOOK_ATTRIBUTE = "__commamatrix_hook__"
-HOOK_MODULES: set[str] = set()
 
 
 @dataclass(frozen=True, slots=True)
 class Hook(Generic[CtxT]):
-    """
-    Typed decorator for hook handlers.
+    """Typed decorator for hook handlers.
 
-    Does NOT register handlers directly — only stamps the function with
-    metadata (``HOOK_ATTRIBUTE``) and records its module in
-    ``HOOK_MODULES``.  Actual registration happens when a
-    ``PythonHookSource`` scans those modules.
-
-    Usage::
-
-        @before_run
-        async def my_handler(ctx: BeforeRunCtx) -> None: ...
-
-        @before_run(priority=10)
-        async def my_handler(ctx: BeforeRunCtx) -> None: ...
+    Stamps the function with metadata. Actual registration happens when
+    a PythonHookSource scans scoped modules.
     """
 
     _event: HookEventType
     _ctx_type: type[CtxT]
 
-    def __call__(
-        self, fn: Handler[CtxT] | None = None, /, priority: int = 0
-    ) -> Handler[CtxT]:
+    def __call__(self, fn: Handler[CtxT] | None = None, /, priority: int = 0) -> Handler[CtxT]:
         def decorator(f: Handler[CtxT]) -> Handler[CtxT]:
             setattr(
                 f,
@@ -60,7 +46,6 @@ class Hook(Generic[CtxT]):
                     "priority": priority,
                 },
             )
-            HOOK_MODULES.add(f.__module__)
             return f
 
         if fn is not None:
@@ -73,18 +58,11 @@ class Hook(Generic[CtxT]):
 
 @dataclass(frozen=True, slots=True)
 class HookDescriptor(ExtensionDescriptor):
-    """
-    Declarative descriptor of a single hook registration.
+    """Declarative descriptor of a single hook registration.
 
-    Unlike the old registry-based approach, this descriptor is completely
-    source-agnostic — it only declares *when* to fire (``event``) and in
-    what *order* (``priority``).  The owning source keeps the executable
+    Source-agnostic — declares when to fire (event) and in
+    what order (priority). The owning source keeps the executable
     handler separately from the descriptor.
-
-    Fields:
-        event:  Event identifier (e.g. ``"before_llm_call"``).
-        priority:  Execution order — lower runs first.
-        metadata:  Source-specific data (e.g. the Python callable).
     """
 
     event: str
@@ -100,12 +78,8 @@ class HookDescriptor(ExtensionDescriptor):
         }
 
 
-class HookSource(ExtensionSource[HookDescriptor]):
+class HookSource(ExtensionSource[HookDescriptor], ABC):
     """Abstract source of hook descriptors and their handlers."""
-
-    @abstractmethod
-    def scan(self) -> list[HookDescriptor]:
-        raise NotImplementedError
 
     @abstractmethod
     async def invoke(self, descriptor: HookDescriptor, ctx: object) -> object:
@@ -136,14 +110,7 @@ class BaseEventCtx:
 
 @dataclass(slots=True, kw_only=True)
 class RunCtx:
-    """
-    Shared mutable state for a single agentic loop run.
-
-    Created once per ``Agent.run()`` invocation and passed through all
-    hooks in that run.  Hooks can read/write ``state`` to share data
-    across lifecycle stages.  ``agent`` provides access to the full
-    Agent, its ToolManager, Storage, hooks, etc.
-    """
+    """Shared mutable state for a single agentic loop run."""
 
     agent: Agent
     connector: Connector | None = None
@@ -156,15 +123,11 @@ class RunCtx:
 
 @dataclass(slots=True, kw_only=True)
 class OnAgentStartCtx(BaseEventCtx):
-    """Fired on ``Agent.start()``"""
-
     agent: Agent
 
 
 @dataclass(slots=True, kw_only=True)
 class OnParsedCtx(BaseEventCtx):
-    """Fired after a connector parses an incoming raw event into dialog items."""
-
     agent: Agent
     connector: Connector
     raw: dict
@@ -174,15 +137,12 @@ class OnParsedCtx(BaseEventCtx):
 
 @dataclass(slots=True, kw_only=True)
 class BeforeRunCtx(BaseEventCtx):
-    """Fired before the agentic loop starts. Set ``abort=True`` to skip the run."""
-
     run: RunCtx
     abort: bool = False
 
 
 @dataclass(slots=True, kw_only=True)
 class BeforeLlmCallCtx(BaseEventCtx):
-    """Fired before each LLM call. Hooks can modify model, dialog, tools, or params."""
     run: RunCtx
     model: str | None = None
     dialog: list[DialogItem]
@@ -192,16 +152,12 @@ class BeforeLlmCallCtx(BaseEventCtx):
 
 @dataclass(slots=True, kw_only=True)
 class AfterLlmCallCtx(BaseEventCtx):
-    """Fired after the LLM returns a response. Hooks can inspect or modify the response."""
-
     run: RunCtx
     response: LLMResponse
 
 
 @dataclass(slots=True, kw_only=True)
 class BeforeToolCallCtx(BaseEventCtx):
-    """Fired before a tool is executed. Set ``abort_tool_call=True`` to skip it."""
-
     run: RunCtx
     tool_call: ToolCall
     abort_tool_call: bool = False
@@ -210,8 +166,6 @@ class BeforeToolCallCtx(BaseEventCtx):
 
 @dataclass(slots=True, kw_only=True)
 class AfterToolCallCtx(BaseEventCtx):
-    """Fired after a tool call completes, with the result."""
-
     run: RunCtx
     tool_call: ToolCall
     result: ToolCallResult
@@ -219,16 +173,12 @@ class AfterToolCallCtx(BaseEventCtx):
 
 @dataclass(slots=True, kw_only=True)
 class BeforeSendCtx(BaseEventCtx):
-    """Fired before a dialog item is sent to the user via the connector."""
-
     run: RunCtx
     dialog_item: DialogItem
 
 
 @dataclass(slots=True, kw_only=True)
 class OnErrorCtx(BaseEventCtx):
-    """Fired when an exception occurs during the run. Set ``suppress=True`` to swallow it."""
-
     run: RunCtx
     error: Exception
     suppress: bool = False
@@ -236,13 +186,10 @@ class OnErrorCtx(BaseEventCtx):
 
 @dataclass(slots=True, kw_only=True)
 class AfterRunCtx(BaseEventCtx):
-    """Fired after the run finishes (always, even on error — in ``finally``)."""
-
     run: RunCtx
     error: Exception | None = None
 
 
-# Typed decorator instances for each event
 on_agent_start = Hook(HookEventType.ON_AGENT_START, OnAgentStartCtx)
 on_parsed = Hook(HookEventType.ON_PARSED, OnParsedCtx)
 before_run = Hook(HookEventType.BEFORE_RUN, BeforeRunCtx)

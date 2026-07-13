@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 import sys
 from abc import abstractmethod
 from collections.abc import Iterable
@@ -15,16 +14,24 @@ D = TypeVar("D", bound=ExtensionDescriptor)
 
 
 class PythonExtensionSource(ExtensionSource[D], Generic[D]):
-    """
-    Base class for Python-backed extension sources.
+    """Base class for Python-backed extension sources.
 
-    Scans registered Python modules for objects marked with a specific
-    attribute and delegates descriptor construction to subclasses.
+    Scans modules from a caller-provided scope set for objects marked
+    with a specific attribute. Only objects whose __module__ matches the
+    scanned module name are considered — re-exports are ignored.
+    Subclasses define marker_attribute and build_descriptor.
     """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._scope: list[str] = []
 
     @property
-    @abstractmethod
-    def extension_modules(self) -> set[str]: ...
+    def extension_modules(self) -> list[str]:
+        return self._scope
+
+    def set_scope(self, scope: list[str]) -> None:
+        self._scope = scope
 
     @property
     @abstractmethod
@@ -34,21 +41,23 @@ class PythonExtensionSource(ExtensionSource[D], Generic[D]):
     def build_descriptor(self, object_name: str, obj: object) -> D | None: ...
 
     def iter_objects(self) -> Iterable[tuple[str, object]]:
-        for module_name in sorted(self.extension_modules):
+        for module_name in self._scope:
             module = sys.modules.get(module_name)
             if module is None:
                 continue
-
-            for object_name, obj in inspect.getmembers(module):
-                if hasattr(obj, self.marker_attribute):
-                    yield object_name, obj
+            for object_name, obj in vars(module).items():
+                if object_name.startswith("_"):
+                    continue
+                if not hasattr(obj, self.marker_attribute):
+                    continue
+                if getattr(obj, "__module__", None) != module_name:
+                    continue
+                yield object_name, obj
 
     def scan(self) -> list[D]:
         descriptors: list[D] = []
-
         for name, obj in self.iter_objects():
             descriptor = self.build_descriptor(name, obj)
             if descriptor is not None:
                 descriptors.append(descriptor)
-
         return descriptors

@@ -15,7 +15,7 @@ D = TypeVar("D", bound="ExtensionDescriptor")
 InvalidationCallback = Callable[[], None]
 
 
-class ExtensionSource(ABC, Generic[D]):
+class ExtensionSource(Generic[D], ABC):
     """Discover extensions and notify managers when a source becomes unavailable."""
 
     def __init__(self) -> None:

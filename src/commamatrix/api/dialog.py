@@ -32,7 +32,7 @@ class DialogRole(StrEnum):
     TOOL = "tool"
 
 
-class DialogOrigin(ABC, BaseModel):
+class DialogOrigin(BaseModel, ABC):
     """
     A set of field-value pairs encoding some kind of communication channel.
     Any context has a 'platform', additinal fields may appear.

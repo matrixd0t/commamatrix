@@ -2,10 +2,9 @@
 
 """CodeAct worker — runs in a child Python process.
 
-Reads a JSON payload from stdin (code + namespace), sets up RPC-backed
-virtual imports (``context``, tool modules), executes the code, and
-writes the execution result (stdout, stderr, returncode, elapsed) back
-to stdout as JSON.
+Reads a JSON payload from stdin (code + namespace + tool_tree), sets up
+RPC-backed virtual imports (``context``, tool modules), executes the code,
+and writes the execution result back to stdout as JSON.
 """
 
 import ast
@@ -22,7 +21,7 @@ import uuid
 from importlib.abc import MetaPathFinder
 from importlib.machinery import ModuleSpec
 from types import ModuleType
-from typing import Any
+from typing import Any, Callable
 
 
 # ── I/O setup ────────────────────────────────────────────────────────
@@ -92,9 +91,10 @@ class _ToolsAccessor:
     def __init__(self, client):
         self._client = client
 
-    async def invoke(self, tool_name, args=None):
+    async def invoke(self, tool_name, args=None, tool_id=""):
         return await self._client.acall("tools.invoke", {"tool_call": {
             "tool_call_id": "", "tool_name": tool_name, "tool_args": args or {},
+            "tool_id": tool_id,
         }})
 
     async def search(self, query, limit=5):
@@ -157,12 +157,14 @@ def _signature(schema, metadata=None):
 def _make_tool_proxy(client, descriptor):
     signature, annotations = _signature(descriptor.get("schema", {}), descriptor.get("metadata", {}))
     name = descriptor["name"]
+    tool_id = descriptor.get("id", "")
 
     async def proxy(*args, **kwargs):
         bound = signature.bind(*args, **kwargs)
         bound.apply_defaults()
         return await client.acall("tools.invoke", {"tool_call": {
             "tool_call_id": "", "tool_name": name, "tool_args": dict(bound.arguments),
+            "tool_id": tool_id,
         }})
 
     proxy.__name__ = name
@@ -185,14 +187,34 @@ def make_context(client):
     return module
 
 
-def make_tool_module(alias, client):
-    module = ModuleType(alias)
-    descriptors = client.call("tools.list", {"alias": alias}) or []
+# ── Recursive module tree from tool_tree ─────────────────────────────
+
+_modules_cache: dict[str, ModuleType] = {}
+_factories: dict[str, Callable[..., Any]] = {}
+
+
+def make_context_module(fullname, node, client):
+    module = ModuleType(fullname)
+    module.__path__ = []
+    module.__package__ = fullname
+    _modules_cache[fullname] = module
+
     names = []
-    for descriptor in descriptors:
+    for descriptor in node.get("__tools__", []):
         name = descriptor["name"]
         setattr(module, name, _make_tool_proxy(client, descriptor))
         names.append(name)
+
+    for child_name, child_node in node.items():
+        if child_name == "__tools__":
+            continue
+        child_fullname = f"{fullname}.{child_name}"
+        if child_fullname not in _factories:
+            _factories[child_fullname] = lambda cn=child_fullname, nd=child_node: make_context_module(cn, nd, client)
+        child = _factories[child_fullname]()
+        setattr(module, child_name, child)
+        names.append(child_name)
+
     module.__all__ = names
     return module
 
@@ -201,17 +223,19 @@ def make_tool_module(alias, client):
 
 class _Finder(MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if "." in fullname or fullname not in modules:
+        if fullname not in _factories:
             return None
-        return ModuleSpec(fullname, _Loader(modules[fullname]))
+        return ModuleSpec(fullname, _Loader(fullname))
 
 
 class _Loader:
-    def __init__(self, factory):
-        self._factory = factory
+    def __init__(self, fullname):
+        self._fullname = fullname
 
     def create_module(self, spec):
-        return self._factory()
+        if self._fullname in _modules_cache:
+            return _modules_cache[self._fullname]
+        return _factories[self._fullname]()
 
     def exec_module(self, module):
         pass
@@ -223,12 +247,13 @@ def main():
     payload = json.loads(stdin_bin.readline())
     code = payload["code"]
     namespace = payload.get("namespace") or {"__name__": "__codeact__"}
+    tool_tree = payload.get("tool_tree") or {}
 
     client = _RPCClient(stdin_bin, stdout_bin)
 
-    modules = {"context": lambda: make_context(client)}
-    for alias in client.call("tools.aliases", {}) or []:
-        modules[alias] = lambda a=alias: make_tool_module(a, client)
+    _factories["context"] = lambda: make_context(client)
+    for alias, node in tool_tree.items():
+        _factories[alias] = lambda a=alias, n=node: make_context_module(a, n, client)
     sys.meta_path.insert(0, _Finder())
 
     stdout_buf = io.StringIO()

@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     from ..core.agent import Agent
 
 CONNECTOR_ATTRIBUTE = "__commamatrix_connector__"
-CONNECTOR_MODULES: set[str] = set()
 
 type OnEvent = Callable[[dict], Awaitable[None]]
 
@@ -35,35 +34,28 @@ type OnEvent = Callable[[dict], Awaitable[None]]
 OrgT = TypeVar("OrgT", bound=DialogOrigin)
 
 
-class Connector(ABC, Generic[OrgT]):
-    """
-    Abstract connector. Concrete subclasses auto-register their module
-    in __init_subclass__ for later scanning by PythonConnectorSource.
-    """
+class Connector(Generic[OrgT], ABC):
+    """Abstract connector. Concrete subclasses auto-register their module
+    in __init_subclass__ for later scanning by PythonConnectorSource."""
 
     origin_type: ClassVar[type | None] = None
 
     def __init__(self, config: Config) -> None:
-        """Initialize from per-agent Config. Subclasses read their fields via config.get(field)."""
         self._listener_task: asyncio.Task | None = None
 
     @property
     def listener_task(self) -> asyncio.Task | None:
-        """Return this connector's listener task, if one is running."""
         return getattr(self, "_listener_task", None)
 
     def start_listening(self, on_event: OnEvent) -> asyncio.Task:
-        """Start one listener task owned by this connector instance."""
         current = self.listener_task
         if current is not None and not current.done():
             return current
-
         task = asyncio.create_task(self.listen(on_event))
         self._listener_task = task
         return task
 
     async def stop_listening(self) -> None:
-        """Cancel and await this connector's listener task."""
         task = self.listener_task
         self._listener_task = None
         if task is None or task.done():
@@ -86,7 +78,6 @@ class Connector(ABC, Generic[OrgT]):
 
         if not getattr(cls, "__abstractmethods__", None):
             setattr(cls, CONNECTOR_ATTRIBUTE, True)
-            CONNECTOR_MODULES.add(cls.__module__)
 
     @abstractmethod
     async def parse(self, data: dict, agent: Agent) -> OnParsedCtx | None: ...
@@ -114,7 +105,5 @@ class ConnectorDescriptor(ExtensionDescriptor):
         }
 
 
-class ConnectorSource(ExtensionSource[ConnectorDescriptor]):
-    @abstractmethod
-    def scan(self) -> list[ConnectorDescriptor]:
-        raise NotImplementedError
+class ConnectorSource(ExtensionSource[ConnectorDescriptor], ABC):
+    pass

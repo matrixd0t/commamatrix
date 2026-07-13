@@ -36,10 +36,12 @@ class SubprocessBackend(ExecutionBackend):
 
     async def execute(self, code: str, ctx: BeforeToolCallCtx, namespace: dict[str, Any] | None = None) -> ExecutionResult:
         server = RPCServer(ctx)
+        tool_tree = ctx.run.agent.tool_manager.tool_tree
         payload = {
             "code": code,
             "namespace": namespace or {"__name__": "__codeact__"},
             "timeout": self._timeout,
+            "tool_tree": tool_tree,
         }
 
         proc = await asyncio.create_subprocess_exec(

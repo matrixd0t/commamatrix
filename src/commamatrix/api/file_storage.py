@@ -2,19 +2,28 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import TYPE_CHECKING
+
+from .service import Service
 
 if TYPE_CHECKING:
     from .config import Config
 
+FILE_STORAGE_ATTRIBUTE = "__commamatrix_file_storage__"
 
-class FileStorage(ABC):
+
+class FileStorage(Service):
     """Abstract binary blob storage. Implementations persist files keyed by
     string IDs that embed the file extension (e.g. abc123.png)."""
 
     def __init__(self, config: Config) -> None:
-        """Initialize from per-agent Config. Subclasses read their fields via config.get(field)."""
+        super().__init__(config)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        if not getattr(cls, "__abstractmethods__", None):
+            setattr(cls, FILE_STORAGE_ATTRIBUTE, True)
 
     @abstractmethod
     async def save(self, data: bytes, ext: str | None = None) -> str:

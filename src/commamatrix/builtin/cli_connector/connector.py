@@ -19,8 +19,8 @@ if TYPE_CHECKING:
 from .context import CliOrigin
 from .spawn import spawn_terminal_window
 
-cli_host = ConfigField[str](default='127.0.0.1', description='TCP host to listen on')
-cli_port = ConfigField[int](default=0, description='TCP port (0 = any free)')
+cli_host = ConfigField[str](name="cli_host", default='127.0.0.1', description='TCP host to listen on')
+cli_port = ConfigField[int](name="cli_port", default=0, description='TCP port (0 = any free)')
 
 
 class CliConnector(Connector[CliOrigin]):

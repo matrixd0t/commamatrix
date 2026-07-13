@@ -1,23 +1,11 @@
 # builtin/codeact/hooks.py
 
-"""Lifecycle hooks that install CodeAct on agent start and filter tools before LLM calls."""
+"""Lifecycle hooks for CodeAct — filters tools before LLM calls."""
 
 from __future__ import annotations
 
-from ...api.hooks import OnAgentStartCtx, BeforeLlmCallCtx, on_agent_start, before_llm_call
-from .executor.subprocess import SubprocessBackend
+from ...api.hooks import BeforeLlmCallCtx, before_llm_call
 from .manager import CodeActManager
-from .search.bm25 import BM25ToolSearcher
-
-
-@on_agent_start
-async def install_codeact(ctx: OnAgentStartCtx) -> None:
-    """Create and register the CodeAct manager as an agent service."""
-    manager = CodeActManager(backend=SubprocessBackend(), searcher=BM25ToolSearcher())
-    await manager.start()
-    ctx.agent.services[CodeActManager] = manager
-    ctx.agent.tool_manager.scan()
-    ctx.agent.hook_manager.scan()
 
 
 @before_llm_call

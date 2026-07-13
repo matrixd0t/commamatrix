@@ -9,11 +9,14 @@ from typing import Any, TYPE_CHECKING
 from json import dumps
 
 from .dialog import DialogItem, DialogItemType, DialogRole, DialogOrigin
-from .serialization import to_jsonable
+from .utils import to_jsonable
+from .service import Service
 
 if TYPE_CHECKING:
     from .config import Config
     from .hooks import BeforeLlmCallCtx
+
+LLM_ADAPTER_ATTRIBUTE = "__commamatrix_llm_adapter__"
 
 
 class LLMError(Exception):
@@ -138,7 +141,7 @@ class LLMResponseToolCallBlock(LLMResponseBlock):
 
 @dataclass(slots=True, kw_only=True)
 class LLMResponse:
-    stop_reason: StopReason
+    stop_reason: StopReason = StopReason.END_TURN
     content: list[LLMResponseBlock] = field(default_factory=list)
     usage: Usage | None = None
     model: str | None = None
@@ -146,9 +149,11 @@ class LLMResponse:
     meta: dict[str, Any] = field(default_factory=dict)
 
 
-class LLMAdapter(ABC):
-    def __init__(self, config: Config) -> None:
-        """Initialize from per-agent Config. Subclasses read their fields via config.get(field)."""
+class LLMAdapter(Service):
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        if not getattr(cls, "__abstractmethods__", None):
+            setattr(cls, LLM_ADAPTER_ATTRIBUTE, True)
 
     @abstractmethod
     async def ask_llm(self, ctx: BeforeLlmCallCtx) -> LLMResponse:

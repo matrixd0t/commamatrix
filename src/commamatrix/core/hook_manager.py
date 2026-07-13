@@ -10,25 +10,24 @@ from ..builtin.python.hook_source import PythonHookSource
 
 
 class HookManager(ExtensionManager[HookDescriptor]):
-    """
-    Manager for hook descriptors.
+    """Manager for hook descriptors.
 
-    Groups descriptors by ``event`` and fires them in priority order
-    via their source's ``invoke()`` method.
+    Groups descriptors by event and fires them in priority order
+    via their source's invoke() method.
     """
 
     def __init__(self) -> None:
         super().__init__()
-        self.mount(PythonHookSource())
+        self._python_source = PythonHookSource()
+        self.mount(self._python_source)
         self._handlers: dict[str, list[HookDescriptor]] = {}
 
-    async def fire(self, event: str, ctx: Any) -> None:
-        """
-        Execute all hooks registered for *event* in priority order.
+    def set_scope(self, scope: list[str]) -> None:
+        """Point the underlying Python source at scope."""
+        self._python_source.set_scope(scope)
 
-        Each handler is dispatched through its source's ``invoke()``,
-        which supports both sync and async implementations.
-        """
+    async def fire(self, event: str, ctx: Any) -> None:
+        """Execute all hooks registered for event in priority order."""
         for descriptor in self._handlers.get(event, []):
             await self._source_of(descriptor).invoke(descriptor, ctx)
 

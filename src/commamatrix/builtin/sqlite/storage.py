@@ -9,7 +9,7 @@ from ..sql.storage import SqlStorage
 from ...api.config import ConfigField, Config
 
 sqlite_path = ConfigField[str](
-    default="db.sqlite", description="Path to SQLite database file"
+    name="sqlite_path", default="db.sqlite", description="Path to SQLite database file"
 )
 
 
@@ -23,23 +23,17 @@ class SqliteStorage(SqlStorage):
         db.row_factory = aiosqlite.Row
         return db
 
-    async def _execute(
-        self, db: aiosqlite.Connection, query: str, params: tuple = ()
-    ) -> Any:
+    async def _execute(self, db: aiosqlite.Connection, query: str, params: tuple = ()) -> Any:
         return await db.execute(query, params)
 
-    async def _fetchall(
-        self, db: aiosqlite.Connection, query: str, params: tuple = ()
-    ) -> list:
+    async def _fetchall(self, db: aiosqlite.Connection, query: str, params: tuple = ()) -> list:
         return list(await db.execute_fetchall(query, params))
 
     async def _columns(self, db: aiosqlite.Connection) -> set[str]:
         rows = await db.execute_fetchall("PRAGMA table_info(dialog_items)")
         return {row[1] for row in rows}
 
-    async def _insert(
-        self, db: aiosqlite.Connection, query: str, params: tuple = ()
-    ) -> int | None:
+    async def _insert(self, db: aiosqlite.Connection, query: str, params: tuple = ()) -> int | None:
         cursor = await db.execute(query, params)
         await self._commit(db)
         return cursor.lastrowid

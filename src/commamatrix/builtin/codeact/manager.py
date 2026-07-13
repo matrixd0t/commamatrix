@@ -6,25 +6,30 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .executor.backend import ExecutionBackend, ExecutionResult
-from .search.api import ToolSearcher
+from .executor.backend import ExecutionResult
 from ...api.hooks import BeforeToolCallCtx
 from ...api.llm_adapter import ToolCall
+from ...api.service import Service
+from ...api.config import Config
 
 if TYPE_CHECKING:
     from ...api.hooks import RunCtx
     from ...api.tool import ToolDescriptor
 
 
-class CodeActManager:
+class CodeActManager(Service):
     """Owns the execution backend, tool searcher, and nested tool gateway.
 
-    Registered as an agent service during ``on_agent_start``.
+    Discovered automatically as a Service when the codeact package is
+    imported and added to an agent's extension scope.
     """
 
-    def __init__(self, backend: ExecutionBackend, searcher: ToolSearcher) -> None:
-        self.backend = backend
-        self.searcher = searcher
+    def __init__(self, config: Config, **kwargs: Any) -> None:
+        super().__init__(config=config)
+        from .executor.subprocess import SubprocessBackend
+        from .search.bm25 import BM25ToolSearcher
+        self.backend = kwargs.get('backend') or SubprocessBackend()
+        self.searcher = kwargs.get('searcher') or BM25ToolSearcher()
 
     async def start(self) -> None:
         await self.backend.start()
