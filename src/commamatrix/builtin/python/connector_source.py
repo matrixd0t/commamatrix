@@ -31,6 +31,7 @@ class PythonConnectorSource(PythonExtensionSource[ConnectorDescriptor], Connecto
         connector_cls = cast(type[Connector], obj)
         return ConnectorDescriptor(
             id=f"connector://{connector_cls.__module__}/{object_name}",
+            service_cls=connector_cls,
             connector_cls=connector_cls,
             metadata={},
             _source_ref=weakref.ref(self),

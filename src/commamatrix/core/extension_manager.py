@@ -13,14 +13,14 @@ from ..extensions import (
     ExtensionUnavailableError,
     StaleExtensionError,
 )
-from ..api.service import Service
+from ..api.service import AbstractService
 from ..api.utils import await_if_needed
 
 
 D = TypeVar("D", bound=ExtensionDescriptor)
 
 
-class ExtensionManager(Service, Generic[D]):
+class ExtensionManager(AbstractService, Generic[D]):
     """Manage extension sources, descriptors, indexes, and invalidation.
 
     Scan() rescans all mounted sources and rebuilds internal indexes
@@ -92,6 +92,7 @@ class ExtensionManager(Service, Generic[D]):
         for source in self._sources:
             source.restore()
             await await_if_needed(source.start())
+        await self.refresh()
 
     async def stop(self) -> None:
         for source in reversed(self._sources):

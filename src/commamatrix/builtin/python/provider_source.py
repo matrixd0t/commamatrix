@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import weakref
 
-from ...api.service import Service, ServiceDescriptor
+from ...api.service import AbstractService, ServiceDescriptor
 from .extension_source import PythonExtensionSource
 
 
@@ -15,7 +15,7 @@ class PythonProviderSource(PythonExtensionSource[ServiceDescriptor]):
     the specified marker attribute. Returns ServiceDescriptor instances.
     """
 
-    def __init__(self, base_type: type[Service], marker_attribute: str, id_prefix: str) -> None:
+    def __init__(self, base_type: type[AbstractService], marker_attribute: str, id_prefix: str) -> None:
         super().__init__()
         self._base_type = base_type
         self._marker = marker_attribute

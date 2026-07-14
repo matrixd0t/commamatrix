@@ -38,7 +38,7 @@ from ..api.llm_adapter import (
     ToolCallResult,
 )
 from .runner import AgentRunner
-from .service import ServiceManager
+from .composite import ServiceManager
 
 
 class Agent:

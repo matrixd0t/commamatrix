@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import weakref
-from ...api.service import Service, SERVICE_ATTRIBUTE, ServiceDescriptor
+from ...api.service import AbstractService, SERVICE_ATTRIBUTE, ServiceDescriptor
 from ...api.storage import STORAGE_ATTRIBUTE
 from ...api.file_storage import FILE_STORAGE_ATTRIBUTE
 from ...api.llm_adapter import LLM_ADAPTER_ATTRIBUTE
@@ -12,7 +12,7 @@ from .extension_source import PythonExtensionSource
 
 
 class PythonServiceSource(PythonExtensionSource[ServiceDescriptor]):
-    """Discovers Service subclasses via module scanning.
+    """Discovers AbstractService subclasses via module scanning.
 
     Provider slots are filtered out by checking for provider-specific
     marker attributes since they are managed by dedicated provider managers.
@@ -26,7 +26,7 @@ class PythonServiceSource(PythonExtensionSource[ServiceDescriptor]):
         return SERVICE_ATTRIBUTE
 
     def build_descriptor(self, object_name: str, obj: object) -> ServiceDescriptor | None:
-        if not (isinstance(obj, type) and issubclass(obj, Service)):
+        if not (isinstance(obj, type) and issubclass(obj, AbstractService)):
             return None
         if getattr(obj, "__abstractmethods__", None):
             return None

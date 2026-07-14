@@ -11,23 +11,21 @@ from ..extensions import ExtensionDescriptor, ExtensionSource
 SERVICE_ATTRIBUTE = "__commamatrix_service__"
 
 
-class Service(ABC):
+class AbstractService(ABC):
     """Lifecycle contract for agent-owned components.
 
-    Subclasses are auto-discovered via __init_subclass__ marker when
-    imported. start / stop are called by the owning agent;
-    refresh is called before each handle and after start.
+    Pure lifecycle ABC: start / stop / refresh.
+
+    You generally want to subclass Service instead of this.
+    Subclass this directly when you need the lifecycle contract
+    but NOT automatic discovery (like Connector subclasses, which
+    are discovered separately via CONNECTOR_ATTRIBUTE).
     """
 
     config: Any
 
     def __init__(self, config: Any = None) -> None:
         self.config = config
-
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        super().__init_subclass__(**kwargs)
-        if not getattr(cls, "__abstractmethods__", None):
-            setattr(cls, SERVICE_ATTRIBUTE, True)
 
     async def start(self) -> None:
         """Initialize resources. Called once after agent startup."""
@@ -39,13 +37,28 @@ class Service(ABC):
         """Synchronize state with current extension set. May be called often."""
 
 
+class Service(AbstractService, ABC):
+    """AbstractService subclass that auto-registers via SERVICE_ATTRIBUTE.
+
+    Used for services that should be discovered by CustomServiceManager
+    and provider managers (Storage, FileStorage, LLMAdapter, CodeActManager, etc.).
+
+    You generally should subclass THIS instead of AbstractService while designing
+    a service that should integrate into Agent lifecycle.
+    """
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        if not getattr(cls, "__abstractmethods__", None):
+            setattr(cls, SERVICE_ATTRIBUTE, True)
+
+
 @dataclass(frozen=True, slots=True)
 class ServiceDescriptor(ExtensionDescriptor):
-    """Immutable descriptor for a discoverable Service class."""
+    """Immutable descriptor for a discoverable AbstractService class."""
 
-    service_cls: type[Service]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    service_cls: type[AbstractService]
+    metadata: dict[str, Any]
 
     def _fingerprint_payload(self) -> dict[str, Any]:
         return {"id": self.id, "service_cls": self.service_cls.__qualname__}
-

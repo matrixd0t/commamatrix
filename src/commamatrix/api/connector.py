@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, AsyncIterator
 from dataclasses import dataclass, field
 from typing import (
     Any,
-    AsyncIterator,
     ClassVar,
     Generic,
     TYPE_CHECKING,
@@ -19,6 +18,7 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from .dialog import DialogItem, DialogOrigin
+from .service import AbstractService, ServiceDescriptor
 from ..extensions import ExtensionDescriptor, ExtensionSource
 
 if TYPE_CHECKING:
@@ -34,34 +34,19 @@ type OnEvent = Callable[[dict], Awaitable[None]]
 OrgT = TypeVar("OrgT", bound=DialogOrigin)
 
 
-class Connector(Generic[OrgT], ABC):
-    """Abstract connector. Concrete subclasses auto-register their module
-    in __init_subclass__ for later scanning by PythonConnectorSource."""
+class Connector(AbstractService, Generic[OrgT]):
+    """Abstract connector. Concrete subclasses are discovered by ConnectorManager.
+
+    Extends AbstractService: start() / stop() manage the listener lifecycle
+    instead of explicit start_listening / stop_listening.
+    """
 
     origin_type: ClassVar[type | None] = None
+    _on_event: OnEvent | None = None
 
     def __init__(self, config: Config) -> None:
+        super().__init__(config)
         self._listener_task: asyncio.Task | None = None
-
-    @property
-    def listener_task(self) -> asyncio.Task | None:
-        return getattr(self, "_listener_task", None)
-
-    def start_listening(self, on_event: OnEvent) -> asyncio.Task:
-        current = self.listener_task
-        if current is not None and not current.done():
-            return current
-        task = asyncio.create_task(self.listen(on_event))
-        self._listener_task = task
-        return task
-
-    async def stop_listening(self) -> None:
-        task = self.listener_task
-        self._listener_task = None
-        if task is None or task.done():
-            return
-        task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -79,6 +64,25 @@ class Connector(Generic[OrgT], ABC):
         if not getattr(cls, "__abstractmethods__", None):
             setattr(cls, CONNECTOR_ATTRIBUTE, True)
 
+    @property
+    def listener_task(self) -> asyncio.Task | None:
+        return getattr(self, "_listener_task", None)
+
+    async def start(self) -> None:
+        if self._on_event is not None:
+            current = self._listener_task
+            if current is not None and not current.done():
+                return
+            self._listener_task = asyncio.create_task(self.listen(self._on_event))
+
+    async def stop(self) -> None:
+        task = self._listener_task
+        self._listener_task = None
+        if task is None or task.done():
+            return
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
     @abstractmethod
     async def parse(self, data: dict, agent: Agent) -> OnParsedCtx | None: ...
 
@@ -94,15 +98,8 @@ class Connector(Generic[OrgT], ABC):
 
 
 @dataclass(frozen=True, slots=True)
-class ConnectorDescriptor(ExtensionDescriptor):
+class ConnectorDescriptor(ServiceDescriptor):
     connector_cls: type[Connector]
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    def _fingerprint_payload(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "connector_cls": self.connector_cls.__qualname__,
-        }
 
 
 class ConnectorSource(ExtensionSource[ConnectorDescriptor], ABC):

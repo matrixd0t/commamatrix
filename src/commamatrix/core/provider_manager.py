@@ -1,44 +1,51 @@
-# core/provider_manager.py
+﻿# core/provider_manager.py
 
 from __future__ import annotations
 
 from typing import Any
 
-from .service import ManagedServiceManager, ServiceRegistry
+from .service_manager import ServiceInstanceManager, ServiceRegistry
 from ..api.config import Config, ConfigField
+from ..api.service import AbstractService
+from ..builtin.python.provider_source import PythonProviderSource
 
 
-class ProviderManager(ManagedServiceManager):
-    """ManagedServiceManager with active-provider selection.
+class ActiveInstanceManager(ServiceInstanceManager):
+    """ServiceInstanceManager with active-instance selection.
 
-    Subclasses define which ConfigField controls the active provider
-    and implement forwarding methods for the provider's API.
+    Subclasses set class attributes to configure provider discovery
+    and active selection:
+
+        _cls          — AbstractService base class (Storage, FileStorage, …)
+        _attribute    — __init_subclass__ marker attribute
+        _prefix       — id prefix + error message label
+        active_field  — ConfigField that controls which instance is active
+
+    Forwarding methods call self._active and delegate to the active instance.
     """
 
+    _cls: type[AbstractService]
+    _attribute: str
+    _prefix: str = 'provider'
     active_field: ConfigField[str | None]
-    _active_id: str | None
-    _override_error_prefix: str = "provider"
 
-    def __init__(self, python_source: Any, active_field: ConfigField[str | None], error_prefix: str) -> None:
-        super().__init__(python_source)
-        self.active_field = active_field
+    def __init__(self, config: Config, registry: ServiceRegistry) -> None:
+        source = PythonProviderSource(self._cls, self._attribute, self._prefix)
+        super().__init__(source, config, registry)
         self._active_id: str | None = None
-        self._override_error_prefix = error_prefix
 
-    async def reconcile(self, config: Config, registry: ServiceRegistry) -> None:
-        """Reconcile instances and re-derive active provider from config."""
-        await super().reconcile(config, registry)
-        self._select_active(config)
+    async def refresh(self) -> None:
+        await super().refresh()
+        self._select_active()
 
-    def _select_active(self, config: Config) -> None:
-        """Derive the active provider from config on every call."""
-        configured = config.get(self.active_field)
+    def _select_active(self) -> None:
+        configured = self._config.get(self.active_field)
         if configured is not None:
             if configured in self._instances:
                 self._active_id = configured
                 return
-            if config.has_override(self.active_field):
-                raise RuntimeError(f"Active {self._override_error_prefix} '{configured}' not found")
+            if self._config.has_override(self.active_field):
+                raise RuntimeError(f"Active {self._prefix} '{configured}' not found")
         if self._active_id is not None and self._active_id in self._instances:
             return
         if self._instances:
@@ -47,5 +54,5 @@ class ProviderManager(ManagedServiceManager):
     @property
     def _active(self) -> Any | None:
         if self._active_id is None:
-            return None
+            raise RuntimeError(f"No active {self._prefix}")
         return self._instances.get(self._active_id)

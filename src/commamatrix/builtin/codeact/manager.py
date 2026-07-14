@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 class CodeActManager(Service):
     """Owns the execution backend, tool searcher, and nested tool gateway.
 
-    Discovered automatically as a Service when the codeact package is
+    Discovered automatically as a AbstractService when the codeact package is
     imported and added to an agent's extension scope.
     """
 
