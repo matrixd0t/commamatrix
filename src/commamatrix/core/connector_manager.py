@@ -27,7 +27,7 @@ class ConnectorManager(ExtensionManager[ConnectorDescriptor]):
        scan, actually stops old listeners before new ones start.
     """
 
-    def __init__(self, on_event: OnEvent | None = None, config: Config | None = None) -> None:
+    def __init__(self, config: Config, on_event: OnEvent | None = None) -> None:
         super().__init__()
         self.config = config
         self._python_source = PythonConnectorSource()
@@ -59,7 +59,7 @@ class ConnectorManager(ExtensionManager[ConnectorDescriptor]):
             return_exceptions=True,
         )
 
-    async def flush_pending_stops(self) -> None:
+    async def until_flush_pending_stops(self) -> None:
         """Await cleanup of connectors removed during the last scan."""
         pending = self._pending_stop
         self._pending_stop = []
@@ -106,18 +106,16 @@ class ConnectorManager(ExtensionManager[ConnectorDescriptor]):
             if self._started and self._on_event is not None:
                 connector.start_listening(self._on_event)
 
-    def resolve(self, config: Config) -> list[Connector]:
+    def resolve(self) -> list[Connector]:
         """Return all active connector instances."""
         return list(self._active.values())
 
-    async def start_listeners(self) -> list[asyncio.Task]:
+    async def start_listeners(self):
         """Start listener tasks for all connectors that don't have one."""
         if self._on_event is None:
-            return []
-        tasks: list[asyncio.Task] = []
+            return
         for connector in self._active.values():
             task = connector.listener_task
             if task is None or task.done():
-                task = connector.start_listening(self._on_event)
-                tasks.append(task)
-        return tasks
+                connector.start_listening(self._on_event)
+        return

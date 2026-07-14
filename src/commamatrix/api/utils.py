@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import fields, is_dataclass
 from enum import Enum
 from typing import Any
+
+
+async def await_if_needed(result: Any) -> None:
+    if inspect.isawaitable(result):
+        await result
 
 
 def to_jsonable(obj: Any) -> Any:

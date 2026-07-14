@@ -62,7 +62,7 @@ from .hooks import (
     AfterRunCtx,
     after_run,
 )
-from .service import Service, ServiceDescriptor, ServiceSource, SERVICE_ATTRIBUTE
+from .service import Service, ServiceDescriptor, SERVICE_ATTRIBUTE
 
 __all__ = [
     "DialogItem",
@@ -130,5 +130,4 @@ __all__ = [
     "Service",
     "SERVICE_ATTRIBUTE",
     "ServiceDescriptor",
-    "ServiceSource",
 ]

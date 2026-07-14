@@ -91,7 +91,8 @@ class Agent:
     # Extension scope — the ONLY activation mechanism
     # ------------------------------------------------------------------
 
-    def _resolve_module_name(self, module_or_name: str | types.ModuleType) -> str:
+    @staticmethod
+    def _resolve_module_name(module_or_name: str | types.ModuleType) -> str:
         if isinstance(module_or_name, str):
             return module_or_name
         if isinstance(module_or_name, types.ModuleType):
@@ -153,7 +154,7 @@ class Agent:
         """Parse an incoming event, and spawn runs per origin."""
         await self._ensure_started()
         parsed: OnParsedCtx | None = None
-        connectors = self.connector_manager.resolve(self.config)
+        connectors = self.connector_manager.resolve()
         for connector in connectors:
             parsed = await connector.parse(raw, self)
             if parsed is not None:
@@ -161,9 +162,8 @@ class Agent:
         if parsed is None:
             return
 
-        await self.hook_manager.fire(HookEventType.ON_PARSED.value, parsed)
-
         await self._resolve_previous_item(parsed)
+        await self.hook_manager.fire(HookEventType.ON_PARSED.value, parsed)
 
         for run, history in self._split_runs(parsed):
             await self.runner.submit(
@@ -186,9 +186,10 @@ class Agent:
         error: Exception | None = None
 
         try:
+            if (await self._before_run(run)).abort:
+                return None
+
             async with self._typing(run):
-                if (await self._before_run(run)).abort:
-                    return None
 
                 last_item_id = await self._store_history(history)
 

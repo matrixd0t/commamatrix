@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import inspect
 import weakref
 from collections.abc import Callable, ValuesView
 from typing import Generic, TypeVar
@@ -15,6 +14,7 @@ from ..extensions import (
     StaleExtensionError,
 )
 from ..api.service import Service
+from ..api.utils import await_if_needed
 
 
 D = TypeVar("D", bound=ExtensionDescriptor)
@@ -91,12 +91,12 @@ class ExtensionManager(Service, Generic[D]):
     async def start(self) -> None:
         for source in self._sources:
             source.restore()
-            await _call_async(source.start)
+            await await_if_needed(source.start())
 
     async def stop(self) -> None:
         for source in reversed(self._sources):
             source.invalidate()
-            await _call_async(source.stop)
+            await await_if_needed(source.stop())
 
     async def refresh(self) -> None:
         self.scan()
@@ -162,9 +162,3 @@ class ExtensionManager(Service, Generic[D]):
 
     def _rebuild(self) -> None:
         """Rebuild specialized indexes after descriptors change."""
-
-
-async def _call_async(fn: Callable) -> None:
-    result = fn()
-    if inspect.isawaitable(result):
-        await result

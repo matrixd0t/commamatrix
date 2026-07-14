@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 from typing import Any
 
 from ..api.config import Config
 from ..api.service import Service, ServiceDescriptor
 from ..api.connector import OnEvent
+from ..api.utils import await_if_needed
 from .extension_manager import ExtensionManager
 from ..builtin.python.service_source import PythonServiceSource
 
@@ -127,7 +127,7 @@ class ManagedServiceManager(ExtensionManager[ServiceDescriptor]):
                 instance = self._instances.pop(sid)
                 self._instance_fingerprints.pop(sid, None)
                 self._start_order.remove(sid)
-                await _call_stop(instance)
+                await await_if_needed(instance.stop())
                 registry.remove_by_instance(instance)
 
         for sid, descriptor in desired.items():
@@ -136,14 +136,14 @@ class ManagedServiceManager(ExtensionManager[ServiceDescriptor]):
             if old_fp is not None and old_fp != new_fp:
                 instance = self._instances.pop(sid)
                 self._start_order.remove(sid)
-                await _call_stop(instance)
+                await await_if_needed(instance.stop())
                 registry.remove_by_instance(instance)
 
         for sid, descriptor in desired.items():
             if sid in self._instances:
                 continue
             instance = descriptor.service_cls(config=config)
-            await _call_start(instance)
+            await await_if_needed(instance.start())
             self._instances[sid] = instance
             self._instance_fingerprints[sid] = descriptor.fingerprint
             self._start_order.append(sid)
@@ -154,13 +154,13 @@ class ManagedServiceManager(ExtensionManager[ServiceDescriptor]):
         for sid in reversed(self._start_order):
             instance = self._instances.get(sid)
             if instance is not None:
-                await _call_stop(instance)
+                await await_if_needed(instance.stop())
         self._instances.clear()
         self._instance_fingerprints.clear()
         self._start_order.clear()
 
     async def refresh_instances(self) -> None:
-        await asyncio.gather(*(_call_refresh(inst) for inst in self._instances.values()))
+        await asyncio.gather(*(await_if_needed(inst.refresh()) for inst in self._instances.values()))
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +203,7 @@ class ServiceManager:
         self._registry = ServiceRegistry()
         self._started = False
         self._refresh_lock = asyncio.Lock()
-        self._dirty = False
+        self._changed = False
 
         self.tool_manager = ToolManager()
         self.hook_manager = HookManager()
@@ -211,7 +211,7 @@ class ServiceManager:
         self.storage_manager = StorageManager()
         self.file_storage_manager = FileStorageManager()
         self.custom_service_manager = CustomServiceManager()
-        self.connector_manager = ConnectorManager(on_event=on_event, config=config)
+        self.connector_manager = ConnectorManager(config=config, on_event=on_event)
 
         self._children: list[Any] = [
             self.tool_manager,
@@ -226,14 +226,14 @@ class ServiceManager:
         self._last_scope: tuple[str, ...] = ()
 
         for child in self._children:
-            child.on_change = self._mark_dirty
+            child.on_change = self._mark_changed
 
     @property
     def registry(self) -> ServiceRegistry:
         return self._registry
 
-    def _mark_dirty(self) -> None:
-        self._dirty = True
+    def _mark_changed(self) -> None:
+        self._changed = True
 
     def set_scope(self, scope: list[str]) -> None:
         scope_key = tuple(scope)
@@ -241,7 +241,7 @@ class ServiceManager:
             self._last_scope = scope_key
             for child in self._children:
                 child.set_scope(scope)
-            self._dirty = True
+            self._mark_changed()
 
     async def start(self) -> None:
         """Start all child managers, discover extensions, and create instances.
@@ -253,18 +253,13 @@ class ServiceManager:
         started_children: list[Any] = []
         try:
             for child in self._children:
-                await _call_start_async(child)
+                await await_if_needed(child.start())
                 started_children.append(child)
-            for child in self._children:
-                child.scan()
-            await self.connector_manager.flush_pending_stops()
-            await self._reconcile_providers()
-            await self._refresh_all_instances()
+            await self._scan_and_reconcile()
             self._started = True
-            self._dirty = False
+            self._changed = False
             await self.connector_manager.start_listeners()
         except BaseException:
-            # Stop all created service instances before stopping managers
             for mgr in (self.custom_service_manager, self.llm_adapter_manager,
                         self.storage_manager, self.file_storage_manager):
                 try:
@@ -274,7 +269,7 @@ class ServiceManager:
             self._registry.clear()
             for child in reversed(started_children):
                 try:
-                    await _call_stop_async(child)
+                    await await_if_needed(child.stop())
                 except Exception:
                     pass
             raise
@@ -282,14 +277,10 @@ class ServiceManager:
     async def refresh(self, force: bool = False) -> None:
         """Re-scan and reconcile all children if force or something changed."""
         async with self._refresh_lock:
-            if not force and not self._dirty:
+            if not force and not self._changed:
                 return
-            self._dirty = False
-            for child in self._children:
-                child.scan()
-            await self.connector_manager.flush_pending_stops()
-            await self._reconcile_providers()
-            await self._refresh_all_instances()
+            await self._scan_and_reconcile()
+            self._changed = False
 
     async def stop(self) -> None:
         if not self._started:
@@ -302,9 +293,17 @@ class ServiceManager:
             self.file_storage_manager.stop_all_instances(),
         )
         for child in reversed(self._children):
-            await _call_stop_async(child)
+            await await_if_needed(child.stop())
         self._registry.clear()
         self._started = False
+
+    async def _scan_and_reconcile(self) -> None:
+        """Shared scan → flush → reconcile → refresh pipeline."""
+        for child in self._children:
+            child.scan()
+        await self.connector_manager.flush_pending_stops()
+        await self._reconcile_providers()
+        await self._refresh_all_instances()
 
     async def _reconcile_providers(self) -> None:
         await self.llm_adapter_manager.reconcile(self._config, self._registry)
@@ -317,34 +316,4 @@ class ServiceManager:
         await self.storage_manager.refresh_instances()
         await self.file_storage_manager.refresh_instances()
         for inst in self.custom_service_manager.instances:
-            await _call_refresh(inst)
-
-
-async def _call_start(service: Any) -> None:
-    result = service.start()
-    if inspect.isawaitable(result):
-        await result
-
-
-async def _call_stop(service: Any) -> None:
-    result = service.stop()
-    if inspect.isawaitable(result):
-        await result
-
-
-async def _call_refresh(service: Any) -> None:
-    result = service.refresh()
-    if inspect.isawaitable(result):
-        await result
-
-
-async def _call_start_async(child: Any) -> None:
-    result = child.start()
-    if inspect.isawaitable(result):
-        await result
-
-
-async def _call_stop_async(child: Any) -> None:
-    result = child.stop()
-    if inspect.isawaitable(result):
-        await result
+            await await_if_needed(inst.refresh())
