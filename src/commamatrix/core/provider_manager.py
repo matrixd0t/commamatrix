@@ -10,8 +10,11 @@ from ..api.service import AbstractService
 from ..builtin.python.provider_source import PythonProviderSource
 
 
-class ActiveInstanceManager(ServiceInstanceManager):
-    """ServiceInstanceManager with active-instance selection.
+class ActiveServiceInstanceManager(ServiceInstanceManager):
+    """
+    ServiceInstanceManager with active-instance selection.
+    Only a single instance of a service is considered active and
+    receives calls to its methods from the agent.
 
     Subclasses set class attributes to configure provider discovery
     and active selection:

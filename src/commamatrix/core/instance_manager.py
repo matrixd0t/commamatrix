@@ -14,7 +14,7 @@ D = TypeVar("D", bound=ExtensionDescriptor)
 I = TypeVar("I", bound=AbstractService)
 
 
-class InstanceExtensionManager(ExtensionManager[D], Generic[D, I]):
+class ExtensionInstanceManager(ExtensionManager[D], Generic[D, I]):
     """ExtensionManager that manages runtime instances tied to descriptors.
 
     Handles creation, fingerprint-based restart, stop, and cleanup

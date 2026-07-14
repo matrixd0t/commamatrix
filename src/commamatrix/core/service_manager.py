@@ -7,7 +7,7 @@ from typing import Any
 from ..api.service import AbstractService, ServiceDescriptor
 from ..api.utils import await_if_needed
 from ..builtin.python.service_source import PythonServiceSource
-from .instance_manager import InstanceExtensionManager
+from .instance_manager import ExtensionInstanceManager
 
 
 __all__ = ["ServiceRegistry", "ServiceInstanceManager", "CustomServiceManager"]
@@ -80,8 +80,8 @@ class ServiceRegistry:
         return key in self._by_class
 
 
-class ServiceInstanceManager(InstanceExtensionManager[ServiceDescriptor, AbstractService]):
-    """InstanceExtensionManager specialized for AbstractService lifecycle.
+class ServiceInstanceManager(ExtensionInstanceManager[ServiceDescriptor, AbstractService]):
+    """ExtensionInstanceManager specialized for AbstractService lifecycle.
 
     Creates, starts, stops, and refreshes AbstractService instances.
     Integrates with ServiceRegistry for typed instance lookup.

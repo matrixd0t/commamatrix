@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from .provider_manager import ActiveInstanceManager
+from .provider_manager import ActiveServiceInstanceManager
 from ..api.config import active_storage
 from ..api.dialog import DialogItem, DialogOrigin
 from ..api.storage import STORAGE_ATTRIBUTE, Storage
 
 
-class StorageManager(ActiveInstanceManager):
+class StorageManager(ActiveServiceInstanceManager):
     """Manages Storage instances and forwards calls to the active one."""
 
     _cls = Storage

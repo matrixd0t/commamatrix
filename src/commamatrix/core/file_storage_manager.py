@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from .provider_manager import ActiveInstanceManager
+from .provider_manager import ActiveServiceInstanceManager
 from ..api.config import active_file_storage
 from ..api.file_storage import FILE_STORAGE_ATTRIBUTE, FileStorage
 
 
-class FileStorageManager(ActiveInstanceManager):
+class FileStorageManager(ActiveServiceInstanceManager):
     """Manages FileStorage instances and forwards calls to the active one."""
 
     _cls = FileStorage
