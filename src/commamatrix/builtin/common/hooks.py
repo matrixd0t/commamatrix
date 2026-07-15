@@ -8,10 +8,9 @@ from collections import defaultdict
 from dataclasses import replace
 
 from ...api.hooks import BeforeLlmCallCtx, before_llm_call
-from ...api.tool import ToolDescriptor
 
 
-@before_llm_call
+@before_llm_call(priority=-1000)
 def disambiguate_tool_names(ctx: BeforeLlmCallCtx) -> None:
     """Rewrite exported_name to alias.name when multiple tools share the same name.
 
@@ -19,13 +18,11 @@ def disambiguate_tool_names(ctx: BeforeLlmCallCtx) -> None:
     ToolManager.resolve() checks exported_name, so LLM tool calls
     using dotted names will resolve correctly.
 
-    Skipped when CodeAct is loaded — in CodeAct mode tools are resolved
+    Skipped when CodeAct is active — in CodeAct mode tools are resolved
     via dotted alias imports and unique descriptor ids, so LLM-visible
     name disambiguation is unnecessary.
     """
-    from ...builtin.codeact.manager import CodeActManager
-
-    if ctx.run.agent.services.get(CodeActManager) is not None:
+    if ctx.run.state.get('codeact-enabled'):  # builtin.codeact.CODACT_ENABLED_KEY
         return
 
     buckets: dict[str, list[int]] = defaultdict(list)

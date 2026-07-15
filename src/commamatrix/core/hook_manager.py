@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from .extension_manager import ExtensionManager
+from .manager import Manager
 from ..api.hooks import HookDescriptor
 from ..builtin.python.hook_source import PythonHookSource
 
 
-class HookManager(ExtensionManager[HookDescriptor]):
+class HookManager(Manager[HookDescriptor]):
     """Manager for hook descriptors.
 
     Groups descriptors by event and fires them in priority order
@@ -37,5 +37,5 @@ class HookManager(ExtensionManager[HookDescriptor]):
         for descriptor in self.descriptors:
             by_event.setdefault(descriptor.event, []).append(descriptor)
         for event in by_event:
-            by_event[event].sort(key=lambda d: d.priority)
+            by_event[event].sort(key=lambda d: d.priority, reverse=True)
         self._handlers = by_event

@@ -11,12 +11,24 @@ from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar, cast
 
 
-D = TypeVar("D", bound="ExtensionDescriptor")
+D = TypeVar("D", bound="Descriptor")
 InvalidationCallback = Callable[[], None]
 
 
-class ExtensionSource(Generic[D], ABC):
-    """Discover extensions and notify managers when a source becomes unavailable."""
+class ExtensionError(RuntimeError):
+    """Base class for extension lifecycle failures."""
+
+
+class UnavailableSourceError(ExtensionError):
+    """Raised when source is currently unavailable."""
+
+
+class StaleDescriptorError(ExtensionError):
+    """Raised when code tries to use a descriptor removed from a manager."""
+
+
+class Source(Generic[D], ABC):
+    """Discover some discoverable stuff and notify managers when its source becomes unavailable."""
 
     def __init__(self) -> None:
         self._invalidation_callbacks: list[InvalidationCallback] = []
@@ -66,11 +78,11 @@ class ExtensionSource(Generic[D], ABC):
 
 
 @dataclass(frozen=True, slots=True)
-class ExtensionDescriptor:
+class Descriptor:
     """Immutable, source-independent description of an extension."""
 
     id: str
-    _source_ref: weakref.ReferenceType[ExtensionSource] = field(repr=False)
+    _source_ref: weakref.ReferenceType[Source] = field(repr=False)
 
     @property
     def fingerprint(self) -> str:

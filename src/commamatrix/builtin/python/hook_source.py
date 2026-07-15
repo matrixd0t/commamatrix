@@ -7,10 +7,10 @@ import weakref
 from typing import Any, cast
 
 from ...api.hooks import HOOK_ATTRIBUTE, HookDescriptor, HookSource
-from .extension_source import PythonExtensionSource
+from .base_source import PythonSource
 
 
-class PythonHookSource(PythonExtensionSource[HookDescriptor], HookSource):
+class PythonHookSource(PythonSource[HookDescriptor], HookSource):
     """Python-backed hook source.
 
     Discovers @hook-decorated functions via module scanning and
@@ -35,9 +35,9 @@ class PythonHookSource(PythonExtensionSource[HookDescriptor], HookSource):
         self._handlers[descriptor_id] = cast(Any, obj)
         return HookDescriptor(
             id=descriptor_id,
-            event=params["event"],
+            event=params["event"].value,
             priority=params.get("priority", 0),
-            metadata={},
+            meta={},
             _source_ref=weakref.ref(self),
         )
 

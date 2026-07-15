@@ -1,4 +1,4 @@
-# builtin/python/extension_source.py
+# builtin/python/base_source.py
 
 from __future__ import annotations
 
@@ -7,14 +7,15 @@ from abc import abstractmethod
 from collections.abc import Iterable
 from typing import Generic, TypeVar
 
-from ...extensions import ExtensionDescriptor, ExtensionSource
+from ...extensions import Descriptor, Source
 
 
-D = TypeVar("D", bound=ExtensionDescriptor)
+D = TypeVar("D", bound=Descriptor)
 
 
-class PythonExtensionSource(ExtensionSource[D], Generic[D]):
-    """Base class for Python-backed extension sources.
+class PythonSource(Source[D], Generic[D]):
+    """
+    Base class for Python-backed extension sources.
 
     Scans modules from a caller-provided scope set for objects marked
     with a specific attribute. Only objects whose __module__ matches the
@@ -25,10 +26,6 @@ class PythonExtensionSource(ExtensionSource[D], Generic[D]):
     def __init__(self) -> None:
         super().__init__()
         self._scope: list[str] = []
-
-    @property
-    def extension_modules(self) -> list[str]:
-        return self._scope
 
     def set_scope(self, scope: list[str]) -> None:
         self._scope = scope

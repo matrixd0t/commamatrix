@@ -25,7 +25,7 @@ class CodeActManager(Service):
     """
 
     def __init__(self, config: Config, **kwargs: Any) -> None:
-        super().__init__(config=config)
+        super().__init__()
         from .executor.subprocess import SubprocessBackend
         from .search.bm25 import BM25ToolSearcher
         self.backend = kwargs.get('backend') or SubprocessBackend()

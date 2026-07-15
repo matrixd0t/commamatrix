@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import TYPE_CHECKING
 
-from .service import Service
+from .service import AbstractService
 
 if TYPE_CHECKING:
     from .config import Config
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 FILE_STORAGE_ATTRIBUTE = "__commamatrix_file_storage__"
 
 
-class FileStorage(Service):
+class FileStorage(AbstractService):
     """Abstract binary blob storage. Implementations persist files keyed by
     string IDs that embed the file extension (e.g. abc123.png)."""
 

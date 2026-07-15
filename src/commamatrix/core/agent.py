@@ -37,19 +37,26 @@ from ..api.llm_adapter import (
     ToolCall,
     ToolCallResult,
 )
+from ..api.file_storage import FILE_STORAGE_ATTRIBUTE
+from ..api.storage import STORAGE_ATTRIBUTE
 from .runner import AgentRunner
-from .composite import ServiceManager
+from .composite import RootManager
+
+
+_DEFAULT_STORAGE_EXTENSION = 'commamatrix.builtin.sqlite'
+_DEFAULT_FILE_STORAGE_EXTENSION = 'commamatrix.builtin.fs'
 
 
 class Agent:
     """Orchestrates the agent lifecycle: parse -> LLM -> tools -> send."""
 
-    def __init__(self, *, config: dict[ConfigField, Any] | Config = {}):
+    def __init__(self, *, config: dict[ConfigField, Any] | Config = {}, auto_load_main: bool = True):
         if isinstance(config, dict):
             config = Config(overrides=config)
         self.config = config
+        self._auto_load_main = auto_load_main
 
-        self.service_manager = ServiceManager(config=config, on_event=self.handle)
+        self.service_manager = RootManager(config=config, on_event=self.handle)
         self.runner = AgentRunner()
         self._started = False
         self._start_lock = asyncio.Lock()
@@ -163,7 +170,7 @@ class Agent:
             return
 
         await self._resolve_previous_item(parsed)
-        await self.hook_manager.fire(HookEventType.ON_PARSED.value, parsed)
+        await self.hook_manager.fire(HookEventType.ON_PARSED, parsed)
 
         for run, history in self._split_runs(parsed):
             await self.runner.submit(
@@ -216,7 +223,7 @@ class Agent:
 
         finally:
             await self.hook_manager.fire(
-                HookEventType.AFTER_RUN.value,
+                HookEventType.AFTER_RUN,
                 AfterRunCtx(run=run, error=error)
             )
 
@@ -227,12 +234,16 @@ class Agent:
     async def _ensure_started(self) -> None:
         async with self._start_lock:
             if not self._started:
-                self.add_extension("commamatrix.builtin.sqlite")
-                self.add_extension("commamatrix.builtin.fs")
+                if self._auto_load_main:
+                    self.add_extension("__main__")
+                if not self._scope_has_attribute(STORAGE_ATTRIBUTE):
+                    self.add_extension(_DEFAULT_STORAGE_EXTENSION)
+                if not self._scope_has_attribute(FILE_STORAGE_ATTRIBUTE):
+                    self.add_extension(_DEFAULT_FILE_STORAGE_EXTENSION)
                 self.service_manager.set_scope(self._extension_scope)
                 await self.service_manager.start()
                 await self.hook_manager.fire(
-                    HookEventType.ON_AGENT_START.value,
+                    HookEventType.ON_AGENT_START,
                     OnAgentStartCtx(agent=self),
                 )
                 self._started = True
@@ -240,7 +251,7 @@ class Agent:
 
     async def _before_run(self, run: RunCtx) -> BeforeRunCtx:
         ctx = BeforeRunCtx(run=run)
-        await self.hook_manager.fire(HookEventType.BEFORE_RUN.value, ctx)
+        await self.hook_manager.fire(HookEventType.BEFORE_RUN, ctx)
         return ctx
 
     async def _store_history(self, history: list[DialogItem] | None) -> int | None:
@@ -275,19 +286,17 @@ class Agent:
         tools_list = list(self.tool_manager.descriptors)
         before_llm_ctx = BeforeLlmCallCtx(run=run, dialog=dialog, tools=tools_list)
 
-        await self.hook_manager.fire(HookEventType.BEFORE_LLM_CALL.value, before_llm_ctx)
+        await self.hook_manager.fire(HookEventType.BEFORE_LLM_CALL, before_llm_ctx)
 
         llm_response = await self.llm_adapter.ask_llm(before_llm_ctx)
         after_llm_ctx = AfterLlmCallCtx(run=run, response=llm_response)
 
-        await self.hook_manager.fire(HookEventType.AFTER_LLM_CALL.value, after_llm_ctx)
+        await self.hook_manager.fire(HookEventType.AFTER_LLM_CALL, after_llm_ctx)
 
         self._validate_response(after_llm_ctx.response, run)
         return after_llm_ctx
 
-    async def _execute_tools(
-        self, run: RunCtx, response: LLMResponse, last_item_id: int | None
-    ) -> tuple[int | None, bool]:
+    async def _execute_tools(self, run: RunCtx, response: LLMResponse, last_item_id: int | None) -> tuple[int | None, bool]:
         tool_calls = [b for b in response.content if isinstance(b, LLMResponseToolCallBlock)]
         if not tool_calls:
             return last_item_id, False
@@ -316,11 +325,9 @@ class Agent:
 
         return last_item_id, True
 
-    async def _run_tool_lifecycle(
-        self, run: RunCtx, tool_call: ToolCall, last_item_id: int | None = None
-    ) -> tuple[int | None, ToolCallResult]:
+    async def _run_tool_lifecycle(self, run: RunCtx, tool_call: ToolCall, last_item_id: int | None = None) -> tuple[int | None, ToolCallResult]:
         before_ctx = BeforeToolCallCtx(run=run, tool_call=tool_call)
-        await self.hook_manager.fire(HookEventType.BEFORE_TOOL_CALL.value, before_ctx)
+        await self.hook_manager.fire(HookEventType.BEFORE_TOOL_CALL, before_ctx)
 
         # Use potentially mutated tool_call from hook context
         effective_call = before_ctx.tool_call
@@ -331,7 +338,7 @@ class Agent:
             result = await self.tool_manager.call(effective_call, ctx=before_ctx)
 
         after_ctx = AfterToolCallCtx(run=run, tool_call=effective_call, result=result)
-        await self.hook_manager.fire(HookEventType.AFTER_TOOL_CALL.value, after_ctx)
+        await self.hook_manager.fire(HookEventType.AFTER_TOOL_CALL, after_ctx)
 
         # Use potentially mutated result from hook context
         final_result = after_ctx.result
@@ -366,7 +373,7 @@ class Agent:
             )
 
             before_send_ctx = BeforeSendCtx(run=run, dialog_item=dialog_item)
-            await self.hook_manager.fire(HookEventType.BEFORE_SEND.value, before_send_ctx)
+            await self.hook_manager.fire(HookEventType.BEFORE_SEND, before_send_ctx)
 
             if run.connector:
                 external_id = await run.connector.send(run.origin, dialog_item)
@@ -379,7 +386,7 @@ class Agent:
 
     async def _handle_error(self, run: RunCtx, error: Exception) -> None:
         ctx = OnErrorCtx(run=run, error=error)
-        await self.hook_manager.fire(HookEventType.ON_ERROR.value, ctx)
+        await self.hook_manager.fire(HookEventType.ON_ERROR, ctx)
         if not ctx.suppress:
             raise error
 
@@ -388,6 +395,16 @@ class Agent:
             raise LLMResponseError("LLM returned error stop reason")
         if response.stop_reason == StopReason.MAX_TOKENS:
             raise LLMTruncatedError("LLM response truncated (max_tokens)")
+
+    def _scope_has_attribute(self, attribute: str) -> bool:
+        for mod_name in self._extension_scope:
+            mod = sys.modules.get(mod_name)
+            if mod is None:
+                continue
+            for obj in vars(mod).values():
+                if isinstance(obj, type) and getattr(obj, attribute, False):
+                    return True
+        return False
 
     def _split_runs(self, parsed: OnParsedCtx) -> list[tuple[RunCtx, list[DialogItem]]]:
         by_origin: dict[str, list[DialogItem]] = defaultdict(list)

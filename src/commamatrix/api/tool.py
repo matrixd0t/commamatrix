@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, overload
 
-from ..extensions import ExtensionDescriptor, ExtensionSource
+from ..extensions import Descriptor, Source
 
 if TYPE_CHECKING:
     from .hooks import BeforeToolCallCtx
@@ -21,7 +21,7 @@ type Decorator[F: AsyncOrSyncFunction] = Callable[[F], F]
 
 
 @dataclass(frozen=True, slots=True)
-class ToolDescriptor(ExtensionDescriptor):
+class ToolDescriptor(Descriptor):
     """Immutable description of a tool, independent of its origin."""
 
     namespace: str
@@ -44,11 +44,11 @@ class ToolDescriptor(ExtensionDescriptor):
             "exported_name": self.exported_name,
             "doc": self.doc,
             "schema": self.schema,
-            "metadata": meta,
+            "meta": meta,
         }
 
 
-class ToolSource(ExtensionSource[ToolDescriptor], ABC):
+class ToolSource(Source[ToolDescriptor], ABC):
     """Abstract source of tools.
 
     Each source is responsible for discovering available tools via scan()
@@ -76,7 +76,7 @@ def tool(**metadata: Any) -> Decorator: ...
 def tool(arg: AsyncOrSyncFunction | None = None, **meta: Any):
     """Mark a function as a tool.
 
-    Stamps the function with TOOL_ATTRIBUTE metadata.
+    Stamps the function with TOOL_ATTRIBUTE meta.
     """
 
     def decorate(fn: AsyncOrSyncFunction, metadata: dict[str, Any]):

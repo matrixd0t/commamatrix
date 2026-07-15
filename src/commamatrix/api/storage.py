@@ -6,7 +6,7 @@ from abc import abstractmethod
 from typing import Any, Optional, TYPE_CHECKING
 
 from .dialog import DialogItem, DialogOrigin
-from .service import Service
+from .service import AbstractService
 
 if TYPE_CHECKING:
     from .config import Config
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 STORAGE_ATTRIBUTE = "__commamatrix_storage__"
 
 
-class Storage(Service):
+class Storage(AbstractService):
     def __init__(self, config: Config) -> None:
         super().__init__(config)
 

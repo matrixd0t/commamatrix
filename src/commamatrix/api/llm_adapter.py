@@ -10,10 +10,9 @@ from json import dumps
 
 from .dialog import DialogItem, DialogItemType, DialogRole, DialogOrigin
 from .utils import to_jsonable
-from .service import Service
+from .service import AbstractService
 
 if TYPE_CHECKING:
-    from .config import Config
     from .hooks import BeforeLlmCallCtx
 
 LLM_ADAPTER_ATTRIBUTE = "__commamatrix_llm_adapter__"
@@ -149,7 +148,7 @@ class LLMResponse:
     meta: dict[str, Any] = field(default_factory=dict)
 
 
-class LLMAdapter(Service):
+class LLMAdapter(AbstractService):
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
         if not getattr(cls, "__abstractmethods__", None):

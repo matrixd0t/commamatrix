@@ -24,7 +24,7 @@ from types import ModuleType
 from typing import Any, Callable
 
 
-# ── I/O setup ────────────────────────────────────────────────────────
+# ── S/O setup ────────────────────────────────────────────────────────
 
 stdin_bin = os.fdopen(0, "rb", 0)
 stdout_bin = os.fdopen(1, "wb", 0)
@@ -155,7 +155,7 @@ def _signature(schema, metadata=None):
 
 
 def _make_tool_proxy(client, descriptor):
-    signature, annotations = _signature(descriptor.get("schema", {}), descriptor.get("metadata", {}))
+    signature, annotations = _signature(descriptor.get("schema", {}), descriptor.get("meta", {}))
     name = descriptor["name"]
     tool_id = descriptor.get("id", "")
 

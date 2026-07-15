@@ -1,4 +1,4 @@
-﻿# core/service_manager.py
+# core/service_manager.py
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 from ..api.service import AbstractService, ServiceDescriptor
 from ..api.utils import await_if_needed
 from ..builtin.python.service_source import PythonServiceSource
-from .instance_manager import ExtensionInstanceManager
+from .instance_manager import InstanceManager
 
 
 __all__ = ["ServiceRegistry", "ServiceInstanceManager", "CustomServiceManager"]
@@ -80,8 +80,8 @@ class ServiceRegistry:
         return key in self._by_class
 
 
-class ServiceInstanceManager(ExtensionInstanceManager[ServiceDescriptor, AbstractService]):
-    """ExtensionInstanceManager specialized for AbstractService lifecycle.
+class ServiceInstanceManager(InstanceManager[ServiceDescriptor, AbstractService]):
+    """InstanceManager specialized for AbstractService lifecycle.
 
     Creates, starts, stops, and refreshes AbstractService instances.
     Integrates with ServiceRegistry for typed instance lookup.
@@ -115,8 +115,9 @@ class ServiceInstanceManager(ExtensionInstanceManager[ServiceDescriptor, Abstrac
 class CustomServiceManager(ServiceInstanceManager):
     """Discover and manage custom AbstractService subclasses.
 
-    Provider slots (Storage, FileStorage, LLMAdapter) are filtered out
-    by PythonServiceSource since they are managed by dedicated provider managers.
+    Only concrete Service subclasses (like CodeActManager) are picked up —
+    provider slots (Storage, FileStorage, LLMAdapter) no longer inherit
+    from Service and therefore do not carry SERVICE_ATTRIBUTE.
     """
 
     def __init__(self, config: Any, registry: ServiceRegistry) -> None:

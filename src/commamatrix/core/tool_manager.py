@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from .extension_manager import ExtensionManager
+from .manager import Manager
 from ..api.hooks import BeforeToolCallCtx
 from ..api.llm_adapter import ToolCall, ToolCallResult
 from ..api.tool import ToolDescriptor, ToolSource
 from ..builtin.python.tool_source import PythonToolSource
 
 
-class ToolManager(ExtensionManager[ToolDescriptor]):
+class ToolManager(Manager[ToolDescriptor]):
     """Manager for tool descriptors.
 
     Maintains an alias -> descriptors map for virtual imports and
@@ -157,6 +157,6 @@ class ToolManager(ExtensionManager[ToolDescriptor]):
                     "name": d.name,
                     "doc": d.doc,
                     "schema": d.schema,
-                    "metadata": d.metadata,
+                    "meta": d.metadata,
                 })
         return tree

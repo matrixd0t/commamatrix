@@ -6,19 +6,19 @@
 sequenceDiagram
     participant Runner as Agent Runner
     participant HM as HookManager
-    participant ExtMgr as ExtensionManager
-    participant Sources as ExtensionSource
+    participant ExtMgr as Manager
+    participant Sources as Source
     participant Handler as @Hook fn
 
     Runner->>HM: fire("before_llm_call", ctx)
     activate HM
 
     HM->>HM: lookup self._handlers["before_llm_call"]
-    Note over HM: sorted by descriptor.priority (ascending)
+    Note over HM: sorted by descriptor.priority (descending)
 
     loop for each descriptor
         HM->>ExtMgr: _source_of(descriptor)
-        ExtMgr-->>HM: ExtensionSource (owner)
+        ExtMgr-->>HM: Source (owner)
         HM->>Sources: invoke(descriptor, ctx)
         activate Sources
         Sources->>Handler: fn(ctx)
@@ -41,7 +41,7 @@ sequenceDiagram
 sequenceDiagram
     participant Agent
     participant TM as ToolManager
-    participant ExtMgr as ExtensionManager
+    participant ExtMgr as Manager
     participant Source as ToolSource
     participant Fn as @tool fn
 
@@ -58,15 +58,15 @@ sequenceDiagram
         ExtMgr-->>TM: ToolSource
         TM->>Source: invoke(descriptor, kwargs, ctx)
 
-        try
+        alt Success
             Source->>Fn: fn(**kwargs)
             activate Fn
             Fn-->>Source: result
             deactivate Fn
             Source-->>TM: result
-        catch Exception as exc
-            Source-->>TM: raise
-            TM-->>Agent: ToolCallResult("Error: ...")
+        else Exception
+            Source-->>TM: exception propagates
+            Note over TM: caught in call()<br/>wraps in ToolCallResult
         end
 
         TM-->>Agent: ToolCallResult(content=result)
@@ -107,26 +107,19 @@ sequenceDiagram
     Note over Worker: isolated child process<br/>RPC over stdin/stdout
 
     loop tool calls inside code
-        Worker->>RPCServer: RPC: tools.invoke_tool(ctx, tool_call)
-        activate RPCServer
-        RPCServer->>CodeActMgr: invoke_tool(ctx, tool_call)
-        activate CodeActMgr
-        CodeActMgr->>Agent: _run_tool_lifecycle(run, tool_call)
-        activate Agent
-
+        Worker->>+RPCServer: RPC: tools.invoke_tool(ctx, tool_call)
+        RPCServer->>+CodeActMgr: invoke_tool(ctx, tool_call)
+        CodeActMgr->>+Agent: _run_tool_lifecycle(run, tool_call)
         Agent->>TM: call(tool_call, ctx)
         TM-->>Agent: ToolCallResult
-
-        Agent-->>CodeActMgr: (content, persist)
-        deactivate Agent
-        CodeActMgr-->>RPCServer: result.content
-        deactivate CodeActMgr
-        RPCServer-->>Worker: RPC response
-        deactivate RPCServer
+        Agent-->>-CodeActMgr: (content, persist)
+        CodeActMgr-->>-RPCServer: result.content
+        RPCServer-->>-Worker: RPC response
     end
 
     Worker-->>Backend: ExecutionResult
-    deactivate Worker
+    Note over Worker: process exits
+
     Backend-->>CodeActMgr: ExecutionResult
     deactivate Backend
 
@@ -162,7 +155,7 @@ sequenceDiagram
 
     activate Connector
     Connector->>Connector: parse(raw)
-    Note over Connector: Connector[OrgT] subclass<br/>converts platform-specific format
+    Note over Connector: Connector subclass<br/>converts platform-specific format
 
     Connector->>CM: _on_event(raw, meta)
     Note over CM: _on_event is set during<br/>_create_instance() by CM<br/>bound to Agent.handle
@@ -244,7 +237,7 @@ sequenceDiagram
 sequenceDiagram
     participant Client
     participant Agent
-    participant SM as ServiceManager
+    participant SM as RootManager
     participant TM as ToolManager
     participant HM as HookManager
     participant LM as LLMAdapterManager
@@ -259,15 +252,23 @@ sequenceDiagram
     Agent->>Agent: _ensure_started()
     activate Agent
 
-    Agent->>Agent: add_extension("commamatrix.builtin.sqlite")
-    Note over Agent: SqliteStorage becomes available
+    alt auto_load_main (default True)
+        Agent->>Agent: add_extension("__main__")
+    end
 
-    Agent->>Agent: add_extension("commamatrix.builtin.fs")
-    Note over Agent: SimpleFileStorage becomes available
+    alt no Storage in scope
+        Agent->>Agent: add_extension("commamatrix.builtin.sqlite")
+        Note over Agent: SqliteStorage becomes available
+    end
+
+    alt no FileStorage in scope
+        Agent->>Agent: add_extension("commamatrix.builtin.fs")
+        Note over Agent: SimpleFileStorage becomes available
+    end
 
     Agent->>SM: set_scope(self._extension_scope)
     activate SM
-    Note over SM: propagetes scope to all 7 children<br/>sets dirty flag if changed
+    Note over SM: propagetes scope to all 7 children<br/>sets "changed" flag if changed
     SM-->>Agent: done
     deactivate SM
 
@@ -351,7 +352,7 @@ sequenceDiagram
 sequenceDiagram
     participant Client
     participant Agent
-    participant SM as ServiceManager
+    participant SM as RootManager
     participant ConM as ConnectorManager
     participant CSM as CustomServiceManager
     participant FStM as FileStorageManager
@@ -422,29 +423,29 @@ sequenceDiagram
 
 ## 8. `refresh()` Chain with Fingerprint Checks
 
-### 8a. ServiceManager.refresh()
+### 8a. RootManager.refresh()
 
 ```mermaid
 flowchart TD
-    A["Agent ensures started /<br/>extension scope changed"] --> B["ServiceManager.refresh()"]
+    A["Agent ensures started /<br/>extension scope changed"] --> B["RootManager.refresh()"]
     B --> C{Acquire _refresh_lock}
     C --> D{_changed == True<br/>or force == True?}
     D -->|"No (clean)"| E["Return immediately<br/>(no-op)"]
-    D -->|"Yes (dirty)"| F["Iterate children in order"]
+    D -->|"Yes (changed)"| F["Iterate children in order"]
 
     F --> G["child.refresh()"]
-    G --> H{"Is child an<br/>ExtensionInstanceManager?"}
+    G --> H{"Is child an<br/>InstanceManager?"}
 
-    H -->|"Yes"| I["ExtensionInstanceManager.refresh()"]
-    H -->|"No"| J["Plain ExtensionManager.refresh()<br/>(subclasses)"]
+    H -->|"Yes"| I["InstanceManager.refresh()"]
+    H -->|"No"| J["Plain Manager.refresh()<br/>(subclasses)"]
 
-    J --> K["ExtensionManager.scan()"]
-    K --> L["ExtensionManager.refresh()"]
+    J --> K["Manager.scan()"]
+    K --> L["Manager.refresh()"]
     L --> M["done"]
 
-    I --> N["ExtensionManager.refresh()<br/>→ scan()"]
-    N --> O["ExtensionInstanceManager.<br/>_reconcile_instances()"]
-    O --> P["ExtensionInstanceManager.<br/>_refresh_instances()"]
+    I --> N["Manager.refresh()<br/>→ scan()"]
+    N --> O["InstanceManager.<br/>_reconcile_instances()"]
+    O --> P["InstanceManager.<br/>_refresh_instances()"]
     P --> M
 
     M --> Q["More children?"]
@@ -453,7 +454,7 @@ flowchart TD
     S --> T["done"]
 ```
 
-### 8b. ExtensionManager.scan() — Fingerprint Check Detail
+### 8b. Manager.scan() — Fingerprint Check Detail
 
 ```mermaid
 flowchart TD
@@ -478,7 +479,7 @@ flowchart TD
 
     P -->|"HookManager"| Q["group by event,<br/>sort by priority"]
     P -->|"ToolManager"| R["build _by_alias, _by_name,<br/>_by_exported_name index maps"]
-    P -->|"ExtensionInstanceManager"| S["no extra rebuild<br/>(reconciliation handles it)"]
+    P -->|"InstanceManager"| S["no extra rebuild<br/>(reconciliation handles it)"]
 
     Q --> T
     R --> T
@@ -486,11 +487,11 @@ flowchart TD
 
     T --> U["_notify_change()"]
     U --> V["on_change() callback"]
-    V --> W["ServiceManager._mark_changed()"]
+    V --> W["RootManager._mark_changed()"]
     W --> X["return True<br/>(changes applied)"]
 ```
 
-### 8c. ExtensionInstanceManager._reconcile_instances() — Instance Lifecycle
+### 8c. InstanceManager._reconcile_instances() — Instance Lifecycle
 
 ```mermaid
 flowchart TD
@@ -521,3 +522,367 @@ flowchart TD
     S --> T["asyncio.gather<br/>_refresh_instance(inst)<br/>for all running instances"]
     T --> U["done"]
 ```
+
+---
+
+## 9. Manager & Service Inheritance
+
+### Part A — AbstractService → Manager Hierarchy
+
+```mermaid
+classDiagram
+    class AbstractService {
+        «ABC»
+        + config: Config | None
+        + __init__(config: Config | None = None)
+        + start() async … initialize resources
+        + stop() async … release resources
+        + refresh() async … sync with extensions
+    }
+
+    class Service {
+        «ABC»
+        + __init_subclass__() → stamps SERVICE_ATTRIBUTE
+        ──────────────────────────────────
+        Inherits: start, stop, refresh
+        Adds: auto-discovery via SERVICE_ATTRIBUTE
+    }
+    AbstractService <|-- Service : extends
+
+    class Storage {
+        + __init_subclass__() → stamps STORAGE_ATTRIBUTE
+        + save_event(entry) async → int | None
+        + get_branch(last_item_id) async → list[DialogItem]
+        + find_item_id_by_external_id(eid, origin) async → int | None
+    }
+    AbstractService <|-- Storage : extends (no SERVICE_ATTRIBUTE)
+
+    class FileStorage {
+        + __init_subclass__() → stamps FILE_STORAGE_ATTRIBUTE
+        + save(data, ext) async → str
+        + get(file_id) async → bytes | None
+        + delete(file_id) async → bool
+    }
+    AbstractService <|-- FileStorage : extends (no SERVICE_ATTRIBUTE)
+
+    class LLMAdapter {
+        + __init_subclass__() → stamps LLM_ADAPTER_ATTRIBUTE
+        + ask_llm(ctx) async → LLMResponse
+    }
+    AbstractService <|-- LLMAdapter : extends (no SERVICE_ATTRIBUTE)
+
+    class Connector {
+        + origin_types: ClassVar[tuple[type[DialogOrigin], ...]]
+        + __init_subclass__() → stamps CONNECTOR_ATTRIBUTE
+        + start() async … launches listener
+        + stop() async … cancels listener
+        + parse(raw, agent) async → OnParsedCtx | None
+        + send(origin, item) async → str
+        + typing(origin) → AsyncIterator
+        + listen(on_event) async … platform loop
+    }
+    AbstractService <|-- Connector : extends (no SERVICE_ATTRIBUTE)
+
+    class Manager~D~ {
+        «Generic[D: Descriptor]»
+        # _sources: list[Source[D]]
+        # _descriptors: dict[str, D]
+        # _fingerprint: str | None
+        + on_change: Callable | None
+        + start() async → refresh at end
+        + stop() async → invalidate sources
+        + refresh() async → scan()
+        + mount(source)
+        + unmount(source)
+        + scan() → bool … fingerprint-based
+        + invalidate(source) → bool
+    }
+    AbstractService <|-- Manager : extends
+
+    class ToolManager {
+        + call(tool_call, ctx) async → ToolCallResult
+        + resolve(name) → ToolDescriptor
+        + schemas() → list[dict]
+        + invoke(tool_call) async → Any
+        ──────────────────────────────────
+        Inherits: mount, scan, invalidate, fingerprint check
+        Adds: alias/name/exported_name index maps
+    }
+    Manager <|-- ToolManager : extends
+
+    class HookManager {
+        - _handlers: dict[str, list[HookDescriptor]]
+        + fire(event, ctx) async … priority order
+        ──────────────────────────────────
+        Inherits: mount, scan, invalidate
+        Adds: event-grouped, priority-sorted handler map
+    }
+    Manager <|-- HookManager : extends
+
+    class InstanceManager~D,I~ {
+        «Generic — I: AbstractService»
+        # _instances: dict[str, I]
+        # _start_order: list[str]
+        + instances → list[I]
+        # _create_instance(descriptor) → I
+        # _start_instance(instance) async
+        # _stop_instance(instance) async
+        # _refresh_instance(instance) async
+        # _on_instance_added(instance, sid, descriptor)
+        # _on_instance_removed(instance)
+        # _reconcile_instances()
+        # _refresh_instances() async
+        ──────────────────────────────────
+        Inherits: mount, scan, fingerprint, invalidate
+        Adds: instance create/start/stop/reconcile lifecycle
+    }
+    Manager <|-- InstanceManager : extends
+
+    class ServiceInstanceManager {
+        # _config: Config
+        # _registry: ServiceRegistry
+        ──────────────────────────────────
+        Inherits: instance lifecycle
+        Adds: creates via service_cls(config), registry hooks
+    }
+    InstanceManager <|-- ServiceInstanceManager : D=ServiceDescriptor, I=AbstractService
+
+    class ActiveServiceInstanceManager {
+        «abstract — subclass must set _cls, _attribute, active_field»
+        # _cls: type[AbstractService]
+        # _attribute: str
+        # _prefix: str
+        # active_field: ConfigField[str | None]
+        - _active_id: str | None
+        + _active → instance (property)
+        # _select_active() … picks configured or first
+        ──────────────────────────────────
+        Inherits: instance lifecycle + registry hooks
+        Adds: active-instance selection by config or “first”
+    }
+    ServiceInstanceManager <|-- ActiveServiceInstanceManager : extends
+
+    class StorageManager {
+        ──────────────────────────────────
+        Inherits: active selection
+        Adds: delegates save_event/get_branch/find → active Storage
+    }
+    ActiveServiceInstanceManager <|-- StorageManager : cls=Storage, attr=STORAGE_ATTRIBUTE
+
+    class FileStorageManager {
+        ──────────────────────────────────
+        Inherits: active selection
+        Adds: delegates save/get/delete → active FileStorage
+    }
+    ActiveServiceInstanceManager <|-- FileStorageManager : cls=FileStorage, attr=FILE_STORAGE_ATTRIBUTE
+
+    class LLMAdapterManager {
+        ──────────────────────────────────
+        Inherits: instance lifecycle (NOT active selection)
+        Adds: first-adapter pattern — forwards ask_llm → first instance
+    }
+    ServiceInstanceManager <|-- LLMAdapterManager : extends (skips active selection)
+
+    class CustomServiceManager {
+        ──────────────────────────────────
+        Inherits: instance lifecycle
+        Adds: discovers Service subclasses, skips provider slots
+    }
+    ServiceInstanceManager <|-- CustomServiceManager : extends (scans SERVICE_ATTRIBUTE)
+
+    class ConnectorManager {
+        - _on_event: OnEvent | None
+        + bind(on_event)
+        + resolve() → list[Connector]
+        ──────────────────────────────────
+        Inherits: instance lifecycle
+        Adds: wires _on_event on each connector in _create_instance
+    }
+    ServiceInstanceManager <|-- ConnectorManager : extends (scans CONNECTOR_ATTRIBUTE)
+
+    class RootManager {
+        «root composite — NOT an AbstractService»
+        - _children: list[7 managers]
+        - _changed: bool
+        - _registry: ServiceRegistry
+        + tool_manager
+        + hook_manager
+        + llm_adapter_manager
+        + storage_manager
+        + file_storage_manager
+        + custom_service_manager
+        + connector_manager
+        + start() async … transactional, rollback on fail
+        + stop() async … reverse order
+        + refresh(force) async … no-op when clean
+        + set_scope(scope) … propagates to all children
+    }
+
+    RootManager o--> ToolManager : owns
+    RootManager o--> HookManager : owns
+    RootManager o--> LLMAdapterManager : owns
+    RootManager o--> StorageManager : owns
+    RootManager o--> FileStorageManager : owns
+    RootManager o--> CustomServiceManager : owns
+    RootManager o--> ConnectorManager : owns
+
+    class ServiceRegistry {
+        + get(key: type[T]) → T | None
+        + require(key: type[T]) → T
+        + get_by_id(descriptor_id) → object | None
+        + get_all(base: type[T]) → list[T]
+        + remove_by_instance(instance)
+        + clear()
+    }
+    RootManager *--> ServiceRegistry : creates & owns
+    ServiceInstanceManager --> ServiceRegistry : registers instances
+```
+
+**What each level inherits:**
+
+| Level | Inherits from | Key inherited capabilities |
+|-------|--------------|---------------------------|
+| `Service` | `AbstractService` | `start()` / `stop()` / `refresh()` lifecycle + stamps `SERVICE_ATTRIBUTE` |
+| `Storage`, `FileStorage`, `LLMAdapter` | `AbstractService` | `start()` / `stop()` / `refresh()` + stamps own provider marker |
+| `Connector` | `AbstractService` | `start()` (launches listener) / `stop()` (cancels) + stamps `CONNECTOR_ATTRIBUTE` |
+| `Manager[D]` | `AbstractService` | source mounting, fingerprint-based `scan()`, invalidation, `start()`→refresh |
+| `ToolManager` | `Manager` | name-resolution index maps, `call()` / `resolve()` / `schemas()` |
+| `HookManager` | `Manager` | event-grouped handler map, priority-ordered `fire()` |
+| `InstanceManager[D,I]` | `Manager` | instance create/start/stop/reconcile lifecycle + refresh |
+| `ServiceInstanceManager` | `InstanceManager` | *Binds D=ServiceDescriptor I=AbstractService*; integrates with `ServiceRegistry` |
+| `ActiveServiceInstanceManager` | `ServiceInstanceManager` | active-instance selection (`_select_active()`) by config or first-available |
+| `StorageManager` | `ActiveServiceInstanceManager` | delegates to active `Storage` |
+| `FileStorageManager` | `ActiveServiceInstanceManager` | delegates to active `FileStorage` |
+| `LLMAdapterManager` | `ServiceInstanceManager` | first-adapter pattern (no active selection) |
+| `CustomServiceManager` | `ServiceInstanceManager` | discovers custom `Service` subclasses |
+| `ConnectorManager` | `ServiceInstanceManager` | wires `_on_event`, `resolve()` returns connectors |
+
+---
+
+### Part B — Extension Source & Descriptor Hierarchy
+
+```mermaid
+classDiagram
+    class Source~D~ {
+        «ABC — Generic[D: Descriptor]»
+        # _invalidation_callbacks: list
+        # _available: bool
+        + available → bool (property)
+        + scan() → Iterable[D] (abstract)
+        + start() async
+        + stop() async
+        + invalidate() … sets available=False, fires callbacks
+        + restore() … sets available=True
+    }
+
+    class ToolSource {
+        + invoke(descriptor, kwargs, ctx) async → object
+    }
+    Source <|-- ToolSource : extends (binds D=ToolDescriptor)
+
+    class HookSource {
+        + invoke(descriptor, ctx) async → object (abstract)
+    }
+    Source <|-- HookSource : extends (binds D=HookDescriptor)
+
+    class ConnectorSource {
+        «ABC — no extra methods»
+    }
+    Source <|-- ConnectorSource : extends (binds D=ConnectorDescriptor)
+
+    class PythonSource~D~ {
+        - _scope: list[str]
+        + set_scope(scope)
+        ──────────────────────────────────
+        Inherits: scan, invalidate, restore, available
+        Adds: modules scope, identity filtering via __module__
+    }
+    Source <|-- PythonSource : extends
+
+    class PythonToolSource {
+        ──────────────────────────────────
+        Scopes: modules with @tool → TOOL_ATTRIBUTE
+    }
+    PythonSource <|-- PythonToolSource : D=ToolDescriptor
+
+    class PythonHookSource {
+        ──────────────────────────────────
+        Scopes: modules with @Hook → HOOK_ATTRIBUTE
+    }
+    PythonSource <|-- PythonHookSource : D=HookDescriptor
+
+    class PythonConnectorSource {
+        ──────────────────────────────────
+        Scopes: modules with Connector subclasses → CONNECTOR_ATTRIBUTE
+    }
+    PythonSource <|-- PythonConnectorSource : D=ConnectorDescriptor
+
+    class PythonServiceSource {
+        ──────────────────────────────────
+        Scopes: modules with Service subclasses → SERVICE_ATTRIBUTE
+    }
+    PythonSource <|-- PythonServiceSource : D=ServiceDescriptor
+
+    class PythonProviderSource {
+        ──────────────────────────────────
+        Scopes: provider-specific markers (STORAGE, FILE_STORAGE, LLM_ADAPTER)
+    }
+    PythonSource <|-- PythonProviderSource : D=ServiceDescriptor
+
+    class Descriptor {
+        «frozen dataclass»
+        + id: str
+        + _source_ref: weakref
+        + fingerprint → str (property)
+        ──────────────────────────────────
+        SHA-256(fingerprint_payload) → change detection
+    }
+
+    class ToolDescriptor {
+        + namespace: str
+        + alias: str
+        + name: str
+        + exported_name: str
+        + doc: str
+        + schema: dict
+        + metadata: dict
+    }
+    Descriptor <|-- ToolDescriptor
+
+    class HookDescriptor {
+        + event: str
+        + priority: int
+        + metadata: dict
+    }
+    Descriptor <|-- HookDescriptor
+
+    class ServiceDescriptor {
+        + service_cls: type[AbstractService]
+        + metadata: dict
+    }
+    Descriptor <|-- ServiceDescriptor
+
+    class ConnectorDescriptor {
+        + connector_cls: type[Connector]
+    }
+    ServiceDescriptor <|-- ConnectorDescriptor
+```
+
+**How descriptors & sources connect:**
+
+```
+PythonToolSource ──scan()──▶ ToolDescriptor  ──▶ ToolManager indexes
+PythonHookSource  ──scan()──▶ HookDescriptor  ──▶ HookManager groups by event
+PythonConnectorSource ──scan()──▶ ConnectorDescriptor ──▶ ConnectorManager creates instances
+PythonServiceSource ──scan()──▶ ServiceDescriptor  ──▶ CustomServiceManager creates instances
+PythonProviderSource ──scan()──▶ ServiceDescriptor  ──▶ StorageManager / FileStorageManager / LLMAdapterManager
+```
+
+Each source is mounted into an `Manager` subclass. The manager calls `source.scan()` which produces descriptors. The manager's `_rebuild()` then builds specialized indexes (event→handlers map, alias→name→descriptor maps, instance reconciliation sets).
+
+```
+ToolManager  ──mount(PythonToolSource)──▶ PythonToolSource ──scan()──▶ [ToolDescriptor, ...]
+HookManager  ──mount(PythonHookSource)──▶ PythonHookSource  ──scan()──▶ [HookDescriptor, ...]
+```
+
+Each `Source` tracks its own `available` flag. When a source is invalidated (e.g. module removed from scope), its descriptors are removed from the manager, triggering index rebuild and `on_change` notification.

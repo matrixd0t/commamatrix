@@ -2,24 +2,26 @@
 
 from __future__ import annotations
 
+import asyncio
+import types
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, AsyncIterator
-from dataclasses import dataclass, field
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import (
     Any,
     ClassVar,
     Generic,
     TYPE_CHECKING,
     TypeVar,
+    Union as TypingUnion,
     get_args,
     get_origin,
 )
-import asyncio
-from contextlib import asynccontextmanager
 
 from .dialog import DialogItem, DialogOrigin
 from .service import AbstractService, ServiceDescriptor
-from ..extensions import ExtensionDescriptor, ExtensionSource
+from ..extensions import Source
 
 if TYPE_CHECKING:
     from .config import Config
@@ -39,9 +41,19 @@ class Connector(AbstractService, Generic[OrgT]):
 
     Extends AbstractService: start() / stop() manage the listener lifecycle
     instead of explicit start_listening / stop_listening.
+
+    A connector can declare one or more DialogOrigin types it handles:
+
+        class MyConnector(Connector):
+            ...
+
+        class TypedConnector(Connector[PrivateOrigin | GroupOrigin]):
+            ...
+
+    ``origin_types`` is populated automatically from the generic base.
     """
 
-    origin_type: ClassVar[type | None] = None
+    origin_types: ClassVar[tuple[type[DialogOrigin], ...]] = ()
     _on_event: OnEvent | None = None
 
     def __init__(self, config: Config) -> None:
@@ -53,13 +65,22 @@ class Connector(AbstractService, Generic[OrgT]):
 
         for base in getattr(cls, "__orig_bases__", ()):
             origin = get_origin(base)
-            if origin is Connector or (
+            if origin is not Connector and not (
                 isinstance(origin, type) and issubclass(origin, Connector)
             ):
-                args = get_args(base)
-                if args and not isinstance(args[0], TypeVar):
-                    cls.origin_type = args[0]
-                    break
+                continue
+            collected: list[type[DialogOrigin]] = []
+            for arg in get_args(base):
+                arg_origin = get_origin(arg)
+                if arg_origin is types.UnionType or arg_origin is TypingUnion:
+                    for a in get_args(arg):
+                        if isinstance(a, type) and issubclass(a, DialogOrigin):
+                            collected.append(a)
+                elif isinstance(arg, type) and issubclass(arg, DialogOrigin):
+                    collected.append(arg)
+            if collected:
+                cls.origin_types = tuple(collected)
+            break
 
         if not getattr(cls, "__abstractmethods__", None):
             setattr(cls, CONNECTOR_ATTRIBUTE, True)
@@ -87,10 +108,10 @@ class Connector(AbstractService, Generic[OrgT]):
     async def parse(self, data: dict, agent: Agent) -> OnParsedCtx | None: ...
 
     @abstractmethod
-    async def send(self, origin: OrgT, item: DialogItem) -> str: ...
+    async def send(self, origin: DialogOrigin, item: DialogItem) -> str: ...
 
     @asynccontextmanager
-    async def typing(self, origin: OrgT) -> AsyncIterator[None]:
+    async def typing(self, origin: DialogOrigin) -> AsyncIterator[None]:
         yield
 
     async def listen(self, on_event: OnEvent) -> None:
@@ -102,5 +123,5 @@ class ConnectorDescriptor(ServiceDescriptor):
     connector_cls: type[Connector]
 
 
-class ConnectorSource(ExtensionSource[ConnectorDescriptor], ABC):
+class ConnectorSource(Source[ConnectorDescriptor], ABC):
     pass

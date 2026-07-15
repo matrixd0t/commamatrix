@@ -11,7 +11,7 @@ from collections.abc import Awaitable, Callable
 
 from .connector import Connector
 from .dialog import DialogItem, DialogOrigin
-from ..extensions import ExtensionDescriptor, ExtensionSource
+from ..extensions import Descriptor, Source
 from .llm_adapter import LLMResponse, ToolCallResult, ToolCall
 from .tool import ToolDescriptor
 
@@ -29,7 +29,7 @@ HOOK_ATTRIBUTE = "__commamatrix_hook__"
 class Hook(Generic[CtxT]):
     """Typed decorator for hook handlers.
 
-    Stamps the function with metadata. Actual registration happens when
+    Stamps the function with meta. Actual registration happens when
     a PythonHookSource scans scoped modules.
     """
 
@@ -57,7 +57,7 @@ class Hook(Generic[CtxT]):
 
 
 @dataclass(frozen=True, slots=True)
-class HookDescriptor(ExtensionDescriptor):
+class HookDescriptor(Descriptor):
     """Declarative descriptor of a single hook registration.
 
     Source-agnostic — declares when to fire (event) and in
@@ -67,18 +67,18 @@ class HookDescriptor(ExtensionDescriptor):
 
     event: str
     priority: int
-    metadata: dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
     def _fingerprint_payload(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "event": self.event,
             "priority": self.priority,
-            "metadata": self.metadata,
+            "meta": self.meta,
         }
 
 
-class HookSource(ExtensionSource[HookDescriptor], ABC):
+class HookSource(Source[HookDescriptor], ABC):
     """Abstract source of hook descriptors and their handlers."""
 
     @abstractmethod
@@ -104,7 +104,6 @@ class HookEventType(StrEnum):
 @dataclass(slots=True, kw_only=True)
 class BaseEventCtx:
     """Base class for all hook event contexts."""
-
     meta: dict[str, Any] = field(default_factory=dict)
 
 

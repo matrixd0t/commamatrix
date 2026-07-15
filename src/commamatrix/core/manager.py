@@ -1,4 +1,4 @@
-# core/extension_manager.py
+# core/manager.py
 
 from __future__ import annotations
 
@@ -8,20 +8,20 @@ from collections.abc import Callable, ValuesView
 from typing import Generic, TypeVar
 
 from ..extensions import (
-    ExtensionDescriptor,
-    ExtensionSource,
-    ExtensionUnavailableError,
-    StaleExtensionError,
+    Descriptor,
+    Source,
+    UnavailableSourceError,
+    StaleDescriptorError,
 )
 from ..api.service import AbstractService
 from ..api.utils import await_if_needed
 
 
-D = TypeVar("D", bound=ExtensionDescriptor)
+D = TypeVar("D", bound=Descriptor)
 
 
-class ExtensionManager(AbstractService, Generic[D]):
-    """Manage extension sources, descriptors, indexes, and invalidation.
+class Manager(AbstractService, Generic[D]):
+    """Manages sources, descriptors, indexes, and invalidation.
 
     Scan() rescans all mounted sources and rebuilds internal indexes
     when the descriptor set changes. Notifies on_change callback when
@@ -32,7 +32,7 @@ class ExtensionManager(AbstractService, Generic[D]):
 
     def __init__(self) -> None:
         super().__init__()
-        self._sources: list[ExtensionSource[D]] = []
+        self._sources: list[Source[D]] = []
         self._descriptors: dict[str, D] = {}
         self._source_descriptor_ids: dict[int, set[str]] = {}
         self._source_invalidators: dict[int, Callable[[], None]] = {}
@@ -43,27 +43,27 @@ class ExtensionManager(AbstractService, Generic[D]):
     def descriptors(self) -> ValuesView[D]:
         return self._descriptors.values()
 
-    def _source_of(self, descriptor: D) -> ExtensionSource[D]:
+    def _source_of(self, descriptor: D) -> Source[D]:
         self._ensure_current(descriptor)
         return descriptor._source_ref()
 
     def _ensure_current(self, descriptor: D) -> None:
         current = self._descriptors.get(descriptor.id)
         if current is not descriptor:
-            raise StaleExtensionError(f"Extension descriptor is no longer active: {descriptor.id}")
+            raise StaleDescriptorError(f"Extension descriptor is no longer active: {descriptor.id}")
 
         source = descriptor._source_ref()
         if source is None or not source.available:
-            raise ExtensionUnavailableError(f"Extension source is unavailable: {descriptor.id}")
+            raise UnavailableSourceError(f"Extension source is unavailable: {descriptor.id}")
 
     def is_current(self, descriptor: D) -> bool:
         try:
             self._ensure_current(descriptor)
-        except (ExtensionUnavailableError, StaleExtensionError):
+        except (UnavailableSourceError, StaleDescriptorError):
             return False
         return True
 
-    def mount(self, source: ExtensionSource[D]) -> None:
+    def mount(self, source: Source[D]) -> None:
         if source in self._sources:
             return
 
@@ -80,7 +80,7 @@ class ExtensionManager(AbstractService, Generic[D]):
         self._source_invalidators[id(source)] = invalidate
         source._attach_invalidator(invalidate)
 
-    def unmount(self, source: ExtensionSource[D]) -> None:
+    def unmount(self, source: Source[D]) -> None:
         self.invalidate(source)
         invalidator = self._source_invalidators.pop(id(source), None)
         if invalidator is not None:
@@ -102,7 +102,7 @@ class ExtensionManager(AbstractService, Generic[D]):
     async def refresh(self) -> None:
         self.scan()
 
-    def invalidate(self, source: ExtensionSource[D]) -> bool:
+    def invalidate(self, source: Source[D]) -> bool:
         if source not in self._sources:
             return False
 

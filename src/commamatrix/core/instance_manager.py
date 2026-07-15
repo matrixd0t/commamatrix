@@ -6,27 +6,27 @@ import asyncio
 from typing import Generic, TypeVar
 
 from ..api.service import AbstractService
-from ..extensions import ExtensionDescriptor, ExtensionSource
-from .extension_manager import ExtensionManager
+from ..extensions import Descriptor, Source
+from .manager import Manager
 
 
-D = TypeVar("D", bound=ExtensionDescriptor)
-I = TypeVar("I", bound=AbstractService)
+D = TypeVar("D", bound=Descriptor)
+S = TypeVar("S", bound=AbstractService)
 
 
-class ExtensionInstanceManager(ExtensionManager[D], Generic[D, I]):
-    """ExtensionManager that manages runtime instances tied to descriptors.
+class InstanceManager(Manager[D], Generic[D, S]):
+    """Manager that manages runtime instances tied to descriptors.
 
     Handles creation, fingerprint-based restart, stop, and cleanup
     for any type of instance. Subclasses implement _create_instance,
     _start_instance, _stop_instance, and _refresh_instance hooks.
     """
 
-    def __init__(self, python_source: ExtensionSource[D]) -> None:
+    def __init__(self, python_source: Source[D]) -> None:
         super().__init__()
         self._python_source = python_source
         self.mount(self._python_source)
-        self._instances: dict[str, I] = {}
+        self._instances: dict[str, S] = {}
         self._instance_fingerprints: dict[str, str] = {}
         self._start_order: list[str] = []
 
@@ -34,10 +34,10 @@ class ExtensionInstanceManager(ExtensionManager[D], Generic[D, I]):
         self._python_source.set_scope(scope)
 
     @property
-    def instances(self) -> list[I]:
+    def instances(self) -> list[S]:
         return [self._instances[sid] for sid in self._start_order if sid in self._instances]
 
-    def get_by_id(self, descriptor_id: str) -> I | None:
+    def get_by_id(self, descriptor_id: str) -> S | None:
         return self._instances.get(descriptor_id)
 
     async def start(self) -> None:
@@ -97,20 +97,20 @@ class ExtensionInstanceManager(ExtensionManager[D], Generic[D, I]):
     async def _refresh_instances(self) -> None:
         await asyncio.gather(*(self._refresh_instance(inst) for inst in self._instances.values()))
 
-    def _create_instance(self, descriptor: D) -> I:
+    def _create_instance(self, descriptor: D) -> S:
         raise NotImplementedError
 
-    async def _start_instance(self, instance: I) -> None:
+    async def _start_instance(self, instance: S) -> None:
         pass
 
-    async def _stop_instance(self, instance: I) -> None:
+    async def _stop_instance(self, instance: S) -> None:
         pass
 
-    async def _refresh_instance(self, instance: I) -> None:
+    async def _refresh_instance(self, instance: S) -> None:
         pass
 
-    def _on_instance_added(self, instance: I, sid: str, descriptor: D) -> None:
+    def _on_instance_added(self, instance: S, sid: str, descriptor: D) -> None:
         pass
 
-    def _on_instance_removed(self, instance: I) -> None:
+    def _on_instance_removed(self, instance: S) -> None:
         pass

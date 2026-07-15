@@ -5,10 +5,10 @@ from __future__ import annotations
 import weakref
 
 from ...api.service import AbstractService, ServiceDescriptor
-from .extension_source import PythonExtensionSource
+from .base_source import PythonSource
 
 
-class PythonProviderSource(PythonExtensionSource[ServiceDescriptor]):
+class PythonProviderSource(PythonSource[ServiceDescriptor]):
     """Generic Python-backed source for service/provider descriptors.
 
     Discovers concrete subclasses of a given base type that carry

@@ -10,7 +10,7 @@ from ..api.connector import OnEvent
 from ..api.utils import await_if_needed
 
 
-class ServiceManager:
+class RootManager:
     """Root lifecycle composite owning all agent-owned services.
 
     Manages tool, hook, connector, and provider managers as well as

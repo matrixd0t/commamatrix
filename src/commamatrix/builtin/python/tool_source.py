@@ -16,12 +16,12 @@ from ...api.tool import (
     ToolDescriptor,
     ToolSource,
 )
-from .extension_source import PythonExtensionSource
+from .base_source import PythonSource
 
 _INJECTABLE_TYPES: set[type] = {BeforeToolCallCtx}
 
 
-class PythonToolSource(PythonExtensionSource[ToolDescriptor], ToolSource):
+class PythonToolSource(PythonSource[ToolDescriptor], ToolSource):
     """Python-backed tool source.
 
     Discovers @tool-decorated functions via module scanning and

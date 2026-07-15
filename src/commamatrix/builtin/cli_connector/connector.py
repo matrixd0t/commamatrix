@@ -105,7 +105,10 @@ class CliConnector(Connector[CliOrigin]):
             previous_external_id=self._last_external_id.get(session_id),
         )
 
-    async def send(self, origin: CliOrigin, item: DialogItem) -> str:
+    async def send(self, origin: DialogOrigin, item: DialogItem) -> str:
+        if not isinstance(origin, CliOrigin):
+            return ''
+
         writer = self._writers.get(origin.session_id)
         if writer is None:
             return ''
@@ -133,7 +136,11 @@ class CliConnector(Connector[CliOrigin]):
         return ext_id
 
     @asynccontextmanager
-    async def typing(self, origin: CliOrigin) -> AsyncIterator[None]:
+    async def typing(self, origin: DialogOrigin) -> AsyncIterator[None]:
+        if not isinstance(origin, CliOrigin):
+            yield
+            return
+
         writer = self._writers.get(origin.session_id)
         if writer is None:
             yield

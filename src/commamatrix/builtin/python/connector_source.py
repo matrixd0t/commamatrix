@@ -11,10 +11,10 @@ from ...api.connector import (
     ConnectorDescriptor,
     ConnectorSource,
 )
-from .extension_source import PythonExtensionSource
+from .base_source import PythonSource
 
 
-class PythonConnectorSource(PythonExtensionSource[ConnectorDescriptor], ConnectorSource):
+class PythonConnectorSource(PythonSource[ConnectorDescriptor], ConnectorSource):
     """Python-backed connector source.
 
     Discovers Connector subclasses via module scanning.

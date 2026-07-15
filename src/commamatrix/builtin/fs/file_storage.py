@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import uuid
-import aiofiles
+from aiofiles import open, os
 from pathlib import Path
 
 from ...api.file_storage import FileStorage
 from ...api.config import ConfigField, Config
 
-files_directory = ConfigField[str](name="files_directory", default='files', description='Directory for file storage')
+files_directory = ConfigField[str](name='files_directory', default='files', description='Directory for file storage')
 
 
 class SimpleFileStorage(FileStorage):
@@ -23,14 +23,14 @@ class SimpleFileStorage(FileStorage):
         self._directory.mkdir(parents=True, exist_ok=True)
         file_id = f'{self._prefix}{uuid.uuid4().hex}{ext or ""}'
         path = self._directory / file_id
-        async with aiofiles.open(path, 'wb') as f:
+        async with open(path, 'wb') as f:
             await f.write(data)
         return file_id
 
     async def get(self, file_id: str) -> bytes | None:
         path = self._directory / file_id
         try:
-            async with aiofiles.open(path, 'rb') as f:
+            async with open(path, 'rb') as f:
                 return await f.read()
         except FileNotFoundError:
             return None
@@ -38,7 +38,7 @@ class SimpleFileStorage(FileStorage):
     async def delete(self, file_id: str) -> bool:
         path = self._directory / file_id
         try:
-            await aiofiles.os.remove(path)
+            await os.remove(path)
         except FileNotFoundError:
             return False
         return True

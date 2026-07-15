@@ -1,12 +1,11 @@
 # extensions/__init__.py
 
-from .contracts import ExtensionDescriptor, ExtensionSource
-from .errors import ExtensionError, ExtensionUnavailableError, StaleExtensionError
+from .contracts import Descriptor, Source, ExtensionError, UnavailableSourceError, StaleDescriptorError
 
 __all__ = [
-    "ExtensionDescriptor",
-    "ExtensionSource",
+    "Descriptor",
+    "Source",
     "ExtensionError",
-    "ExtensionUnavailableError",
-    "StaleExtensionError",
+    "UnavailableSourceError",
+    "StaleDescriptorError",
 ]

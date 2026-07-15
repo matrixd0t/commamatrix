@@ -6,7 +6,8 @@ from abc import ABC
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..extensions import ExtensionDescriptor, ExtensionSource
+from ..api.config import Config
+from ..extensions import Descriptor, Source
 
 SERVICE_ATTRIBUTE = "__commamatrix_service__"
 
@@ -22,10 +23,8 @@ class AbstractService(ABC):
     are discovered separately via CONNECTOR_ATTRIBUTE).
     """
 
-    config: Any
-
-    def __init__(self, config: Any = None) -> None:
-        self.config = config
+    def __init__(self, config: Config | None = None) -> None:
+        pass
 
     async def start(self) -> None:
         """Initialize resources. Called once after agent startup."""
@@ -54,7 +53,7 @@ class Service(AbstractService, ABC):
 
 
 @dataclass(frozen=True, slots=True)
-class ServiceDescriptor(ExtensionDescriptor):
+class ServiceDescriptor(Descriptor):
     """Immutable descriptor for a discoverable AbstractService class."""
 
     service_cls: type[AbstractService]
