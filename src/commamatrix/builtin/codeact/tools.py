@@ -3,7 +3,7 @@
 """LLM-visible CodeAct tools: execute code, search and list available tools."""
 
 from __future__ import annotations
-from .manager import CodeActManager
+from .service import CodeActService
 from ...components.hook import BeforeToolCallCtx
 from ...components.tool import tool
 
@@ -11,7 +11,7 @@ from ...components.tool import tool
 @tool(codeact=True)
 async def execute(code: str, ctx: BeforeToolCallCtx) -> str:
     """Execute Python code in the configured CodeAct environment."""
-    runtime = ctx.run.agent.services.require(CodeActManager)
+    runtime = ctx.run.agent.services.require(CodeActService)
     result = await runtime.execute(code, ctx)
     return result.console_output()
 
@@ -19,7 +19,7 @@ async def execute(code: str, ctx: BeforeToolCallCtx) -> str:
 @tool(codeact=True)
 async def search_tools(query: str, ctx: BeforeToolCallCtx, limit: int = 5) -> str:
     """Semantically search for tools by description and signature."""
-    runtime = ctx.run.agent.services.require(CodeActManager)
+    runtime = ctx.run.agent.services.require(CodeActService)
     results = runtime.searcher.search(query, limit=limit)
     if not results:
         return f"No tools found for query '{query}'."
@@ -34,7 +34,7 @@ async def search_tools(query: str, ctx: BeforeToolCallCtx, limit: int = 5) -> st
 @tool(codeact=True)
 async def list_tools(ctx: BeforeToolCallCtx, namespace: str | None = None) -> str:
     """List available tool namespaces or tools within a namespace."""
-    runtime = ctx.run.agent.services.require(CodeActManager)
+    runtime = ctx.run.agent.services.require(CodeActService)
     searcher = runtime.searcher
     if namespace is None:
         lines = ["Available tool namespaces:"]

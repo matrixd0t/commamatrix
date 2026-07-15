@@ -1,12 +1,12 @@
-﻿# components/connector.py
+# components/connector.py
 
 from __future__ import annotations
 
 import asyncio
 import types
 import weakref
-from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable, AsyncIterator
+from abc import abstractmethod
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import (
@@ -23,26 +23,29 @@ from typing import (
 
 from ..core.base.service import AbstractService, ServiceDescriptor
 from ..core.base.source import Source, PythonSource
-from ..core.base.manager import ServiceInstanceManager, ServiceInstanceRegistry
+from ..core.base.manager import ServiceInstanceManager
 from .dialog import DialogItem, DialogOrigin
 
 if TYPE_CHECKING:
     from .hook import OnParsedCtx
-    from .config import Config
     from ..core.agent import Agent
+
+type OnRecv = Callable[[dict], Awaitable[None]]
 
 CONNECTOR_ATTRIBUTE = "__commamatrix_connector__"
 
-type OnEvent = Callable[[dict], Awaitable[None]]
 OrgT = TypeVar("OrgT", bound=DialogOrigin)
 
 
 class Connector(AbstractService, Generic[OrgT]):
-    origin_types: ClassVar[tuple[type[DialogOrigin], ...]] = ()
-    _on_event: OnEvent | None = None
+    """Abstract platform adapter. Subclasses implement parse() to
+    convert platform format into OnParsedCtx, and send() to deliver
+    outgoing messages. Lifecycle: start() launches listener, stop() cancels."""
 
-    def __init__(self, config: Config) -> None:
-        super().__init__(config)
+    origin_types: ClassVar[tuple[type[DialogOrigin], ...]] = ()
+
+    def __init__(self, agent: Agent) -> None:
+        super().__init__(agent)
         self._listener_task: asyncio.Task | None = None
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -50,9 +53,7 @@ class Connector(AbstractService, Generic[OrgT]):
 
         for base in getattr(cls, "__orig_bases__", ()):
             origin = get_origin(base)
-            if origin is not Connector and not (
-                isinstance(origin, type) and issubclass(origin, Connector)
-            ):
+            if origin is not Connector and not (isinstance(origin, type) and issubclass(origin, Connector)):
                 continue
             collected: list[type[DialogOrigin]] = []
             for arg in get_args(base):
@@ -75,11 +76,10 @@ class Connector(AbstractService, Generic[OrgT]):
         return getattr(self, "_listener_task", None)
 
     async def start(self) -> None:
-        if self._on_event is not None:
-            current = self._listener_task
-            if current is not None and not current.done():
-                return
-            self._listener_task = asyncio.create_task(self.listen(self._on_event))
+        current = self._listener_task
+        if current is not None and not current.done():
+            return
+        self._listener_task = asyncio.create_task(self.listen(self.agent.handle))
 
     async def stop(self) -> None:
         task = self._listener_task
@@ -90,7 +90,7 @@ class Connector(AbstractService, Generic[OrgT]):
         await asyncio.gather(task, return_exceptions=True)
 
     @abstractmethod
-    async def parse(self, data: dict, agent: Agent) -> OnParsedCtx | None: ...
+    async def parse(self, data: dict) -> OnParsedCtx | None: ...
 
     @abstractmethod
     async def send(self, origin: DialogOrigin, item: DialogItem) -> str: ...
@@ -99,20 +99,29 @@ class Connector(AbstractService, Generic[OrgT]):
     async def typing(self, origin: DialogOrigin) -> AsyncIterator[None]:
         yield
 
-    async def listen(self, on_event: OnEvent) -> None:
+    async def listen(self, on_recv: OnRecv) -> None:
         pass
 
 
 @dataclass(frozen=True, slots=True)
 class ConnectorDescriptor(ServiceDescriptor):
+    """Extends ServiceDescriptor with connector_cls for direct
+    Connector instantiation."""
+
     connector_cls: type[Connector]
 
 
-class ConnectorSource(Source[ConnectorDescriptor], ABC):
+class ConnectorSource(Source[ConnectorDescriptor]):
+    """Source ABC for connector discovery. Each source produces
+    ConnectorDescriptors for the ConnectorManager."""
+
     pass
 
 
 class PythonConnectorSource(PythonSource[ConnectorDescriptor], ConnectorSource):
+    """Scans scope for concrete Connector subclasses and builds
+    ConnectorDescriptors for each."""
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -132,18 +141,14 @@ class PythonConnectorSource(PythonSource[ConnectorDescriptor], ConnectorSource):
 
 
 class ConnectorManager(ServiceInstanceManager):
-    def __init__(self, config: Config, registry: ServiceInstanceRegistry, on_event: OnEvent | None = None) -> None:
-        source = PythonConnectorSource()
-        super().__init__(source, config, registry)
-        self._on_event = on_event
+    """Manages connector instances. Wires agent.handle on each connector
+    during creation and provides resolve() to retrieve all active connectors."""
 
-    def bind(self, on_event: OnEvent) -> None:
-        self._on_event = on_event
+    def __init__(self, agent: Agent, **kwargs: object) -> None:
+        super().__init__(agent, source=PythonConnectorSource(), **kwargs)
 
     def resolve(self) -> list[Connector]:
         return self.instances
 
     def _create_instance(self, descriptor: ConnectorDescriptor) -> Connector:
-        connector = descriptor.connector_cls(config=self._config)
-        connector._on_event = self._on_event
-        return connector
+        return descriptor.connector_cls(agent=self.agent)

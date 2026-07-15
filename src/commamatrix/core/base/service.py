@@ -4,16 +4,19 @@ from __future__ import annotations
 
 from abc import ABC
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ...components.config import Config
 from .descriptor import Descriptor
+
+if TYPE_CHECKING:
+    from ..agent.agent import Agent
 
 SERVICE_ATTRIBUTE = "__commamatrix_service__"
 
 
 class AbstractService(ABC):
-    """AgentLifecycle contract for agent-owned components.
+    """Agent-owned component integrated into lifecycle.
 
     Pure lifecycle ABC: start / stop / refresh.
 
@@ -23,8 +26,12 @@ class AbstractService(ABC):
     are discovered separately via CONNECTOR_ATTRIBUTE).
     """
 
-    def __init__(self, config: Config | None = None) -> None:
-        pass
+    def __init__(self, agent: Agent) -> None:
+        self.agent = agent
+
+    @property
+    def config(self) -> Config:
+        return self.agent.config
 
     async def start(self) -> None:
         """Initialize resources. Called once after agent startup."""
@@ -36,11 +43,11 @@ class AbstractService(ABC):
         """Synchronize state with current extension set. May be called often."""
 
 
-class Service(AbstractService, ABC):
+class Service(AbstractService):
     """AbstractService subclass that auto-registers via SERVICE_ATTRIBUTE.
 
-    Used for services that should be discovered by CustomInstanceServiceManager
-    and provider managers (Storage, FileStorage, LLMAdapter, CodeActManager, etc.).
+    Used for services that should be discovered by provider managers
+    (Storage, FileStorage, LLMAdapter, CodeActService, etc.).
 
     You generally should subclass THIS instead of AbstractService while designing
     a service that should integrate into Agent lifecycle.

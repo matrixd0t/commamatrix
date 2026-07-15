@@ -36,7 +36,7 @@ class SubprocessBackend(ExecutionBackend):
 
     async def execute(self, code: str, ctx: BeforeToolCallCtx, namespace: dict[str, Any] | None = None) -> ExecutionResult:
         server = RPCServer(ctx)
-        tool_tree = ctx.run.agent.tool_manager.tool_tree
+        tool_tree = _strip_codeact_tools(ctx.run.agent.tool_manager.tool_tree)
         payload = {
             "code": code,
             "namespace": namespace or {"__name__": "__codeact__"},
@@ -105,3 +105,18 @@ class SubprocessBackend(ExecutionBackend):
         return ExecutionResult(
             stderr=stderr_text or "Child process crashed", returncode=returncode or 1
         )
+
+
+def _strip_codeact_tools(tree: dict[str, Any]) -> dict[str, Any]:
+    """Remove codeact-internal tools (``codeact=True``) from the tool tree."""
+    result: dict[str, Any] = {}
+    for key, node in tree.items():
+        if key == "__tools__":
+            filtered = [t for t in node if not t.get("meta", {}).get("codeact")]
+            if filtered:
+                result[key] = filtered
+        else:
+            stripped = _strip_codeact_tools(node)
+            if stripped:
+                result[key] = stripped
+    return result

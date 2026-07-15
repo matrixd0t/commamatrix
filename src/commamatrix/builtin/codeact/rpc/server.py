@@ -1,21 +1,18 @@
 # builtin/codeact/rpc/server.py
 
-"""RPC server — dispatches context and tool requests from the child process."""
+"""RPC server — dispatches tool requests from the child process."""
 
 from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 
 from .protocol import (
-    ContextField,
     Namespace,
     RPCError,
     RPCRequest,
     RPCResponse,
-    StorageMethod,
     ToolsMethod,
 )
-from ....components.dialog import DialogItem, resolve_origin_type
 from ....components.llm_adapter import ToolCall
 from ....core.utils import to_jsonable
 
@@ -24,7 +21,7 @@ if TYPE_CHECKING:
 
 
 class RPCServer:
-    """Handles inbound RPC calls, routing ``context.*`` and ``tools.*`` methods."""
+    """Handles inbound RPC calls, routing ``tools.*`` methods."""
 
     def __init__(self, ctx: BeforeToolCallCtx) -> None:
         self._ctx = ctx
@@ -49,53 +46,9 @@ class RPCServer:
         if not parts or not parts[0]:
             raise RPCError(code=-32600, message="Empty method")
         match parts[0]:
-            case Namespace.CONTEXT:
-                return await self._dispatch_context(parts[1:], params)
             case Namespace.TOOLS:
                 return await self._dispatch_tools(parts[1:], params)
         raise RPCError(code=-32601, message=f"Unknown namespace: {parts[0]}")
-
-    async def _dispatch_context(self, path: list[str], params: dict[str, Any]) -> Any:
-        if not path:
-            raise RPCError(code=-32600, message="Empty context path")
-        match path[0]:
-            case ContextField.RUN:
-                return _resolve_path(self._ctx.run, path[1:])
-            case ContextField.TOOL_CALL:
-                return _resolve_path(self._ctx.tool_call, path[1:])
-            case ContextField.META:
-                return _resolve_path(self._ctx.meta, path[1:])
-            case ContextField.STORAGE:
-                return await self._dispatch_storage(path[1:], params)
-        raise RPCError(code=-32601, message=f"Unknown context field: {path[0]}")
-
-    async def _dispatch_storage(self, path: list[str], params: dict[str, Any]) -> Any:
-        if not path:
-            raise RPCError(code=-32600, message="Empty storage method")
-        storage = self._ctx.run.agent.storage
-        args, kwargs = _call_arguments(params)
-        match path[0]:
-            case StorageMethod.SAVE_EVENT:
-                item_data = kwargs.get("item", args[0] if args else None)
-                if not isinstance(item_data, dict):
-                    raise RPCError(code=-32602, message="save_event.item must be an object")
-                return await storage.save_event(_parse_dialog_item(item_data))
-            case StorageMethod.GET_BRANCH:
-                item_id = kwargs.get("last_item_id", args[0] if args else None)
-                if not isinstance(item_id, int):
-                    raise RPCError(
-                        code=-32602, message="get_branch.last_item_id must be an integer"
-                    )
-                return await storage.get_branch(item_id)
-            case StorageMethod.FIND_ITEM_ID_BY_EXTERNAL_ID:
-                external_id = kwargs.get("external_id", args[0] if args else None)
-                origin_data = kwargs.get("origin", args[1] if len(args) > 1 else None)
-                if not isinstance(external_id, str) or not isinstance(origin_data, dict):
-                    raise RPCError(code=-32602, message="Invalid external ID or origin")
-                return await storage.find_item_id_by_external_id(
-                    external_id, _parse_origin(origin_data)
-                )
-        raise RPCError(code=-32601, message=f"Unknown storage method: {path[0]}")
 
     async def _dispatch_tools(self, path: list[str], params: dict[str, Any]) -> Any:
         if not path:
@@ -109,16 +62,16 @@ class RPCServer:
                     tool_name=tool_name,
                     tool_args=data.get("tool_args", {}),
                 )
-                from ..manager import CodeActManager as _CAM
+                from ..service import CodeActService as _CAM
                 runtime = self._ctx.run.agent.services.require(_CAM)
                 result = await runtime.invoke_tool(self._ctx, tool_call)
                 return to_jsonable(result)
 
             case ToolsMethod.SEARCH:
-                from ..manager import CodeActManager as _CAM
+                from ..service import CodeActService as _CAM
                 runtime = self._ctx.run.agent.services.get(_CAM)
                 if runtime is None:
-                    raise RPCError(code=-32603, message="CodeActManager not available")
+                    raise RPCError(code=-32603, message="CodeActService not available")
                 return runtime.searcher.search(
                     params["query"], limit=params.get("limit", 5)
                 )
@@ -154,47 +107,11 @@ class RPCServer:
         raise RPCError(code=-32601, message=f"Unknown tools method: {path[0]}")
 
 
-def _call_arguments(params: dict[str, Any]) -> tuple[list[Any], dict[str, Any]]:
-    """Parse params in ``{"args": [...], "kwargs": {...}}`` or flat format.
-
-    The structured format is used by ``_RemoteCall`` in the worker (stdio transport).
-    The flat fallback exists for compatibility with alternative backends (e.g. HTTP JSON-RPC).
-    """
-    if "args" in params or "kwargs" in params:
-        args = params.get("args", [])
-        kwargs = params.get("kwargs", {})
-        return list(args) if isinstance(args, list) else [], dict(kwargs) if isinstance(
-            kwargs, dict
-        ) else {}
-    return [], dict(params)
-
-
-def _resolve_path(obj: Any, path: list[str]) -> Any:
-    for part in path:
-        if isinstance(obj, dict):
-            obj = obj.get(part)
-        else:
-            obj = getattr(obj, part, None)
-        if obj is None:
-            return None
-    return _make_serializable(obj)
-
-
 def _make_serializable(obj: Any) -> Any:
     result = to_jsonable(obj)
     if isinstance(result, dict):
         result.pop("agent", None)
     return result
-
-
-def _parse_origin(data: dict[str, Any]):
-    return resolve_origin_type(data).model_validate(data)
-
-
-def _parse_dialog_item(data: dict[str, Any]):
-    item_data = dict(data)
-    item_data["origin"] = _parse_origin(item_data["origin"])
-    return DialogItem.model_validate(item_data)
 
 
 def _deserialize_request(raw: dict[str, Any]) -> RPCRequest:

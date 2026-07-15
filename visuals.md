@@ -4,7 +4,7 @@
 
 ```mermaid
 sequenceDiagram
-    participant Runner as Agent Runner
+    participant Runner as AgentRunner
     participant HM as HookManager
     participant ExtMgr as Manager
     participant Sources as Source
@@ -84,7 +84,7 @@ sequenceDiagram
     participant LLM
     participant Agent
     participant TM as ToolManager
-    participant CodeActMgr as CodeActManager
+    participant CodeActMgr as CodeActService
     participant Backend as SubprocessBackend
     participant Worker as CodeAct Worker
     participant RPCServer
@@ -157,10 +157,8 @@ sequenceDiagram
     Connector->>Connector: parse(raw)
     Note over Connector: Connector subclass<br/>converts platform-specific format
 
-    Connector->>CM: _on_event(raw, meta)
-    Note over CM: _on_event is set during<br/>_create_instance() by CM<br/>bound to Agent.handle
-
-    CM->>Agent: handle(raw)
+    Connector->>Agent: self.agent.handle(raw)
+    Note over Connector: calls self.agent.handle directly
     activate Agent
     Agent->>Agent: ensure_started()
     Agent->>Agent: parse again, fire hooks,<br/>dispatch run loop
@@ -243,7 +241,7 @@ sequenceDiagram
     participant LM as LLMAdapterManager
     participant StM as StorageManager
     participant FStM as FileStorageManager
-    participant CSM as CustomInstanceServiceManager
+    participant SMgr as ServiceInstanceManager
     participant ConM as ConnectorManager
 
     Client->>Agent: start()
@@ -294,7 +292,7 @@ sequenceDiagram
     SM->>LM: start()
     activate LM
     LM->>LM: discover, create instances, start
-    Note over LM: PythonProviderSource scans for<br/>LLM_ADAPTER_ATTRIBUTE
+    Note over LM: PythonServiceSource scans for<br/>LLM_ADAPTER_ATTRIBUTE
     LM-->>SM: done
     deactivate LM
 
@@ -312,17 +310,17 @@ sequenceDiagram
     FStM-->>SM: done
     deactivate FStM
 
-    SM->>CSM: start()
-    activate CSM
-    CSM->>CSM: discover custom Service subclasses
-    Note over CSM: scans SERVICE_ATTRIBUTE<br/>skips provider slots
-    CSM-->>SM: done
-    deactivate CSM
+    SM->>SMgr: start()
+    activate SMgr
+    SMgr->>SMgr: discover Service subclasses
+    Note over SMgr: scans SERVICE_ATTRIBUTE<br/>generic discovery for custom services
+    SMgr-->>SM: done
+    deactivate SMgr
 
     SM->>ConM: start()
     activate ConM
     ConM->>ConM: discover, create connectors, start listeners
-    Note over ConM: scans CONNECTOR_ATTRIBUTE<br/>wires _on_event on each connector
+    Note over ConM: scans CONNECTOR_ATTRIBUTE<br/>uses self.agent.handle
     ConM-->>SM: done
     deactivate ConM
 
@@ -354,7 +352,7 @@ sequenceDiagram
     participant Agent
     participant SM as AgentLifecycle
     participant ConM as ConnectorManager
-    participant CSM as CustomInstanceServiceManager
+    participant SMgr as ServiceInstanceManager
     participant FStM as FileStorageManager
     participant StM as StorageManager
     participant LM as LLMAdapterManager
@@ -380,10 +378,10 @@ sequenceDiagram
     ConM->>ConM: stop connectors (stop listeners), clear instances
     deactivate ConM
 
-    SM->>CSM: stop()
-    activate CSM
-    CSM->>CSM: stop custom services
-    deactivate CSM
+    SM->>SMgr: stop()
+    activate SMgr
+    SMgr->>SMgr: stop custom services
+    deactivate SMgr
 
     SM->>FStM: stop()
     activate FStM
@@ -446,12 +444,10 @@ flowchart TD
     I --> N["Manager.refresh()<br/>→ scan()"]
     N --> O["InstanceManager.<br/>_reconcile_instances()"]
     O --> P["InstanceManager.<br/>_refresh_instances()"]
-    P --> M
-
-    M --> Q["More children?"]
-    Q -->|"Yes"| R["next child → G"]
-    Q -->|"No"| S["_changed = False"]
-    S --> T["done"]
+    
+    P --> M --> Q["More children?"]
+    Q -->|"Yes"| R["next child"] --> G
+    Q -->|"No"| S["_changed = False"] --> T["done"]
 ```
 
 ### 8b. Manager.scan() — Fingerprint Check Detail
@@ -496,14 +492,14 @@ flowchart TD
 ```mermaid
 flowchart TD
     A["_reconcile_instances()"] --> B["desired = {d.id: d<br/>for d in descriptors}"]
-    B --> C["**CASE 1: Removed**"]
+    B --> C["CASE 1: Removed"]
 
     C --> D{"sid in _instances<br/>but NOT in desired?"}
     D -->|"Yes"| E["pop instance"]
     E --> F["_stop_instance(instance)"]
     F --> G["_on_instance_removed(instance)"]
     G --> D
-    D -->|"No (done)"| H["**CASE 2: Changed**"]
+    D -->|"No (done)"| H["CASE 2: Changed"]
 
     H --> I{"sid in desired AND<br/>old_fp != new_fp?"}
     I -->|"Yes"| J["pop instance"]
@@ -533,8 +529,8 @@ flowchart TD
 classDiagram
     class AbstractService {
         «ABC»
-        + config: Config | None
-        + __init__(config: Config | None = None)
+        + agent: Agent
+        + __init__(agent: Agent)
         + start() async … initialize resources
         + stop() async … release resources
         + refresh() async … sync with extensions
@@ -639,19 +635,20 @@ classDiagram
     Manager <|-- InstanceManager : extends
 
     class ServiceInstanceManager {
-        # _config: Config
-        # _registry: ServiceInstanceRegistry
+        # base_type: type[AbstractService]
+        # marker_attribute: str
+        # id_prefix: str
         ──────────────────────────────────
         Inherits: instance lifecycle
-        Adds: creates via service_cls(config), registry hooks
+        Adds: creates via service_cls(agent), registry hooks, class-var source defaults
     }
     InstanceManager <|-- ServiceInstanceManager : D=ServiceDescriptor, I=AbstractService
 
-    class ActiveInstanceServiceManager {
-        «abstract — subclass must set _cls, _attribute, active_field»
-        # _cls: type[AbstractService]
-        # _attribute: str
-        # _prefix: str
+    class ActiveServiceInstanceManager {
+        «abstract — subclass must set base_type, marker_attribute, active_field»
+        # base_type: type[AbstractService]
+        # marker_attribute: str
+        # id_prefix: str
         # active_field: ConfigField[str | None]
         - _active_id: str | None
         + _active → instance (property)
@@ -660,21 +657,21 @@ classDiagram
         Inherits: instance lifecycle + registry hooks
         Adds: active-instance selection by config or “first”
     }
-    ServiceInstanceManager <|-- ActiveInstanceServiceManager : extends
+    ServiceInstanceManager <|-- ActiveServiceInstanceManager : extends
 
     class StorageManager {
         ──────────────────────────────────
         Inherits: active selection
         Adds: delegates save_event/get_branch/find → active Storage
     }
-    ActiveInstanceServiceManager <|-- StorageManager : cls=Storage, attr=STORAGE_ATTRIBUTE
+    ActiveServiceInstanceManager <|-- StorageManager : base_type=Storage, marker_attribute=STORAGE_ATTRIBUTE
 
     class FileStorageManager {
         ──────────────────────────────────
         Inherits: active selection
         Adds: delegates save/get/delete → active FileStorage
     }
-    ActiveInstanceServiceManager <|-- FileStorageManager : cls=FileStorage, attr=FILE_STORAGE_ATTRIBUTE
+    ActiveServiceInstanceManager <|-- FileStorageManager : base_type=FileStorage, marker_attribute=FILE_STORAGE_ATTRIBUTE
 
     class LLMAdapterManager {
         ──────────────────────────────────
@@ -683,35 +680,21 @@ classDiagram
     }
     ServiceInstanceManager <|-- LLMAdapterManager : extends (skips active selection)
 
-    class CustomInstanceServiceManager {
-        ──────────────────────────────────
-        Inherits: instance lifecycle
-        Adds: discovers Service subclasses, skips provider slots
-    }
-    ServiceInstanceManager <|-- CustomInstanceServiceManager : extends (scans SERVICE_ATTRIBUTE)
-
     class ConnectorManager {
-        - _on_event: OnEvent | None
-        + bind(on_event)
         + resolve() → list[Connector]
         ──────────────────────────────────
         Inherits: instance lifecycle
-        Adds: wires _on_event on each connector in _create_instance
+        Adds: wires self.agent.handle
     }
     ServiceInstanceManager <|-- ConnectorManager : extends (scans CONNECTOR_ATTRIBUTE)
 
     class AgentLifecycle {
         «root composite — NOT an AbstractService»
-        - _children: list[7 managers]
+        - _children: list[Manager]
         - _changed: bool
         - _registry: ServiceInstanceRegistry
-        + tool_manager (ToolManager)
-        + hook_manager (HookManager)
-        + llm_adapter_manager (LLMAdapterManager)
-        + storage_manager (StorageManager)
-        + file_storage_manager (FileStorageManager)
-        + custom_service_manager (CustomInstanceServiceManager)
-        + connector_manager (ConnectorManager)
+        + registry → ServiceInstanceRegistry
+        + get_manager(cls) → Manager | None
         + start() async … transactional, rollback on fail
         + stop() async … reverse order
         + refresh(force) async … no-op when clean
@@ -723,7 +706,7 @@ classDiagram
     AgentLifecycle o--> LLMAdapterManager : owns
     AgentLifecycle o--> StorageManager : owns
     AgentLifecycle o--> FileStorageManager : owns
-    AgentLifecycle o--> CustomInstanceServiceManager : owns
+    AgentLifecycle o--> ServiceInstanceManager : owns (generic, custom Service discovery)
     AgentLifecycle o--> ConnectorManager : owns
 
     class ServiceInstanceRegistry {
@@ -750,16 +733,16 @@ classDiagram
 | `HookManager` | `Manager` | event-grouped handler map, priority-ordered `fire()` |
 | `InstanceManager[D,I]` | `Manager` | instance create/start/stop/reconcile lifecycle + refresh |
 | `ServiceInstanceManager` | `InstanceManager` | *Binds D=ServiceDescriptor I=AbstractService*; integrates with `ServiceInstanceRegistry` |
-| `ActiveInstanceServiceManager` | `ServiceInstanceManager` | active-instance selection (`_select_active()`) by config or first-available |
-| `StorageManager` | `ActiveInstanceServiceManager` | delegates to active `Storage` |
-| `FileStorageManager` | `ActiveInstanceServiceManager` | delegates to active `FileStorage` |
+| `ActiveServiceInstanceManager` | `ServiceInstanceManager` | active-instance selection (`_select_active()`) by config or first-available |
+| `StorageManager` | `ActiveServiceInstanceManager` | delegates to active `Storage` |
+| `FileStorageManager` | `ActiveServiceInstanceManager` | delegates to active `FileStorage` |
 | `LLMAdapterManager` | `ServiceInstanceManager` | first-adapter pattern (no active selection) |
-| `CustomInstanceServiceManager` | `ServiceInstanceManager` | discovers custom `Service` subclasses |
-| `ConnectorManager` | `ServiceInstanceManager` | wires `_on_event`, `resolve()` returns connectors |
+| `ServiceInstanceManager` (generic) | `ServiceInstanceManager` | discovers custom `Service` subclasses (default params) |
+| `ConnectorManager` | `ServiceInstanceManager` | wires `agent.handle`, `resolve()` returns connectors |
 
 ---
 
-### Part B — Extension Source & Descriptor Hierarchy
+### Part B — Source & Descriptor Hierarchy
 
 ```mermaid
 classDiagram
@@ -828,16 +811,10 @@ classDiagram
     class PythonServiceSource {
         «core/base/source.py»
         ──────────────────────────────────
-        Scopes: modules with Service subclasses → SERVICE_ATTRIBUTE
+        Unified service source. Defaults to SERVICE_ATTRIBUTE/AbstractService/"service".
+        Accepts base_type, marker_attribute, id_prefix for provider slots.
     }
     PythonSource <|-- PythonServiceSource : D=ServiceDescriptor
-
-    class PythonProviderSource {
-        «core/base/source.py»
-        ──────────────────────────────────
-        Scopes: provider-specific markers (STORAGE, FILE_STORAGE, LLM_ADAPTER)
-    }
-    PythonSource <|-- PythonProviderSource : D=ServiceDescriptor
 
     class Descriptor {
         «core/base/descriptor.py»
@@ -889,8 +866,7 @@ classDiagram
 PythonToolSource      (components/tool.py)      ──scan()──▶ ToolDescriptor       ──▶ ToolManager indexes
 PythonHookSource      (components/hook.py)      ──scan()──▶ HookDescriptor       ──▶ HookManager groups by event
 PythonConnectorSource (components/connector.py)  ──scan()──▶ ConnectorDescriptor  ──▶ ConnectorManager creates instances
-PythonServiceSource   (core/base/source.py)     ──scan()──▶ ServiceDescriptor    ──▶ CustomInstanceServiceManager creates instances
-PythonProviderSource  (core/base/source.py)     ──scan()──▶ ServiceDescriptor    ──▶ StorageManager / FileStorageManager / LLMAdapterManager
+PythonServiceSource   (core/base/source.py)     ──scan()──▶ ServiceDescriptor    ──▶ ServiceInstanceManager / StorageManager / FileStorageManager / LLMAdapterManager
 ```
 
 Each source is mounted into an `Manager` subclass. The manager calls `source.scan()` which produces descriptors. The manager's `_rebuild()` then builds specialized indexes (event→handlers map, alias→name→descriptor maps, instance reconciliation sets).

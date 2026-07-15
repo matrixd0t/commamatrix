@@ -1,4 +1,4 @@
-﻿# components/storage.py
+# components/storage.py
 
 from __future__ import annotations
 
@@ -6,19 +6,28 @@ from abc import abstractmethod
 from typing import Any, Optional, TYPE_CHECKING
 
 from ..core.base.service import AbstractService
-from ..core.base.manager import ActiveInstanceServiceManager
-from .config import active_storage
+from ..core.base.manager import ActiveServiceInstanceManager
+from .config import ConfigField
 from .dialog import DialogItem, DialogOrigin
 
 if TYPE_CHECKING:
-    from .config import Config
+    from ..core.agent import Agent
+
+if TYPE_CHECKING:
+    from ..core.agent import Agent
 
 STORAGE_ATTRIBUTE = "__commamatrix_storage__"
 
+active_storage = ConfigField[str | None](
+    name="active_storage",
+    default=None,
+    description="Descriptor id of the active storage, or None for first available",
+)
+
 
 class Storage(AbstractService):
-    def __init__(self, config: Config) -> None:
-        super().__init__(config)
+    def __init__(self, agent: Agent) -> None:
+        super().__init__(agent)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
@@ -32,19 +41,20 @@ class Storage(AbstractService):
     async def get_branch(self, last_item_id: int) -> list[DialogItem]: ...
 
     @abstractmethod
-    async def find_item_id_by_external_id(
-        self, external_id: str, origin: DialogOrigin
-    ) -> Optional[int]: ...
+    async def find_item_id_by_external_id(self, external_id: str, origin: DialogOrigin) -> Optional[int]: ...
 
     async def execute(self, query: str, params: tuple = ()) -> list[dict[str, Any]]:
         raise NotImplementedError
 
 
-class StorageManager(ActiveInstanceServiceManager):
-    _cls = Storage
-    _attribute = STORAGE_ATTRIBUTE
-    _prefix = "storage"
+class StorageManager(ActiveServiceInstanceManager):
+    base_type = Storage
+    marker_attribute = STORAGE_ATTRIBUTE
+    id_prefix = "storage"
     active_field = active_storage
+
+    def __init__(self, agent, **kwargs) -> None:
+        super().__init__(agent, **kwargs)
 
     async def save_event(self, entry: DialogItem) -> int | None:
         return await self._active.save_event(entry)

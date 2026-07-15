@@ -1,4 +1,4 @@
-﻿# components/llm_adapter.py
+# components/llm_adapter.py
 
 from __future__ import annotations
 
@@ -12,10 +12,11 @@ from ..core.utils import to_jsonable
 from ..core.base.service import AbstractService
 from ..core.base.manager import ServiceInstanceManager, ServiceInstanceRegistry
 from .dialog import DialogItem, DialogItemType, DialogRole, DialogOrigin
-from ..core.base.source import PythonProviderSource
+
 
 if TYPE_CHECKING:
     from .hook import BeforeLlmCallCtx
+    from ..core.agent import Agent
 
 LLM_ADAPTER_ATTRIBUTE = "__commamatrix_llm_adapter__"
 
@@ -34,6 +35,8 @@ class LLMTruncatedError(LLMError):
 
 @dataclass(slots=True, kw_only=True)
 class ToolCall:
+    """Data for a single tool invocation request from the LLM."""
+
     tool_call_id: str
     tool_name: str
     tool_args: dict[str, Any]
@@ -44,6 +47,9 @@ class ToolCall:
 
 @dataclass(slots=True, kw_only=True)
 class ToolCallResult:
+    """Result of a tool call. Contains output content and an abort flag
+    set by before_tool_call hooks."""
+
     tool_call_id: str
     content: Any
     abort: bool = False
@@ -57,6 +63,8 @@ class ToolCallResult:
 
 
 class StopReason(StrEnum):
+    """Why the LLM stopped generating: end of turn, tool use, max tokens, or error."""
+
     END_TURN = 'end_turn'
     TOOL_USE = 'tool_use'
     MAX_TOKENS = 'max_tokens'
@@ -65,6 +73,8 @@ class StopReason(StrEnum):
 
 @dataclass(slots=True, kw_only=True)
 class Usage:
+    """Token and cost tracking for an LLM response."""
+
     usd: float
     input_tokens: int
     output_tokens: int
@@ -73,6 +83,9 @@ class Usage:
 
 
 class LLMResponseBlock(ABC):
+    """Typed block within an LLM response. Subclasses represent text,
+    images, files, and tool calls as a uniform sequence."""
+
     @abstractmethod
     def content_str(self) -> str: ...
 
@@ -142,6 +155,9 @@ class LLMResponseToolCallBlock(LLMResponseBlock):
 
 @dataclass(slots=True, kw_only=True)
 class LLMResponse:
+    """Complete LLM response composed of typed content blocks
+    with stop reason and usage statistics."""
+
     stop_reason: StopReason = StopReason.END_TURN
     content: list[LLMResponseBlock] = field(default_factory=list)
     usage: Usage | None = None
@@ -151,6 +167,10 @@ class LLMResponse:
 
 
 class LLMAdapter(AbstractService):
+    """Abstract LLM provider. Subclasses implement ask_llm() to
+    convert a BeforeLlmCallCtx into an LLMResponse by calling
+    the actual provider API."""
+
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
         if not getattr(cls, "__abstractmethods__", None):
@@ -162,9 +182,15 @@ class LLMAdapter(AbstractService):
 
 
 class LLMAdapterManager(ServiceInstanceManager):
-    def __init__(self, config: Any, registry: ServiceInstanceRegistry) -> None:
-        source = PythonProviderSource(LLMAdapter, LLM_ADAPTER_ATTRIBUTE, "llm_adapter")
-        super().__init__(source, config, registry)
+    """Manages LLM adapter instances using first-adapter pattern.
+    The first discovered adapter is used for all LLM calls."""
+
+    base_type = LLMAdapter
+    marker_attribute = LLM_ADAPTER_ATTRIBUTE
+    id_prefix = "llm_adapter"
+
+    def __init__(self, agent: Agent, **kwargs: object) -> None:
+        super().__init__(agent, **kwargs)
 
     @property
     def _active(self) -> LLMAdapter:

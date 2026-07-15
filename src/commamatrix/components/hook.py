@@ -1,4 +1,4 @@
-﻿# components/hook.py
+# components/hook.py
 
 from __future__ import annotations
 
@@ -30,6 +30,8 @@ HOOK_ATTRIBUTE = "__commamatrix_hook__"
 
 
 class HookEventType(StrEnum):
+    """All ten lifecycle events in order of occurrence during a run."""
+
     ON_AGENT_START = "on_agent_start"
     ON_PARSED = "on_parsed"
     BEFORE_RUN = "before_run"
@@ -49,6 +51,9 @@ class BaseEventCtx:
 
 @dataclass(slots=True, kw_only=True)
 class RunCtx:
+    """Per-run context injected into every hook. Carries agent, connector,
+    origin, user identity, iteration count, and mutable state dict."""
+
     agent: Agent
     connector: Connector | None = None
     origin: DialogOrigin
@@ -129,6 +134,9 @@ class AfterRunCtx(BaseEventCtx):
 
 @dataclass(frozen=True, slots=True)
 class Hook(Generic[CtxT]):
+    """Decorator factory that stamps HOOK_ATTRIBUTE on handler functions.
+    Binds an event type to a context type for type-safe registration."""
+
     _event: HookEventType
     _ctx_type: type[CtxT]
 
@@ -154,6 +162,9 @@ class Hook(Generic[CtxT]):
 
 @dataclass(frozen=True, slots=True)
 class HookDescriptor(Descriptor):
+    """Metadata for a registered hook handler: event name and priority.
+    Priority determines execution order within the same event."""
+
     event: str
     priority: int
     meta: dict[str, Any] = field(default_factory=dict)
@@ -168,12 +179,18 @@ class HookDescriptor(Descriptor):
 
 
 class HookSource(Source[HookDescriptor]):
+    """Source ABC for hook invocation. Each source owns the handler
+    callables it discovered and must implement invoke()."""
+
     @abstractmethod
     async def invoke(self, descriptor: HookDescriptor, ctx: object) -> object:
         raise NotImplementedError
 
 
 class PythonHookSource(PythonSource[HookDescriptor], HookSource):
+    """Scopes to modules with @Hook-decorated functions. Maintains an
+    internal handler map for direct invocation by descriptor ID."""
+
     def __init__(self) -> None:
         super().__init__()
         self._handlers: dict[str, Any] = {}
@@ -209,8 +226,11 @@ class PythonHookSource(PythonSource[HookDescriptor], HookSource):
 
 
 class HookManager(Manager[HookDescriptor]):
-    def __init__(self) -> None:
-        super().__init__()
+    """Dispatches hook events in priority order. Groups handlers by
+    event name and sorts each group by priority descending."""
+
+    def __init__(self, agent, **kwargs) -> None:
+        super().__init__(agent, **kwargs)
         self._python_source = PythonHookSource()
         self.mount(self._python_source)
         self._handlers: dict[str, list[HookDescriptor]] = {}

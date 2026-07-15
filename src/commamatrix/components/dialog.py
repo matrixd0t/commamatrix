@@ -1,4 +1,4 @@
-﻿# components/dialog.py
+# components/dialog.py
 
 from __future__ import annotations
 
@@ -14,6 +14,9 @@ DEFAULT_PLATFORM = "unknown"
 
 
 class DialogItemType(StrEnum):
+    """Categories of dialog entries: user input, model output,
+    tool calls and their results, typed by media type."""
+
     INPUT = "input"
     IMAGE_INPUT = "image_input"
     FILE_INPUT = "file_input"
@@ -25,6 +28,9 @@ class DialogItemType(StrEnum):
 
 
 class DialogRole(StrEnum):
+    """Speaker roles in the dialog: system instructions, developer,
+    user, assistant, and tool (for call results)."""
+
     SYSTEM = "system"
     DEVELOPER = "developer"
     USER = "user"
@@ -33,6 +39,10 @@ class DialogRole(StrEnum):
 
 
 class DialogOrigin(BaseModel, ABC):
+    """Platform-specific origin descriptor. Subclasses define additional
+    identifying fields (chat_id, session_id, etc.). Auto-registers in
+    ORIGIN_REGISTRY for polymorphic deserialization."""
+
     model_config = {"frozen": True}
     platform: str = DEFAULT_PLATFORM
 
@@ -46,6 +56,9 @@ ORIGIN_REGISTRY: dict[str, type[DialogOrigin]] = {}
 
 
 class DialogItem(BaseModel):
+    """A single message or event in dialog history. Links to a previous
+    item via previous_item_id to form conversation branches."""
+
     item_id: Optional[int] = None
     content: str
     item_type: DialogItemType
@@ -59,6 +72,9 @@ class DialogItem(BaseModel):
 
 
 def resolve_origin_type(data: Mapping[str, Any]) -> type[DialogOrigin]:
+    """Resolves the concrete DialogOrigin subclass from serialized data
+    by matching platform and populated fields against ORIGIN_REGISTRY."""
+
     platform = data.get("platform", DEFAULT_PLATFORM)
     base_fields = set(DialogOrigin.model_fields)
     origin_field_sets = {

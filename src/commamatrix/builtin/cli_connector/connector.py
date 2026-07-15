@@ -8,9 +8,9 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
-from ...components.connector import Connector, OnEvent
-from ...components.config import ConfigField, Config
-from ...components.dialog import DialogItem, DialogItemType, DialogRole
+from ...components.connector import Connector
+from ...components.config import ConfigField
+from ...components.dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
 from ...components.hook import OnParsedCtx
 
 if TYPE_CHECKING:
@@ -25,18 +25,18 @@ cli_port = ConfigField[int](name="cli_port", default=0, description='TCP port (0
 
 class CliConnector(Connector[CliOrigin]):
 
-    def __init__(self, config: Config) -> None:
-        super().__init__(config)
-        self._host = config.get(cli_host)
-        self._port = config.get(cli_port)
+    def __init__(self, agent: Agent) -> None:
+        super().__init__(agent)
+        self._host = self.config.get(cli_host)
+        self._port = self.config.get(cli_port)
         self._writers: dict[str, asyncio.StreamWriter] = {}
         self._server_addr: tuple[str, int] | None = None
         self._last_external_id: dict[str, str] = {}
         self._msg_counter: dict[str, int] = {}
 
-    async def listen(self, on_event: OnEvent) -> None:
+    async def listen(self, on_recv) -> None:
         server = await asyncio.start_server(
-            lambda r, w: self._handle_conn(r, w, on_event),
+            lambda r, w: self._handle_conn(r, w, on_recv),
             host=self._host,
             port=self._port,
         )
@@ -60,7 +60,7 @@ class CliConnector(Connector[CliOrigin]):
             raise RuntimeError('Server not started yet')
         spawn_terminal_window(*self._server_addr)
 
-    async def _handle_conn(self, reader, writer, on_event: OnEvent) -> None:
+    async def _handle_conn(self, reader, writer, on_recv) -> None:
         session_id: str | None = None
         try:
             async for line in reader:
@@ -71,7 +71,7 @@ class CliConnector(Connector[CliOrigin]):
                 session_id = msg.get('session_id')
                 if session_id:
                     self._writers[session_id] = writer
-                    await on_event({'platform': 'cli', 'session_id': session_id, 'username': msg.get('username', 'unknown'), 'text': msg.get('text', '')})
+                    await on_recv({'platform': 'cli', 'session_id': session_id, 'username': msg.get('username', 'unknown'), 'text': msg.get('text', '')})
         except (ConnectionResetError, BrokenPipeError, OSError):
             pass
         finally:
@@ -85,7 +85,7 @@ class CliConnector(Connector[CliOrigin]):
             except Exception:
                 pass
 
-    async def parse(self, data: dict, agent: Agent) -> OnParsedCtx | None:
+    async def parse(self, data: dict):
         if data.get('platform') != 'cli':
             return None
 

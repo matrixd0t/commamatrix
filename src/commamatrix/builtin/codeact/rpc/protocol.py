@@ -10,21 +10,7 @@ from typing import Any
 
 
 class Namespace(StrEnum):
-    CONTEXT = "context"
     TOOLS = "tools"
-
-
-class ContextField(StrEnum):
-    RUN = "run"
-    TOOL_CALL = "tool_call"
-    META = "meta"
-    STORAGE = "storage"
-
-
-class StorageMethod(StrEnum):
-    SAVE_EVENT = "save_event"
-    GET_BRANCH = "get_branch"
-    FIND_ITEM_ID_BY_EXTERNAL_ID = "find_item_id_by_external_id"
 
 
 class ToolsMethod(StrEnum):

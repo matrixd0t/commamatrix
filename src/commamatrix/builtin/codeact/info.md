@@ -9,10 +9,9 @@
 │  SubprocessBackend               │    ←────────────────────────   │                       │
 │    ├── asyncio subprocess        │                                │  _RPCClient           │
 │    └── RPCServer                 │                                │    ├── call()         │
-│          ├── _dispatch_context() │                                │    └── acall()        │
-│          ├── _dispatch_storage() │                                │                       │
-│          └── _dispatch_tools()   │                                │  Virtual modules      │
-│                                  │                                │    ├── context        │
+│          └── _dispatch_tools()   │                                │    └── acall()        │
+│                                  │                                │                       │
+│                                  │                                │  Virtual modules      │
 │                                  │                                │    └── <alias>*       │
 └──────────────────────────────────┘                                └───────────────────────┘
 ```
@@ -23,64 +22,10 @@ All method name strings are defined as `StrEnum` in `protocol.py`:
 
 | Enum | Members | Used in |
 |---|---|---|
-| `Namespace` | `CONTEXT`, `TOOLS` | `_dispatch` top-level routing |
-| `ContextField` | `RUN`, `TOOL_CALL`, `META`, `STORAGE` | `_dispatch_context` |
-| `StorageMethod` | `SAVE_EVENT`, `GET_BRANCH`, `FIND_ITEM_ID_BY_EXTERNAL_ID` | `_dispatch_storage` |
+| `Namespace` | `TOOLS` | `_dispatch` top-level routing |
 | `ToolsMethod` | `INVOKE`, `SEARCH`, `SCHEMAS`, `RESOLVE`, `ALIASES`, `LIST` | `_dispatch_tools` |
 
-Dispatch on the server uses `match/case` with enum comparison — the same wire format strings are sent by the worker, and matched by value.
-
-## Context Tree (accessible from worker code)
-
-The `context` module is the worker's window into the parent agent state. Every attribute is a lazy `_RemoteValue` that issues an RPC call on access.
-
-```
-context
-├── run                          # RunCtx — current agentic loop state
-│   ├── run_id                   # str — unique UUID per run
-│   ├── iteration                # int — tool loop counter (0-based)
-│   ├── user                     # str — user identifier
-│   ├── origin                   # DialogOrigin — platform + chat/scene IDs
-│   │   ├── platform             # str (e.g. "telegram", "cli")
-│   │   └── ...                  # subclass-specific fields
-│   ├── connector                # Connector | None — platform adapter
-│   │   └── __class__.__name__   # str (e.g. "CliConnector")
-│   ├── state                    # dict[str, Any] — mutable hook scratchpad
-│   └── agent                    # Agent — (serialized, agent field stripped)
-│       ├── config               # Config — agent config dict
-│       └── ...                  # other Agent properties
-│
-├── tool_call                    # ToolCall — the tool being executed
-│   ├── tool_call_id             # str
-│   ├── tool_name                # str
-│   └── tool_args                # dict[str, Any]
-│
-├── meta                         # dict[str, Any] — hook-injectable metadata
-│
-├── storage                      # Storage methods (proxied to active storage)
-│   ├── save_event(item)         # → int (item_id)
-│   ├── get_branch(last_item_id) # → list[dict]
-│   └── find_item_id_by_external_id(external_id, origin)
-│                                # → int | None
-│
-└── tools                        # High-level tool accessor
-    ├── invoke(tool_name, args, tool_id)  # → any (serialized result)
-    └── search(query, limit=5)            # → list[dict]
-```
-
-**Resolution rules** (`_resolve_path` in server.py):
-- Dotted path segments traverse `getattr()` on objects or `get()` on dicts
-- `None` at any step short-circuits and returns `None`
-- `context.run.agent` is serialized but the `agent` field is stripped to avoid circular references (the worker should not drill into agent internals)
-
-**Usage in worker code:**
-```python
-run_id = await context.run.run_id               # → "a1b2c3d4..."
-user = await context.run.user                   # → "user123"
-args = await context.tool_call.tool_args        # → {"query": "..."}
-await context.storage.save_event({"item_type": "text", ...})
-result = await context.tools.invoke("search_web", {"query": "python"})
-```
+Dispatch on the server uses `match/case` with enum comparison.
 
 ## Transport
 
@@ -175,6 +120,8 @@ The **first message** from parent to child is NOT an RPC call. It is a one-shot 
 }
 ```
 
+CodeAct-internal tools (`@tool(codeact=True)` — `execute`, `search_tools`, `list_tools`) are **stripped** from `tool_tree` by `_strip_codeact_tools()` and cannot be invoked from inside the sandbox.
+
 The child deserializes this in `worker.py:main()`, sets up virtual modules from `tool_tree`, and begins executing `code`.
 
 ---
@@ -201,10 +148,7 @@ This terminates the RPC cycle — the child process exits after writing this.
 
 ## RPC Loop (child → parent during execution)
 
-While the child executes code, it may call back to the parent for:
-- Reading `context.*` fields
-- Invoking tools (`tools.*`)
-- Storage operations (`context.storage.*`)
+While the child executes code, it may call back to the parent for invoking tools (`tools.*`).
 
 The parent's `SubprocessBackend` loops on `transport.recv()`, dispatching each message through `RPCServer.handle()`:
 
@@ -215,87 +159,6 @@ transport.recv() → message
       await transport.send(response)
   elif "result" in message or "error" in message:
       # Execution complete, break
-```
-
----
-
-## Method Namespace: `context.*`
-
-Accesses fields of `BeforeToolCallCtx` provided to the backend.
-
-### `context.run.<attr>[.<attr>...]`
-
-Resolves an arbitrary attribute chain on `RunCtx` via `_resolve_path()`. Supports dict access on intermediate objects.
-
-**Request:**
-```json
-{"id": "r1", "method": "context.run.agent.config.active_storage", "params": {}}
-```
-
-**Response:**
-```json
-{"id": "r1", "result": "sqlite"}
-```
-
-**Resolution logic** (`_resolve_path`):
-```python
-for part in path:
-    if isinstance(obj, dict):
-        obj = obj.get(part)
-    else:
-        obj = getattr(obj, part, None)
-    if obj is None:
-        return None
-return _make_serializable(obj)
-```
-
-### `context.tool_call.<attr>[.<attr>...]`
-
-Attribute chain on the current `ToolCall`.
-
-**Request:**
-```json
-{"id": "r2", "method": "context.tool_call.tool_name", "params": {}}
-```
-
-**Response:**
-```json
-{"id": "r2", "result": "execute"}
-```
-
-### `context.meta.<attr>[.<attr>...]`
-
-Attribute chain on `ctx.meta` (arbitrary metadata dict set by hooks).
-
-**Request:**
-```json
-{"id": "r3", "method": "context.meta.codeact_enabled", "params": {}}
-```
-
-### `context.storage.<method>`
-
-Storage operations — proxied to `agent.storage`.
-
-**Request:**
-```json
-{"id": "s1", "method": "context.storage.save_event", "params": {"item": {"item_type": "text", ...}}}
-```
-
-Supported methods:
-
-| Method                        | Parameters                                      | Returns     |
-|-------------------------------|-------------------------------------------------|-------------|
-| `save_event`                  | `item` (dict → DialogItem)                      | int (id)    |
-| `get_branch`                  | `last_item_id` (int)                            | list[dict]  |
-| `find_item_id_by_external_id` | `external_id` (str), `origin` (dict → Origin)   | int \| None |
-
-**Params resolution:** `_call_arguments` checks for `args`/`kwargs` keys in the params dict, else treats the entire params dict as kwargs.
-
-```python
-def _call_arguments(params):
-    if "args" in params or "kwargs" in params:
-        return list(params.get("args", [])), dict(params.get("kwargs", {}))
-    return [], dict(params)
 ```
 
 ---
@@ -324,7 +187,7 @@ Execute an agent tool by name through the full hook lifecycle.
 
 **Processing:**
 1. Construct `ToolCall` from params (uses `request.id` as default `tool_call_id`)
-2. `ctx.run.agent.services.require(CodeActManager)` → `CodeActManager.invoke_tool()`
+2. `ctx.run.agent.services.require(CodeActService)` → `CodeActService.invoke_tool()`
 3. `invoke_tool()` calls `ctx.run.agent._run_tool_lifecycle(ctx, tool_call)`
 4. Result is serialized via `to_jsonable()`
 
@@ -430,57 +293,26 @@ class _RPCClient:
         return await asyncio.to_thread(self.call, method, params)
 ```
 
-### `_RemoteValue`
+### Tool Proxy Function
 
-Lazy, chainable proxy that builds dotted paths:
-
-```python
-class _RemoteValue:
-    def __getattr__(self, name: str) -> _RemoteValue:  # appends ".name" to path
-    def __call__(self, *args, **kwargs) -> _RemoteCall:  # creates awaitable call
-    def __await__(self):  # awaits acall(path) directly (no arguments)
-```
-
-Pattern: `context.run.user` → `_RemoteValue(client, "context.run.user")` → when awaited, calls `client.acall("context.run.user")`.
-
-### `_RemoteCall`
-
-Holds arguments for a remote call, sends on await:
+Each tool in a virtual module (`<alias>.<func_name>`) is an `async` proxy that reconstructs `inspect.Signature` from JSON Schema, binds arguments, and calls `client.acall("tools.invoke", ...)`:
 
 ```python
-class _RemoteCall:
-    def __await__(self):  # client.acall(path, {"args": ..., "kwargs": ...})
-```
-
-### `_ToolsAccessor`
-
-High-level accessor with named methods:
-
-```python
-class _ToolsAccessor:
-    async def invoke(self, tool_name, args=None, tool_id="")  # → tools.invoke
-    async def search(self, query, limit=5)                    # → tools.search
+async def proxy(*args, **kwargs):
+    bound = signature.bind(*args, **kwargs)
+    bound.apply_defaults()
+    return await client.acall("tools.invoke", {
+        "tool_call": {"tool_call_id": "", "tool_name": name, "tool_args": dict(bound.arguments), "tool_id": tool_id}
+    })
 ```
 
 ---
 
 ## Virtual Import Machinery
 
-### Module Creation
-
-`make_context(client)` creates the `context` module with fixed attributes:
-
-| Attribute     | Type            | Path sent to parent         |
-|---------------|-----------------|-----------------------------|
-| `run`         | `_RemoteValue`  | `context.run`               |
-| `tool_call`   | `_RemoteValue`  | `context.tool_call`         |
-| `meta`        | `_RemoteValue`  | `context.meta`              |
-| `storage`     | `_RemoteValue`  | `context.storage`           |
-| `tools`       | `_ToolsAccessor` | (wraps `tools.invoke`, `tools.search`) |
-
 ### Tool Module Creation
 
-`make_context_module(fullname, node, client)` creates virtual packages from `tool_tree`:
+`make_tool_module(fullname, node, client)` creates virtual packages from `tool_tree`:
 
 ```
 tool_tree = {
@@ -501,17 +333,6 @@ A `MetaPathFinder` + `_Loader` pair intercepts `import` for any module name regi
 
 ```python
 sys.meta_path.insert(0, _Finder())  # installed before code execution
-```
-
-### Tool Proxy Function
-
-```python
-async def proxy(*args, **kwargs):
-    bound = signature.bind(*args, **kwargs)
-    bound.apply_defaults()
-    return await client.acall("tools.invoke", {
-        "tool_call": {"tool_call_id": "", "tool_name": name, "tool_args": dict(bound.arguments), "tool_id": tool_id}
-    })
 ```
 
 ---
@@ -538,37 +359,22 @@ Note: `_make_serializable` (server.py) and `to_jsonable` (api/utils.py) share th
 
 ## Data Flow Patterns
 
-### Pattern A: Simple attribute read
-
-```
-Worker  →  Parent:  {"id": "x", "method": "context.run.user"}
-Parent  →  Worker:  {"id": "x", "result": "user123"}
-```
-
-### Pattern B: Tool invocation
+### Pattern A: Tool invocation
 
 ```
 Worker  →  Parent:  {"id": "y", "method": "tools.invoke", "params": {"tool_call": {...}}}
-Parent  →  Parent:  CodeActManager.invoke_tool() → Agent._run_tool_lifecycle() → ToolManager.call()
+Parent  →  Parent:  CodeActService.invoke_tool() → Agent._run_tool_lifecycle() → ToolManager.call()
 Parent  →  Worker:  {"id": "y", "result": "result string"}
 ```
 
-### Pattern C: Remote call with arguments
-
-```
-Worker  →  Parent:  {"id": "z", "method": "context.storage.save_event", "params": {"args": [item_data], "kwargs": {}}}
-Parent  →  Parent:  storage.save_event(_parse_dialog_item(item_data))
-Parent  →  Worker:  {"id": "z", "result": 42}
-```
-
-### Pattern D: Virtual import + tool call
+### Pattern B: Virtual import + tool call
 
 ```python
 # Worker executes:
 import github
 await github.list_issues(owner="user", repo="repo")
 
-# Virtual import resolves github to a module from make_context_module()
+# Virtual import resolves github to a module from make_tool_module()
 # github.list_issues is a proxy() function that calls:
 client.acall("tools.invoke", {"tool_call": {
     "tool_call_id": "", "tool_name": "list_issues",
@@ -577,4 +383,20 @@ client.acall("tools.invoke", {"tool_call": {
 })
 ```
 
+---
 
+## Sandbox Capabilities (from worker code)
+
+The sandbox has **no** `context` module — the only way to interact with the parent is through virtual tool modules:
+
+```python
+# Import any tool alias registered in tool_tree
+import github
+await github.list_issues(owner="user", repo="repo")
+
+import fs
+await fs.read_file(path="/tmp/data.txt")
+
+# All tools.* RPC methods are accessible as <alias>.<func_name>
+# CodeAct-internal tools (execute, search_tools, list_tools) are NOT available
+```

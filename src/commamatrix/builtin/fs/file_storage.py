@@ -6,17 +6,21 @@ import uuid
 from aiofiles import open, os
 from pathlib import Path
 
+from typing import TYPE_CHECKING
 from ...components.file_storage import FileStorage
-from ...components.config import ConfigField, Config
+from ...components.config import ConfigField
+
+if TYPE_CHECKING:
+    from ...core.agent import Agent
 
 files_directory = ConfigField[str](name='files_directory', default='files', description='Directory for file storage')
 
 
 class SimpleFileStorage(FileStorage):
 
-    def __init__(self, config: Config) -> None:
-        super().__init__(config)
-        self._directory = Path(config.get(files_directory))
+    def __init__(self, agent: Agent) -> None:
+        super().__init__(agent)
+        self._directory = Path(self.config.get(files_directory))
         self._prefix = 'file_'
 
     async def save(self, data: bytes, ext: str | None = None) -> str:

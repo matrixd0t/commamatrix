@@ -1,4 +1,4 @@
-﻿# core/base/source.py
+# core/base/source.py
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from typing import Generic, TypeVar, cast
 from .descriptor import Descriptor
 from .service import AbstractService, SERVICE_ATTRIBUTE, ServiceDescriptor
 
-
 D = TypeVar("D", bound=Descriptor)
 InvalidationCallback = Callable[[], None]
 
@@ -21,6 +20,12 @@ class UnavailableSourceError(RuntimeError):
 
 
 class Source(Generic[D], ABC):
+    """
+    Base for discovery mechanism.
+    Subclasses define how descriptors are produced.
+    Invalidation notifies managers when a source becomes stale.
+    """
+
     def __init__(self) -> None:
         self._invalidation_callbacks: list[InvalidationCallback] = []
         self._available = True
@@ -65,6 +70,11 @@ class Source(Generic[D], ABC):
 
 
 class PythonSource(Source[D], Generic[D]):
+    """
+    Scoped module scanning.
+    Iterates vars() for objects with marker_attribute, filtering out private names and cross-module re-exports by __module__ check.
+    """
+
     def __init__(self) -> None:
         super().__init__()
         self._scope: list[str] = []
@@ -74,10 +84,12 @@ class PythonSource(Source[D], Generic[D]):
 
     @property
     @abstractmethod
-    def marker_attribute(self) -> str: ...
+    def marker_attribute(self) -> str:
+        ...
 
     @abstractmethod
-    def build_descriptor(self, object_name: str, obj: object) -> D | None: ...
+    def build_descriptor(self, object_name: str, obj: object) -> D | None:
+        ...
 
     def iter_objects(self) -> Iterable[tuple[str, object]]:
         for module_name in self._scope:
@@ -102,8 +114,18 @@ class PythonSource(Source[D], Generic[D]):
         return descriptors
 
 
-class PythonProviderSource(PythonSource[ServiceDescriptor]):
-    def __init__(self, base_type: type[AbstractService], marker_attribute: str, id_prefix: str) -> None:
+class PythonServiceSource(PythonSource[ServiceDescriptor]):
+    """Unified service source for marker-driven discovery. Configurable
+    via base_type, marker_attribute, and id_prefix to support provider
+    slots (LLMAdapter, Storage, FileStorage) alongside plain Service."""
+
+    def __init__(
+        self,
+        base_type: type[AbstractService] = AbstractService,
+        marker_attribute: str = SERVICE_ATTRIBUTE,
+        id_prefix: str = "service"
+    ) -> None:
+
         super().__init__()
         self._base_type = base_type
         self._marker = marker_attribute
@@ -120,27 +142,6 @@ class PythonProviderSource(PythonSource[ServiceDescriptor]):
             return None
         return ServiceDescriptor(
             id=f"{self._id_prefix}://{obj.__module__}/{object_name}",
-            service_cls=obj,
-            metadata={},
-            _source_ref=weakref.ref(self),
-        )
-
-
-class PythonServiceSource(PythonSource[ServiceDescriptor]):
-    def __init__(self) -> None:
-        super().__init__()
-
-    @property
-    def marker_attribute(self) -> str:
-        return SERVICE_ATTRIBUTE
-
-    def build_descriptor(self, object_name: str, obj: object) -> ServiceDescriptor | None:
-        if not (isinstance(obj, type) and issubclass(obj, AbstractService)):
-            return None
-        if getattr(obj, "__abstractmethods__", None):
-            return None
-        return ServiceDescriptor(
-            id=f"service://{obj.__module__}/{object_name}",
             service_cls=obj,
             metadata={},
             _source_ref=weakref.ref(self),

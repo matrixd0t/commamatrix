@@ -58,8 +58,30 @@ class Config:
     """Per-agent configuration store.
 
     Resolves values from overrides first, then agent defaults, then field defaults.
-    Plugin fields are not globally validated when a Config is created; missing
-    values fail when their owning component calls get().
+    Plugin fields are not globally validated when a Config is created; missing values fail when their owning component calls get().
+
+    Usage::
+
+        # 1. Declare a field at module level in your component
+        from commamatrix.components.config import ConfigField
+
+        api_key = ConfigField[str](name="my_api_key", description="API key for ...")
+        timeout = ConfigField[float](name="my_timeout", default=30.0, description="Request timeout")
+
+        # 2. Read from config in your component
+        class MyService(Service):
+            def __init__(self, agent: Agent) -> None:
+                super().__init__(agent)
+                self._key = self.config.get(api_key)
+                self._timeout = self.config.get(timeout)
+
+        # 3. Set in Agent config (the ConfigField object itself is the key)
+        from my_plugin import api_key, timeout
+
+        agent = Agent(config={
+            api_key: "sk-...",
+            timeout: 60.0,
+        })
     """
 
     def __init__(
@@ -97,15 +119,3 @@ class Config:
 
     def __contains__(self, field: ConfigField) -> bool:
         return field in self._overrides or field in self._defaults or field.has_default
-
-
-active_storage = ConfigField[str | None](
-    name="active_storage",
-    default=None,
-    description="Descriptor id of the active storage, or None for first available",
-)
-active_file_storage = ConfigField[str | None](
-    name="active_file_storage",
-    default=None,
-    description="Descriptor id of the active file storage, or None for first available",
-)

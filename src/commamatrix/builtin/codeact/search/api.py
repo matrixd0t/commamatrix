@@ -18,7 +18,7 @@ class ToolSearcher(ABC):
     """
 
     @abstractmethod
-    def rebuild(self, fingerprint: str, descriptors: Iterable[ToolDescriptor]) -> None:
+    def rebuild_index(self, fingerprint: str, descriptors: Iterable[ToolDescriptor]) -> None:
         raise NotImplementedError
 
     @abstractmethod

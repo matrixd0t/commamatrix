@@ -1,4 +1,11 @@
 # core/agent/agent.py
+"""Agent orchestrator — the top-level entry point for CommaMatrix.
+
+Agent creates all native managers, wires them into AgentLifecycle for
+lifecycle management, and provides the public API: start(), stop(),
+handle(raw), and run(). Extensions are activated per-agent via
+add_extension() — no global auto-discovery.
+"""
 
 from __future__ import annotations
 
@@ -37,18 +44,31 @@ from ...components.llm_adapter import (
     ToolCall,
     ToolCallResult,
 )
-from ...components.file_storage import FILE_STORAGE_ATTRIBUTE
-from ...components.storage import STORAGE_ATTRIBUTE
+from ...components.tool import ToolManager
+from ...components.hook import HookManager
+from ...components.connector import ConnectorManager
+from ...components.llm_adapter import LLMAdapterManager
+from ...components.storage import StorageManager, STORAGE_ATTRIBUTE
+from ...components.file_storage import FileStorageManager, FILE_STORAGE_ATTRIBUTE
+from ..base.manager import ServiceInstanceManager
 from .runner import AgentRunner
 from .lifecycle import AgentLifecycle
 
 
-_DEFAULT_STORAGE_EXTENSION = 'commamatrix.builtin.sqlite'
-_DEFAULT_FILE_STORAGE_EXTENSION = 'commamatrix.builtin.fs'
+def _framework_prefix() -> str:
+    """Package prefix for this framework installation (e.g. 'commamatrix'
+    or 'src.commamatrix').  Derived from the Agent module path to avoid
+    double-import issues with the src/ layout."""
+    parts = __name__.split('.')
+    return '.'.join(parts[:parts.index('commamatrix') + 1])
 
 
 class Agent:
-    """Orchestrates the agent lifecycle: parse -> LLM -> tools -> send."""
+    """Orchestrates the agent lifecycle: parse -> LLM -> tools -> send.
+
+    Creates all native managers during __init__, wires them into
+    AgentLifecycle, and exposes convenience properties for direct access.
+    """
 
     def __init__(self, *, config: dict[ConfigField, Any] | Config = {}, auto_load_main: bool = True):
         if isinstance(config, dict):
@@ -56,50 +76,34 @@ class Agent:
         self.config = config
         self._auto_load_main = auto_load_main
 
-        self.manager = AgentLifecycle(config=config, on_event=self.handle)
+        self.services = ServiceIпомнnstanceRegistry()
         self.runner = AgentRunner()
         self._started = False
         self._start_lock = asyncio.Lock()
         self._extension_scope: list[str] = []
 
-    # ------------------------------------------------------------------
-    # Convenience aliases
-    # ------------------------------------------------------------------
+        self.tool_manager = ToolManager(agent=self)
+        self.hook_manager = HookManager(agent=self)
+        self.llm_adapter = LLMAdapterManager(agent=self)
+        self.storage = StorageManager(agent=self)
+        self.file_storage = FileStorageManager(agent=self)
+        self.service_manager = ServiceInstanceManager(agent=self)
+        self.connector_manager = ConnectorManager(agent=self)
 
-    @property
-    def tool_manager(self):
-        return self.manager.tool_manager
-
-    @property
-    def hook_manager(self):
-        return self.manager.hook_manager
-
-    @property
-    def connector_manager(self):
-        return self.manager.connector_manager
-
-    @property
-    def llm_adapter(self):
-        return self.manager.llm_adapter_manager
-
-    @property
-    def storage(self):
-        return self.manager.storage_manager
-
-    @property
-    def file_storage(self):
-        return self.manager.file_storage_manager
-
-    @property
-    def services(self):
-        return self.manager.registry
-
-    # ------------------------------------------------------------------
-    # Extension scope — the ONLY activation mechanism
-    # ------------------------------------------------------------------
+        children = [
+            self.tool_manager,
+            self.hook_manager,
+            self.llm_adapter,
+            self.storage,
+            self.file_storage,
+            self.service_manager,
+            self.connector_manager,
+        ]
+        self.manager = AgentLifecycle(children=children, registry=self.services)
 
     @staticmethod
     def _resolve_module_name(module_or_name: str | types.ModuleType) -> str:
+        """Normalise extension specifier to a module name string."""
         if isinstance(module_or_name, str):
             return module_or_name
         if isinstance(module_or_name, types.ModuleType):
@@ -136,10 +140,6 @@ class Agent:
         self.manager.set_scope(self._extension_scope)
         await self.manager.refresh()
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
     async def start(self) -> None:
         """Discover extensions, resolve connectors, and start listener tasks."""
         await self._ensure_started()
@@ -163,7 +163,7 @@ class Agent:
         parsed: OnParsedCtx | None = None
         connectors = self.connector_manager.resolve()
         for connector in connectors:
-            parsed = await connector.parse(raw, self)
+            parsed = await connector.parse(raw)
             if parsed is not None:
                 break
         if parsed is None:
@@ -180,7 +180,7 @@ class Agent:
 
     @asynccontextmanager
     async def _typing(self, run: RunCtx):
-        """Yield inside connector.typing() if connector is set, else yield directly."""
+        """Wrap the run in connector.typing() if a connector is attached."""
         if run.connector:
             async with run.connector.typing(run.origin):
                 yield
@@ -227,19 +227,17 @@ class Agent:
                 AfterRunCtx(run=run, error=error)
             )
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     async def _ensure_started(self) -> None:
+        """Lazy init: add defaults, start lifecycle, fire on_agent_start."""
         async with self._start_lock:
             if not self._started:
+                prefix = _framework_prefix()
                 if self._auto_load_main:
                     self.add_extension("__main__")
                 if not self._scope_has_attribute(STORAGE_ATTRIBUTE):
-                    self.add_extension(_DEFAULT_STORAGE_EXTENSION)
+                    self.add_extension(prefix + '.builtin.sqlite')
                 if not self._scope_has_attribute(FILE_STORAGE_ATTRIBUTE):
-                    self.add_extension(_DEFAULT_FILE_STORAGE_EXTENSION)
+                    self.add_extension(prefix + '.builtin.fs')
                 self.manager.set_scope(self._extension_scope)
                 await self.manager.start()
                 await self.hook_manager.fire(
@@ -250,11 +248,13 @@ class Agent:
             await self.refresh_extensions()
 
     async def _before_run(self, run: RunCtx) -> BeforeRunCtx:
+        """Fire before_run hook and return the (possibly aborted) context."""
         ctx = BeforeRunCtx(run=run)
         await self.hook_manager.fire(HookEventType.BEFORE_RUN, ctx)
         return ctx
 
     async def _store_history(self, history: list[DialogItem] | None) -> int | None:
+        """Persist items in a history batch and return the last item_id."""
         last_item_id: int | None = None
         if history is not None:
             for item in history:
@@ -267,6 +267,7 @@ class Agent:
         return last_item_id
 
     async def _resolve_previous_item(self, parsed: OnParsedCtx) -> None:
+        """Link the first dialog item to its replied-to message by external_id."""
         if parsed.previous_external_id and parsed.dialog_items:
             replied_item_id = await self.storage.find_item_id_by_external_id(
                 parsed.previous_external_id,
@@ -276,11 +277,13 @@ class Agent:
                 parsed.dialog_items[0].previous_item_id = replied_item_id
 
     async def _load_dialog(self, last_item_id: int | None) -> list[DialogItem]:
+        """Fetch the conversation branch starting from last_item_id."""
         if last_item_id is None:
             return []
         return await self.storage.get_branch(last_item_id)
 
     async def _call_llm(self, run: RunCtx, last_item_id: int | None) -> AfterLlmCallCtx:
+        """Load dialog, fire before_llm, call adapter, fire after_llm, validate."""
         dialog = await self._load_dialog(last_item_id)
 
         tools_list = list(self.tool_manager.descriptors)
@@ -297,6 +300,7 @@ class Agent:
         return after_llm_ctx
 
     async def _execute_tools(self, run: RunCtx, response: LLMResponse, last_item_id: int | None) -> tuple[int | None, bool]:
+        """Persist tool call blocks and run full lifecycle for each."""
         tool_calls = [b for b in response.content if isinstance(b, LLMResponseToolCallBlock)]
         if not tool_calls:
             return last_item_id, False
@@ -325,6 +329,7 @@ class Agent:
         return last_item_id, True
 
     async def _run_tool_lifecycle(self, run: RunCtx, tool_call: ToolCall, last_item_id: int | None = None) -> tuple[int | None, ToolCallResult]:
+        """Fire before/after_tool_call hooks, invoke tool, persist result."""
         before_ctx = BeforeToolCallCtx(run=run, tool_call=tool_call)
         await self.hook_manager.fire(HookEventType.BEFORE_TOOL_CALL, before_ctx)
 
@@ -358,6 +363,7 @@ class Agent:
     async def _send_blocks(
         self, run: RunCtx, blocks: list[LLMResponseBlock], last_item_id: int | None
     ) -> None:
+        """Send non-tool-call blocks via connector and persist each one."""
         for block in blocks:
             if isinstance(block, LLMResponseToolCallBlock):
                 continue
@@ -382,18 +388,21 @@ class Agent:
                 last_item_id = saved_id
 
     async def _handle_error(self, run: RunCtx, error: Exception) -> None:
+        """Fire on_error hook; re-raise unless suppressed."""
         ctx = OnErrorCtx(run=run, error=error)
         await self.hook_manager.fire(HookEventType.ON_ERROR, ctx)
         if not ctx.suppress:
             raise error
 
     def _validate_response(self, response: LLMResponse, run: RunCtx) -> None:
+        """Raise if the LLM stopped with error or max_tokens."""
         if response.stop_reason == StopReason.ERROR:
             raise LLMResponseError("LLM returned error stop reason")
         if response.stop_reason == StopReason.MAX_TOKENS:
             raise LLMTruncatedError("LLM response truncated (max_tokens)")
 
     def _scope_has_attribute(self, attribute: str) -> bool:
+        """Check whether any extension in the scope stamps the given marker."""
         for mod_name in self._extension_scope:
             mod = sys.modules.get(mod_name)
             if mod is None:
@@ -404,6 +413,7 @@ class Agent:
         return False
 
     def _split_runs(self, parsed: OnParsedCtx) -> list[tuple[RunCtx, list[DialogItem]]]:
+        """Group parsed dialog items by origin; each group becomes one run."""
         by_origin: dict[str, list[DialogItem]] = defaultdict(list)
         for item in parsed.dialog_items:
             key = json.dumps(

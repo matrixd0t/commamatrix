@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from ...components.hook import BeforeLlmCallCtx, BeforeRunCtx, before_llm_call, before_run
-from .manager import CodeActManager
+from .service import CodeActService
 
 CODACT_ENABLED_KEY = "codeact-enabled"
 """State key set on RunCtx.state when CodeAct is active for the current run."""
@@ -22,12 +22,12 @@ async def expose_codeact_tools(ctx: BeforeLlmCallCtx) -> None:
     if not ctx.run.state.get(CODACT_ENABLED_KEY):
         return
 
-    runtime = ctx.run.agent.services.get(CodeActManager)
+    runtime = ctx.run.agent.services.get(CodeActService)
     if runtime is None:
         return
 
     indexed_tools = [t for t in ctx.tools if not t.metadata.get("codeact")]
     codeact_tools = [t for t in ctx.tools if t.metadata.get("codeact")]
 
-    await runtime.rebuild(indexed_tools, ctx.run)
+    runtime.rebuild_index(indexed_tools, ctx.run)
     ctx.tools = codeact_tools

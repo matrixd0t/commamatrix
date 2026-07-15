@@ -3,7 +3,7 @@
 """CodeAct worker — runs in a child Python process.
 
 Reads a JSON payload from stdin (code + namespace + tool_tree), sets up
-RPC-backed virtual imports (``context``, tool modules), executes the code,
+RPC-backed virtual imports for tool modules, executes the code,
 and writes the execution result back to stdout as JSON.
 """
 
@@ -15,7 +15,6 @@ import io
 import json
 import os
 import sys
-import threading
 import time
 import uuid
 from importlib.abc import MetaPathFinder
@@ -51,57 +50,6 @@ class _RPCClient:
 
     async def acall(self, method, params=None):
         return await asyncio.to_thread(self.call, method, params)
-
-
-# ── Remote proxy objects ─────────────────────────────────────────────
-
-class _RemoteCall:
-    def __init__(self, client, path, args, kwargs):
-        self._client = client
-        self._path = path
-        self._args = args
-        self._kwargs = kwargs
-
-    def __await__(self):
-        params = {"args": list(self._args), "kwargs": self._kwargs}
-        return self._client.acall(self._path, params).__await__()
-
-
-class _RemoteValue:
-    def __init__(self, client, path):
-        self._client = client
-        self._path = path
-
-    def __getattr__(self, name):
-        if name.startswith("_"):
-            raise AttributeError(name)
-        return _RemoteValue(self._client, self._path + "." + name)
-
-    def __call__(self, *args, **kwargs):
-        return _RemoteCall(self._client, self._path, args, kwargs)
-
-    def __await__(self):
-        return self._client.acall(self._path).__await__()
-
-    def __repr__(self):
-        return f"<RemoteValue {self._path}>"
-
-
-class _ToolsAccessor:
-    def __init__(self, client):
-        self._client = client
-
-    async def invoke(self, tool_name, args=None, tool_id=""):
-        return await self._client.acall("tools.invoke", {"tool_call": {
-            "tool_call_id": "", "tool_name": tool_name, "tool_args": args or {},
-            "tool_id": tool_id,
-        }})
-
-    async def search(self, query, limit=5):
-        return await self._client.acall("tools.search", {"query": query, "limit": limit})
-
-    def __repr__(self):
-        return "<ToolsAccessor>"
 
 
 # ── Schema / signature helpers ───────────────────────────────────────
@@ -176,24 +124,11 @@ def _make_tool_proxy(client, descriptor):
 
 # ── Virtual module factories ─────────────────────────────────────────
 
-def make_context(client):
-    module = ModuleType("context")
-    module.run = _RemoteValue(client, "context.run")
-    module.tool_call = _RemoteValue(client, "context.tool_call")
-    module.storage = _RemoteValue(client, "context.storage")
-    module.meta = _RemoteValue(client, "context.meta")
-    module.tools = _ToolsAccessor(client)
-    module.__all__ = ["run", "tool_call", "storage", "meta", "tools"]
-    return module
-
-
-# ── Recursive module tree from tool_tree ─────────────────────────────
-
 _modules_cache: dict[str, ModuleType] = {}
 _factories: dict[str, Callable[..., Any]] = {}
 
 
-def make_context_module(fullname, node, client):
+def make_tool_module(fullname, node, client):
     module = ModuleType(fullname)
     module.__path__ = []
     module.__package__ = fullname
@@ -210,7 +145,7 @@ def make_context_module(fullname, node, client):
             continue
         child_fullname = f"{fullname}.{child_name}"
         if child_fullname not in _factories:
-            _factories[child_fullname] = lambda cn=child_fullname, nd=child_node: make_context_module(cn, nd, client)
+            _factories[child_fullname] = lambda cn=child_fullname, nd=child_node: make_tool_module(cn, nd, client)
         child = _factories[child_fullname]()
         setattr(module, child_name, child)
         names.append(child_name)
@@ -251,9 +186,8 @@ def main():
 
     client = _RPCClient(stdin_bin, stdout_bin)
 
-    _factories["context"] = lambda: make_context(client)
     for alias, node in tool_tree.items():
-        _factories[alias] = lambda a=alias, n=node: make_context_module(a, n, client)
+        _factories[alias] = lambda a=alias, n=node: make_tool_module(a, n, client)
     sys.meta_path.insert(0, _Finder())
 
     stdout_buf = io.StringIO()

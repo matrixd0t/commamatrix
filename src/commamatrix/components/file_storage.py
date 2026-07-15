@@ -1,4 +1,4 @@
-﻿# components/file_storage.py
+# components/file_storage.py
 
 from __future__ import annotations
 
@@ -6,18 +6,27 @@ from abc import abstractmethod
 from typing import TYPE_CHECKING
 
 from ..core.base.service import AbstractService
-from ..core.base.manager import ActiveInstanceServiceManager
-from .config import active_file_storage
+from ..core.base.manager import ActiveServiceInstanceManager
+from .config import ConfigField
 
 if TYPE_CHECKING:
-    from .config import Config
+    from ..core.agent import Agent
 
 FILE_STORAGE_ATTRIBUTE = "__commamatrix_file_storage__"
 
+active_file_storage = ConfigField[str | None](
+    name="active_file_storage",
+    default=None,
+    description="Descriptor id of the active file storage, or None for first available",
+)
+
 
 class FileStorage(AbstractService):
-    def __init__(self, config: Config) -> None:
-        super().__init__(config)
+    """Abstract file/blob storage provider. Subclasses implement
+    save/get/delete for binary data identified by string IDs."""
+
+    def __init__(self, agent: Agent) -> None:
+        super().__init__(agent)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
@@ -34,10 +43,13 @@ class FileStorage(AbstractService):
     async def delete(self, file_id: str) -> bool: ...
 
 
-class FileStorageManager(ActiveInstanceServiceManager):
-    _cls = FileStorage
-    _attribute = FILE_STORAGE_ATTRIBUTE
-    _prefix = "file storage"
+class FileStorageManager(ActiveServiceInstanceManager):
+    """Manages FileStorage providers with active-instance selection.
+    Delegates save/get/delete to the active storage backend."""
+
+    base_type = FileStorage
+    marker_attribute = FILE_STORAGE_ATTRIBUTE
+    id_prefix = "file storage"
     active_field = active_file_storage
 
     async def save(self, data: bytes, ext: str | None = None) -> str:

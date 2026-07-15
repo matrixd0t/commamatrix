@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TYPE_CHECKING
 import aiosqlite
 
 from ..sql.storage import SqlStorage
-from ...components.config import ConfigField, Config
+from ...components.config import ConfigField
+
+if TYPE_CHECKING:
+    from ...core.agent import Agent
 
 sqlite_path = ConfigField[str](
     name="sqlite_path", default="db.sqlite", description="Path to SQLite database file"
@@ -14,9 +17,9 @@ sqlite_path = ConfigField[str](
 
 
 class SqliteStorage(SqlStorage):
-    def __init__(self, config: Config) -> None:
-        super().__init__(config)
-        self._path = config.get(sqlite_path)
+    def __init__(self, agent: Agent) -> None:
+        super().__init__(agent)
+        self._path = self.config.get(sqlite_path)
 
     async def _connect(self) -> aiosqlite.Connection:
         db = await aiosqlite.connect(self._path)

@@ -1,11 +1,11 @@
-﻿# components/tool.py
+# components/tool.py
 
 from __future__ import annotations
 
 import functools
 import inspect
 import weakref
-from abc import ABC
+
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast, get_type_hints, overload
@@ -17,9 +17,8 @@ from ..core.base.source import Source
 from ..core.base.manager import Manager
 from ..core.base.source import PythonSource
 from .llm_adapter import ToolCall, ToolCallResult
+from .hook import BeforeToolCallCtx
 
-if TYPE_CHECKING:
-    from .hook import BeforeToolCallCtx
 
 DEFAULT_TOOL_SEARCH_AMOUNT = 5
 TOOL_ATTRIBUTE = "__commamatrix_tool__"
@@ -30,6 +29,9 @@ type Decorator[F: AsyncOrSyncFunction] = Callable[[F], F]
 
 @dataclass(frozen=True, slots=True)
 class ToolDescriptor(Descriptor):
+    """Metadata for a registered tool: namespace, alias, exported name,
+    JSON Schema, and docstring. Used by ToolManager for resolution."""
+
     namespace: str
     alias: str
     name: str
@@ -52,7 +54,10 @@ class ToolDescriptor(Descriptor):
         }
 
 
-class ToolSource(Source[ToolDescriptor], ABC):
+class ToolSource(Source[ToolDescriptor]):
+    """Source ABC for tool execution. The invoke() method bridges
+    a descriptor back to the actual callable."""
+
     async def invoke(self, descriptor: ToolDescriptor, kwargs: dict[str, Any], ctx: BeforeToolCallCtx | None = None) -> object:
         raise NotImplementedError
 
@@ -64,6 +69,9 @@ def tool(**metadata: Any) -> Decorator: ...
 
 
 def tool(arg: AsyncOrSyncFunction | None = None, **meta: Any):
+    """Decorator marking a function as a discoverable tool.
+    Stamps TOOL_ATTRIBUTE with optional metadata. Use bare (@tool)
+    or with keyword arguments for extra metadata."""
     def decorate(fn: AsyncOrSyncFunction, metadata: dict[str, Any]):
         setattr(fn, TOOL_ATTRIBUTE, metadata)
         return fn
@@ -75,6 +83,10 @@ def tool(arg: AsyncOrSyncFunction | None = None, **meta: Any):
 
 
 class PythonToolSource(PythonSource[ToolDescriptor], ToolSource):
+    """Scans @tool-decorated functions in scope modules, builds
+    ToolDescriptors with JSON Schema, and provides invoke() to
+    call the original function (with optional ctx injection)."""
+
     def __init__(self) -> None:
         super().__init__()
         self._functions: dict[str, AsyncOrSyncFunction] = {}
@@ -138,19 +150,11 @@ class PythonToolSource(PythonSource[ToolDescriptor], ToolSource):
         return "\n".join(parts)
 
 
-_INJECTABLE_TYPES: set[type] | None = None
-
-
-def _get_injectable_types() -> set[type]:
-    global _INJECTABLE_TYPES
-    if _INJECTABLE_TYPES is None:
-        from .hook import BeforeToolCallCtx as _BTC
-        _INJECTABLE_TYPES = {_BTC}
-    return _INJECTABLE_TYPES
+_INJECTABLE_TYPES = {BeforeToolCallCtx}
 
 
 def _is_injectable(annotation: Any) -> bool:
-    return annotation in _get_injectable_types()
+    return annotation in _INJECTABLE_TYPES
 
 
 def _injectable_params(fn: AsyncOrSyncFunction) -> dict[str, type]:
@@ -224,8 +228,12 @@ def _type_hints(fn: AsyncOrSyncFunction) -> dict[str, Any]:
 
 
 class ToolManager(Manager[ToolDescriptor]):
-    def __init__(self) -> None:
-        super().__init__()
+    """Central tool registry. Maintains alias/name/exported_name index
+    maps for multi-step resolution. The call() method executes a
+    ToolCall by resolving the tool name and invoking it through its source."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
         self._python_source = PythonToolSource()
         self.mount(self._python_source)
         self._by_alias: dict[str, list[ToolDescriptor]] = {}

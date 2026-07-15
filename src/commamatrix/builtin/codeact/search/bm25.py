@@ -21,7 +21,7 @@ class BM25ToolSearcher(ToolSearcher):
         self._ids: list[str] = []
         self._descriptors: dict[str, ToolDescriptor] = {}
 
-    def rebuild(self, fingerprint: str, descriptors: Iterable[ToolDescriptor]) -> None:
+    def rebuild_index(self, fingerprint: str, descriptors: Iterable[ToolDescriptor]) -> None:
         if fingerprint == self._index_fingerprint:
             return
 

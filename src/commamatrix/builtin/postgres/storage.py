@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TYPE_CHECKING
 import asyncpg
 
 from ..sql.storage import SqlStorage
-from ...components.config import ConfigField, Config
+from ...components.config import ConfigField
+
+if TYPE_CHECKING:
+    from ...core.agent import Agent
 
 postgres_dsn = ConfigField[str](
     name="postgres_dsn", description='PostgreSQL connection DSN: "user:password@host:port/database"'
@@ -14,9 +17,9 @@ postgres_dsn = ConfigField[str](
 
 
 class PostgresStorage(SqlStorage):
-    def __init__(self, config: Config) -> None:
-        super().__init__(config)
-        self._dsn = config.get(postgres_dsn)
+    def __init__(self, agent: Agent) -> None:
+        super().__init__(agent)
+        self._dsn = self.config.get(postgres_dsn)
         if self._dsn is None:
             raise ValueError("postgres_dsn is required for PostgresStorage")
 

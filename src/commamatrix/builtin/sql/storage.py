@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from types import UnionType
 from typing import Any, Union, get_args, get_origin, TYPE_CHECKING
 
@@ -18,7 +18,7 @@ from ...components.dialog import (
 from ...components.storage import Storage
 
 if TYPE_CHECKING:
-    from ...components.config import Config
+    from ...core.agent import Agent
 
 BaseColumns = set(DialogItem.model_fields.keys()) - {"origin"} | set(
     DialogOrigin.model_fields.keys()
@@ -52,9 +52,9 @@ def _field_is_nullable(field_info) -> bool:
     return False
 
 
-class SqlStorage(Storage, ABC):
-    def __init__(self, config: Config) -> None:
-        super().__init__(config)
+class SqlStorage(Storage):
+    def __init__(self, agent: Agent) -> None:
+        super().__init__(agent)
         self._db: Any = None
         self._known_columns: set[str] = set()
 

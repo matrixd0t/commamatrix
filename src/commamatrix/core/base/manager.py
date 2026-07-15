@@ -6,28 +6,35 @@ import asyncio
 import hashlib
 import weakref
 from collections.abc import Callable, ValuesView
-from typing import Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from .descriptor import Descriptor, StaleDescriptorError
-from .service import AbstractService, ServiceDescriptor
+from .service import AbstractService, ServiceDescriptor, SERVICE_ATTRIBUTE
 from .source import (
     Source,
-    PythonProviderSource,
     PythonServiceSource,
-    UnavailableSourceError
+    UnavailableSourceError,
 )
 from ..utils import await_if_needed
-from ...components.config import Config, ConfigField
+from ...components.config import ConfigField
 
+if TYPE_CHECKING:
+    from ..agent.agent import Agent
 
 D = TypeVar("D", bound=Descriptor)
 
 
 class Manager(AbstractService, Generic[D]):
+    """Owns sources, descriptors, and fingerprints for change detection.
+
+    Subclasses define what kind of stuff they manage (tools, hooks,
+    services, etc.) by providing a Source[D] and calling self.mount().
+    """
     on_change: Callable[[], None] | None
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, agent: Agent, **kwargs) -> None:
+        super().__init__(agent)
+        self._registry = agent.services
         self._sources: list[Source[D]] = []
         self._descriptors: dict[str, D] = {}
         self._source_descriptor_ids: dict[int, set[str]] = {}
@@ -60,6 +67,7 @@ class Manager(AbstractService, Generic[D]):
         return True
 
     def mount(self, source: Source[D]) -> None:
+        """Register a source. Changes from the source will trigger invalidation."""
         if source in self._sources:
             return
 
@@ -77,6 +85,7 @@ class Manager(AbstractService, Generic[D]):
         source._attach_invalidator(invalidate)
 
     def unmount(self, source: Source[D]) -> None:
+        """Remove a source and invalidate its descriptors."""
         self.invalidate(source)
         invalidator = self._source_invalidators.pop(id(source), None)
         if invalidator is not None:
@@ -99,6 +108,10 @@ class Manager(AbstractService, Generic[D]):
         self.scan()
 
     def invalidate(self, source: Source[D]) -> bool:
+        """
+        Remove descriptors belonging to source and rebuild indexes.
+        Returns True if any descriptor was removed.
+        """
         if source not in self._sources:
             return False
 
@@ -119,6 +132,10 @@ class Manager(AbstractService, Generic[D]):
         return True
 
     def scan(self) -> bool:
+        """
+        Re-collect descriptors from all sources.
+        Returns True if the descriptor set changed (fingerprint mismatch).
+        """
         descriptors: dict[str, D] = {}
         source_descriptor_ids: dict[int, set[str]] = {}
 
@@ -158,17 +175,25 @@ class Manager(AbstractService, Generic[D]):
         return fp.hexdigest()
 
     def _rebuild(self) -> None:
-        """Rebuild specialized indexes after descriptors change."""
+        """Rebuild indexes after descriptors change."""
 
 
 S = TypeVar("S", bound=AbstractService)
 
 
 class InstanceManager(Manager[D], Generic[D, S]):
-    def __init__(self, python_source: Source[D]) -> None:
-        super().__init__()
+    """
+    Manager that creates instances from descriptors.
+
+    On refresh, it reconciles the desired set (descriptors) with the current
+    set (instances): creates new, removes stale, restarts changed.
+    """
+
+    def __init__(self, agent: Agent, python_source: Source[D] | None = None, **kwargs) -> None:
+        super().__init__(agent, **kwargs)
         self._python_source = python_source
-        self.mount(self._python_source)
+        if python_source is not None:
+            self.mount(python_source)
         self._instances: dict[str, S] = {}
         self._instance_fingerprints: dict[str, str] = {}
         self._start_order: list[str] = []
@@ -197,6 +222,10 @@ class InstanceManager(Manager[D], Generic[D, S]):
         await super().stop()
 
     async def _reconcile_instances(self) -> None:
+        """
+        Sync running instances with current descriptors:
+        stop and remove stale, restart changed, create new.
+        """
         desired: dict[str, D] = {d.id: d for d in self.descriptors}
 
         for sid in list(self._instances):
@@ -259,7 +288,84 @@ class InstanceManager(Manager[D], Generic[D, S]):
         pass
 
 
+class ServiceInstanceManager(InstanceManager[ServiceDescriptor, AbstractService]):
+    """Manages AbstractService instances discovered by PythonServiceSource.
+
+    Instances are registered in ServiceInstanceRegistry on creation and deregistered on removal.
+    Used as the generic custom-service manager and as a base for provider-specific managers (Storage, LLM, etc.).
+    """
+
+    base_type: type[AbstractService] = AbstractService
+    marker_attribute: str = SERVICE_ATTRIBUTE
+    id_prefix: str = 'service'
+
+    def __init__(self, agent: Agent, source: Source[ServiceDescriptor] | None = None, **kwargs) -> None:
+        source = source or PythonServiceSource(self.base_type, self.marker_attribute, self.id_prefix)
+        super().__init__(agent, python_source=source, **kwargs)
+
+    def _create_instance(self, descriptor: ServiceDescriptor) -> AbstractService:
+        return descriptor.service_cls(agent=self.agent)
+
+    async def _start_instance(self, instance: AbstractService) -> None:
+        await await_if_needed(instance.start())
+
+    async def _stop_instance(self, instance: AbstractService) -> None:
+        await await_if_needed(instance.stop())
+
+    async def _refresh_instance(self, instance: AbstractService) -> None:
+        await await_if_needed(instance.refresh())
+
+    def _on_instance_added(self, instance: AbstractService, sid: str, descriptor: ServiceDescriptor) -> None:
+        self._registry[sid] = instance
+        self._registry[descriptor.service_cls] = instance
+
+    def _on_instance_removed(self, instance: AbstractService) -> None:
+        self._registry.remove_by_instance(instance)
+
+
+class ActiveServiceInstanceManager(ServiceInstanceManager):
+    """Extends ServiceInstanceManager with active-instance selection.
+
+    When multiple instances are available, the one configured via active_field is used; falls back to the first available.
+    """
+
+    active_field: ConfigField[str | None]
+
+    def __init__(self, agent: Agent, **kwargs) -> None:
+        super().__init__(agent, **kwargs)
+        self._active_id: str | None = None
+
+    async def refresh(self) -> None:
+        await super().refresh()
+        self._select_active()
+
+    def _select_active(self) -> None:
+        configured = self.agent.config.get(self.active_field)
+        if configured is not None:
+            if configured in self._instances:
+                self._active_id = configured
+                return
+            if self.agent.config.has_override(self.active_field):
+                raise RuntimeError(f"Active {self.id_prefix} '{configured}' not found")
+        if self._active_id is not None and self._active_id in self._instances:
+            return
+        if self._instances:
+            self._active_id = next(iter(self._instances))
+
+    @property
+    def _active(self) -> Any | None:
+        if self._active_id is None:
+            raise RuntimeError(f"No active {self.id_prefix}")
+        return self._instances.get(self._active_id)
+
+
 class ServiceInstanceRegistry:
+    """Typed container for active service instances.
+
+    Supports lookup by concrete class (e.g. registry.require(CodeActService))
+    and by descriptor id.
+    """
+
     def __init__(self) -> None:
         self._by_class: dict[type, object] = {}
         self._by_id: dict[str, object] = {}
@@ -319,70 +425,3 @@ class ServiceInstanceRegistry:
         if isinstance(key, str):
             return key in self._by_id
         return key in self._by_class
-
-
-class ServiceInstanceManager(InstanceManager[ServiceDescriptor, AbstractService]):
-    def __init__(self, python_source: Any, config: Any, registry: ServiceInstanceRegistry) -> None:
-        super().__init__(python_source)
-        self._config = config
-        self._registry = registry
-
-    def _create_instance(self, descriptor: ServiceDescriptor) -> AbstractService:
-        return descriptor.service_cls(config=self._config)
-
-    async def _start_instance(self, instance: AbstractService) -> None:
-        await await_if_needed(instance.start())
-
-    async def _stop_instance(self, instance: AbstractService) -> None:
-        await await_if_needed(instance.stop())
-
-    async def _refresh_instance(self, instance: AbstractService) -> None:
-        await await_if_needed(instance.refresh())
-
-    def _on_instance_added(self, instance: AbstractService, sid: str, descriptor: ServiceDescriptor) -> None:
-        self._registry[sid] = instance
-        self._registry[descriptor.service_cls] = instance
-
-    def _on_instance_removed(self, instance: AbstractService) -> None:
-        self._registry.remove_by_instance(instance)
-
-
-class ActiveInstanceServiceManager(ServiceInstanceManager):
-    _cls: type[AbstractService]
-    _attribute: str
-    _prefix: str = 'provider'
-    active_field: ConfigField[str | None]
-
-    def __init__(self, config: Config, registry: ServiceInstanceRegistry) -> None:
-        source = PythonProviderSource(self._cls, self._attribute, self._prefix)
-        super().__init__(source, config, registry)
-        self._active_id: str | None = None
-
-    async def refresh(self) -> None:
-        await super().refresh()
-        self._select_active()
-
-    def _select_active(self) -> None:
-        configured = self._config.get(self.active_field)
-        if configured is not None:
-            if configured in self._instances:
-                self._active_id = configured
-                return
-            if self._config.has_override(self.active_field):
-                raise RuntimeError(f"Active {self._prefix} '{configured}' not found")
-        if self._active_id is not None and self._active_id in self._instances:
-            return
-        if self._instances:
-            self._active_id = next(iter(self._instances))
-
-    @property
-    def _active(self) -> Any | None:
-        if self._active_id is None:
-            raise RuntimeError(f"No active {self._prefix}")
-        return self._instances.get(self._active_id)
-
-
-class CustomInstanceServiceManager(ServiceInstanceManager):
-    def __init__(self, config: Any, registry: ServiceInstanceRegistry) -> None:
-        source = PythonServiceSource()
-        super().__init__(source, config, registry)

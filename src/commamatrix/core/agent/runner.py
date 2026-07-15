@@ -1,4 +1,4 @@
-﻿# core/agent/runner.py
+# core/agent/runner.py
 
 from __future__ import annotations
 
@@ -9,6 +9,9 @@ from ...components.dialog import DialogOrigin
 
 
 class AgentRunner:
+    """Manages per-dialog-origin asyncio tasks. Ensures only one active
+    run per (origin, user) key by cancelling stale tasks on submit."""
+
     def __init__(self) -> None:
         self._tasks: dict[str, asyncio.Task] = {}
 

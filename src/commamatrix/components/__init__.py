@@ -13,7 +13,7 @@ from .connector import (
     ConnectorDescriptor,
     ConnectorSource,
     CONNECTOR_ATTRIBUTE,
-    OnEvent,
+    OnRecv,
 )
 from .storage import Storage, STORAGE_ATTRIBUTE
 from .file_storage import FileStorage, FILE_STORAGE_ATTRIBUTE
@@ -75,7 +75,7 @@ __all__ = [
     "ConnectorDescriptor",
     "ConnectorSource",
     "CONNECTOR_ATTRIBUTE",
-    "OnEvent",
+    "OnRecv",
     "Storage",
     "STORAGE_ATTRIBUTE",
     "FileStorage",

@@ -1,66 +1,46 @@
-﻿# core/agent/lifecycle.py
+# core/agent/lifecycle.py
+
+"""Root lifecycle composite for Agent-owned services.
+
+AgentLifecycle takes a ready-made ordered list of Manager instances from
+Agent, wires their on_change callbacks, and provides start/stop/refresh
+entry points with transactional rollback support.
+"""
 
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 
-from ...components.config import Config
-from ...components.connector import OnEvent
-from ...components.tool import ToolManager
-from ...components.hook import HookManager
-from ...components.connector import ConnectorManager
-from ...components.llm_adapter import LLMAdapterManager
-from ...components.storage import StorageManager
-from ...components.file_storage import FileStorageManager
-from ..base.manager import ServiceInstanceRegistry, CustomInstanceServiceManager
+from ..base.manager import Manager, ServiceInstanceRegistry
 from ..utils import await_if_needed
 
 
 class AgentLifecycle:
-    """Root lifecycle composite owning all agent-owned services.
+    """Root lifecycle composite. Receives an ordered children list from Agent.
 
-    Manages tool, hook, connector, and provider managers as well as
-    custom service instances. Provides a single start / refresh / stop
-    entry point for the Agent. NOT a AbstractService itself.
+    Order: tool → hook → llm_adapter → storage → file_storage → service → connector.
+    Supports transactional startup with rollback on failure.
     """
 
-    def __init__(self, config: Config, on_event: OnEvent | None = None) -> None:
-        self._config = config
-        self._registry = ServiceInstanceRegistry()
+    def __init__(self, children: list[Manager], registry: ServiceInstanceRegistry) -> None:
+        self._children = children
+        self._registry = registry
         self._refresh_lock = asyncio.Lock()
         self._started = False
         self._changed = False
-
-        self.tool_manager = ToolManager()
-        self.hook_manager = HookManager()
-        self.llm_adapter_manager = LLMAdapterManager(config=config, registry=self._registry)
-        self.storage_manager = StorageManager(config=config, registry=self._registry)
-        self.file_storage_manager = FileStorageManager(config=config, registry=self._registry)
-        self.custom_service_manager = CustomInstanceServiceManager(config=config, registry=self._registry)
-        self.connector_manager = ConnectorManager(config=config, registry=self._registry, on_event=on_event)
-
-        self._children: list[Any] = [
-            self.tool_manager,
-            self.hook_manager,
-            self.llm_adapter_manager,
-            self.storage_manager,
-            self.file_storage_manager,
-            self.custom_service_manager,
-            self.connector_manager,
-        ]
-
         self._last_scope: tuple[str, ...] = ()
-
-        for child in self._children:
+        for child in children:
             child.on_change = self._mark_changed
 
     @property
     def registry(self) -> ServiceInstanceRegistry:
         return self._registry
 
-    def _mark_changed(self) -> None:
-        self._changed = True
+    def get_manager(self, cls: type[Manager]) -> Manager | None:
+        for mgr in self._children:
+            if isinstance(mgr, cls):
+                return mgr
+        return None
 
     def set_scope(self, scope: list[str]) -> None:
         scope_key = tuple(scope)
@@ -71,13 +51,9 @@ class AgentLifecycle:
             self._mark_changed()
 
     async def start(self) -> None:
-        """Start all child managers, discover extensions, and create instances.
-
-        If any step fails, previously started resources are cleaned up.
-        """
         if self._started:
             return
-        started_children: list[Any] = []
+        started_children: list[Manager] = []
         try:
             for child in self._children:
                 started_children.append(child)
@@ -94,7 +70,6 @@ class AgentLifecycle:
             raise
 
     async def refresh(self, force: bool = False) -> None:
-        """Re-scan and reconcile all children if force or something changed."""
         async with self._refresh_lock:
             if not force and not self._changed:
                 return
@@ -109,3 +84,6 @@ class AgentLifecycle:
             await await_if_needed(child.stop())
         self._registry.clear()
         self._started = False
+
+    def _mark_changed(self) -> None:
+        self._changed = True

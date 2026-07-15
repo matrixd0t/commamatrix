@@ -1,4 +1,4 @@
-﻿# core/base/descriptor.py
+# core/base/descriptor.py
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ class StaleDescriptorError(RuntimeError):
 @dataclass(frozen=True, slots=True)
 class Descriptor:
     """Immutable, source-independent description."""
-
     id: str
     _source_ref: weakref.ReferenceType = field(repr=False)
 
