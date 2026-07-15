@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from .backend import ExecutionBackend, ExecutionResult
 
 if TYPE_CHECKING:
-    from ....api.hooks import BeforeToolCallCtx
+    from ....components.hook import BeforeToolCallCtx
 
 
 class SystemdBackend(ExecutionBackend):

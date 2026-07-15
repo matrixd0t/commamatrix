@@ -1,10 +1,10 @@
 # builtin/codeact/hooks.py
 
-"""Lifecycle hooks for CodeAct — sets run flag, filters tools before LLM calls."""
+"""AgentLifecycle hooks for CodeAct — sets run flag, filters tools before LLM calls."""
 
 from __future__ import annotations
 
-from ...api.hooks import BeforeLlmCallCtx, BeforeRunCtx, before_llm_call, before_run
+from ...components.hook import BeforeLlmCallCtx, BeforeRunCtx, before_llm_call, before_run
 from .manager import CodeActManager
 
 CODACT_ENABLED_KEY = "codeact-enabled"

@@ -4,8 +4,8 @@
 
 from __future__ import annotations
 from .manager import CodeActManager
-from ...api.hooks import BeforeToolCallCtx
-from ...api.tool import tool
+from ...components.hook import BeforeToolCallCtx
+from ...components.tool import tool
 
 
 @tool(codeact=True)

@@ -6,7 +6,7 @@ from typing import Any
 import asyncpg
 
 from ..sql.storage import SqlStorage
-from ...api.config import ConfigField, Config
+from ...components.config import ConfigField, Config
 
 postgres_dsn = ConfigField[str](
     name="postgres_dsn", description='PostgreSQL connection DSN: "user:password@host:port/database"'

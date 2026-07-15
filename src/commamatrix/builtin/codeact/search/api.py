@@ -7,7 +7,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 
-from ....api.tool import ToolDescriptor
+from ....components.tool import ToolDescriptor
 
 
 class ToolSearcher(ABC):

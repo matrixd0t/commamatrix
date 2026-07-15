@@ -17,7 +17,7 @@ from typing import Any
 from .backend import ExecutionBackend, ExecutionResult
 from ..rpc.server import RPCServer
 from ..rpc.stdio import StdioTransport
-from ....api.hooks import BeforeToolCallCtx
+from ....components.hook import BeforeToolCallCtx
 
 _WORKER_PATH = str(Path(__file__).parent / "worker.py")
 

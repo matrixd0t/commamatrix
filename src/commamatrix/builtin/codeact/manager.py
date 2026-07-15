@@ -7,14 +7,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from .executor.backend import ExecutionResult
-from ...api.hooks import BeforeToolCallCtx
-from ...api.llm_adapter import ToolCall
-from ...api.service import Service
-from ...api.config import Config
+from ...components.hook import BeforeToolCallCtx, RunCtx
+from ...components.llm_adapter import ToolCall
+from ...core.base.service import Service
+from ...components.config import Config
 
 if TYPE_CHECKING:
-    from ...api.hooks import RunCtx
-    from ...api.tool import ToolDescriptor
+    from ...components.tool import ToolDescriptor
 
 
 class CodeActManager(Service):

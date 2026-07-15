@@ -15,13 +15,12 @@ from .protocol import (
     StorageMethod,
     ToolsMethod,
 )
-from ..manager import CodeActManager
-from ....api.dialog import DialogItem, resolve_origin_type
-from ....api.llm_adapter import ToolCall
-from ....api.utils import to_jsonable
+from ....components.dialog import DialogItem, resolve_origin_type
+from ....components.llm_adapter import ToolCall
+from ....core.utils import to_jsonable
 
 if TYPE_CHECKING:
-    from ....api.hooks import BeforeToolCallCtx
+    from ....components.hook import BeforeToolCallCtx
 
 
 class RPCServer:
@@ -110,12 +109,14 @@ class RPCServer:
                     tool_name=tool_name,
                     tool_args=data.get("tool_args", {}),
                 )
-                runtime = self._ctx.run.agent.services.require(CodeActManager)
+                from ..manager import CodeActManager as _CAM
+                runtime = self._ctx.run.agent.services.require(_CAM)
                 result = await runtime.invoke_tool(self._ctx, tool_call)
                 return to_jsonable(result)
 
             case ToolsMethod.SEARCH:
-                runtime = self._ctx.run.agent.services.get(CodeActManager)
+                from ..manager import CodeActManager as _CAM
+                runtime = self._ctx.run.agent.services.get(_CAM)
                 if runtime is None:
                     raise RPCError(code=-32603, message="CodeActManager not available")
                 return runtime.searcher.search(

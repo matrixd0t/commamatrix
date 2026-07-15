@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ....api.hooks import BeforeToolCallCtx
+    from ....components.hook import BeforeToolCallCtx
 
 
 @dataclass(slots=True)

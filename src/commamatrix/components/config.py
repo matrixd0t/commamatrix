@@ -1,4 +1,4 @@
-# api/config.py
+# components/config.py
 
 from __future__ import annotations
 

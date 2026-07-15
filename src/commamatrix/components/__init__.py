@@ -1,4 +1,4 @@
-# api/__init__.py
+# components/__init__.py
 
 from .dialog import (
     DialogItem,
@@ -35,7 +35,7 @@ from .llm_adapter import (
 )
 from .config import ConfigField, Config, active_storage, active_file_storage
 from .tool import tool, ToolSource, ToolDescriptor, DEFAULT_TOOL_SEARCH_AMOUNT
-from .hooks import (
+from .hook import (
     Hook,
     HookEventType,
     HookDescriptor,
@@ -62,7 +62,7 @@ from .hooks import (
     AfterRunCtx,
     after_run,
 )
-from .service import AbstractService, ServiceDescriptor, SERVICE_ATTRIBUTE, Service
+from ..core.base.service import AbstractService, ServiceDescriptor, SERVICE_ATTRIBUTE, Service
 
 __all__ = [
     "DialogItem",

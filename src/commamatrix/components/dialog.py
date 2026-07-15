@@ -1,4 +1,4 @@
-# api/dialog.py
+﻿# components/dialog.py
 
 from __future__ import annotations
 
@@ -33,16 +33,6 @@ class DialogRole(StrEnum):
 
 
 class DialogOrigin(BaseModel, ABC):
-    """
-    A set of field-value pairs encoding some kind of communication channel.
-    Any context has a 'platform', additinal fields may appear.
-
-    Usage:
-    class TelegramChatContext(DialogOrigin):
-        platform = 'telegram'
-        chat_id: int
-    """
-
     model_config = {"frozen": True}
     platform: str = DEFAULT_PLATFORM
 
@@ -56,21 +46,10 @@ ORIGIN_REGISTRY: dict[str, type[DialogOrigin]] = {}
 
 
 class DialogItem(BaseModel):
-    """
-    An atomic event in dialog. One row in database. One 'content' block.
-    Corresponds to LLMResponseBlock abstraction
-    (for TOOL_CALL/TOOL_CALL_RESULT/IMAGE_*/FILE_* content is serialized object JSON)
-    """
-
     item_id: Optional[int] = None
     content: str
     item_type: DialogItemType
     user: str
-    """
-    platform-specific identifier of user that triggered a chain of events.
-     
-    examples: 'tg:11111', 'vk:22334455'
-    """
     role: DialogRole
     origin: DialogOrigin
     previous_item_id: Optional[int] = None
@@ -80,7 +59,6 @@ class DialogItem(BaseModel):
 
 
 def resolve_origin_type(data: Mapping[str, Any]) -> type[DialogOrigin]:
-    """Resolve an origin from its platform and populated origin fields."""
     platform = data.get("platform", DEFAULT_PLATFORM)
     base_fields = set(DialogOrigin.model_fields)
     origin_field_sets = {

@@ -1,4 +1,4 @@
 # __init__.py
 
-from .api import *
+from .components import *
 from .core.agent import Agent

@@ -1,4 +1,4 @@
-# core/agent.py
+# core/agent/agent.py
 
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from typing import Any
 
-from ..api.config import Config, ConfigField
-from ..api.dialog import DialogItem, DialogItemType, DialogRole
-from ..api.hooks import (
+from ...components.config import Config, ConfigField
+from ...components.dialog import DialogItem, DialogItemType, DialogRole
+from ...components.hook import (
     AfterLlmCallCtx,
     AfterRunCtx,
     AfterToolCallCtx,
@@ -27,7 +27,7 @@ from ..api.hooks import (
     OnParsedCtx,
     RunCtx,
 )
-from ..api.llm_adapter import (
+from ...components.llm_adapter import (
     LLMResponse,
     LLMResponseBlock,
     LLMResponseToolCallBlock,
@@ -37,10 +37,10 @@ from ..api.llm_adapter import (
     ToolCall,
     ToolCallResult,
 )
-from ..api.file_storage import FILE_STORAGE_ATTRIBUTE
-from ..api.storage import STORAGE_ATTRIBUTE
+from ...components.file_storage import FILE_STORAGE_ATTRIBUTE
+from ...components.storage import STORAGE_ATTRIBUTE
 from .runner import AgentRunner
-from .composite import RootManager
+from .lifecycle import AgentLifecycle
 
 
 _DEFAULT_STORAGE_EXTENSION = 'commamatrix.builtin.sqlite'
@@ -56,7 +56,7 @@ class Agent:
         self.config = config
         self._auto_load_main = auto_load_main
 
-        self.service_manager = RootManager(config=config, on_event=self.handle)
+        self.manager = AgentLifecycle(config=config, on_event=self.handle)
         self.runner = AgentRunner()
         self._started = False
         self._start_lock = asyncio.Lock()
@@ -68,31 +68,31 @@ class Agent:
 
     @property
     def tool_manager(self):
-        return self.service_manager.tool_manager
+        return self.manager.tool_manager
 
     @property
     def hook_manager(self):
-        return self.service_manager.hook_manager
+        return self.manager.hook_manager
 
     @property
     def connector_manager(self):
-        return self.service_manager.connector_manager
+        return self.manager.connector_manager
 
     @property
     def llm_adapter(self):
-        return self.service_manager.llm_adapter_manager
+        return self.manager.llm_adapter_manager
 
     @property
     def storage(self):
-        return self.service_manager.storage_manager
+        return self.manager.storage_manager
 
     @property
     def file_storage(self):
-        return self.service_manager.file_storage_manager
+        return self.manager.file_storage_manager
 
     @property
     def services(self):
-        return self.service_manager.registry
+        return self.manager.registry
 
     # ------------------------------------------------------------------
     # Extension scope — the ONLY activation mechanism
@@ -128,13 +128,13 @@ class Agent:
             if m != module_name and not m.startswith(prefix)
         ]
         if self._started:
-            self.service_manager.set_scope(self._extension_scope)
-            await self.service_manager.refresh()
+            self.manager.set_scope(self._extension_scope)
+            await self.manager.refresh()
 
     async def refresh_extensions(self) -> None:
         """Propagate scope and refresh all services."""
-        self.service_manager.set_scope(self._extension_scope)
-        await self.service_manager.refresh()
+        self.manager.set_scope(self._extension_scope)
+        await self.manager.refresh()
 
     # ------------------------------------------------------------------
     # Public API
@@ -147,7 +147,7 @@ class Agent:
     async def stop(self) -> None:
         """Stop listeners, cancel active runs, and close agent-owned services."""
         await self.runner.stop()
-        await self.service_manager.stop()
+        await self.manager.stop()
         self._started = False
 
     async def __aenter__(self) -> Agent:
@@ -240,8 +240,8 @@ class Agent:
                     self.add_extension(_DEFAULT_STORAGE_EXTENSION)
                 if not self._scope_has_attribute(FILE_STORAGE_ATTRIBUTE):
                     self.add_extension(_DEFAULT_FILE_STORAGE_EXTENSION)
-                self.service_manager.set_scope(self._extension_scope)
-                await self.service_manager.start()
+                self.manager.set_scope(self._extension_scope)
+                await self.manager.start()
                 await self.hook_manager.fire(
                     HookEventType.ON_AGENT_START,
                     OnAgentStartCtx(agent=self),
@@ -302,7 +302,6 @@ class Agent:
             return last_item_id, False
 
         for block in tool_calls:
-            # Persist assistant TOOL_CALL before executing
             call_item = DialogItem(
                 content=block.content_str(),
                 item_type=DialogItemType.TOOL_CALL,
@@ -329,7 +328,6 @@ class Agent:
         before_ctx = BeforeToolCallCtx(run=run, tool_call=tool_call)
         await self.hook_manager.fire(HookEventType.BEFORE_TOOL_CALL, before_ctx)
 
-        # Use potentially mutated tool_call from hook context
         effective_call = before_ctx.tool_call
 
         if before_ctx.abort_tool_call:
@@ -340,7 +338,6 @@ class Agent:
         after_ctx = AfterToolCallCtx(run=run, tool_call=effective_call, result=result)
         await self.hook_manager.fire(HookEventType.AFTER_TOOL_CALL, after_ctx)
 
-        # Use potentially mutated result from hook context
         final_result = after_ctx.result
 
         result_item = DialogItem(

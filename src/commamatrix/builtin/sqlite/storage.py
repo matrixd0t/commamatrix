@@ -6,7 +6,7 @@ from typing import Any
 import aiosqlite
 
 from ..sql.storage import SqlStorage
-from ...api.config import ConfigField, Config
+from ...components.config import ConfigField, Config
 
 sqlite_path = ConfigField[str](
     name="sqlite_path", default="db.sqlite", description="Path to SQLite database file"

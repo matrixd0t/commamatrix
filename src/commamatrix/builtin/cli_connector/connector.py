@@ -8,10 +8,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
-from ...api.connector import Connector, OnEvent
-from ...api.config import ConfigField, Config
-from ...api.dialog import DialogItem, DialogItemType, DialogRole
-from ...api.hooks import OnParsedCtx
+from ...components.connector import Connector, OnEvent
+from ...components.config import ConfigField, Config
+from ...components.dialog import DialogItem, DialogItemType, DialogRole
+from ...components.hook import OnParsedCtx
 
 if TYPE_CHECKING:
     from ...core.agent import Agent

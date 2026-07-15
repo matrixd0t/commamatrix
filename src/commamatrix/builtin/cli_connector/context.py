@@ -1,6 +1,6 @@
 # builtin/cli_connector/context.py
 
-from ...api import DialogOrigin
+from ...components import DialogOrigin
 
 
 class CliOrigin(DialogOrigin):

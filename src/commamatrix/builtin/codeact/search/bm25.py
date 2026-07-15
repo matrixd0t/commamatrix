@@ -8,7 +8,7 @@ from collections.abc import Iterable
 
 import bm25s
 
-from ....api.tool import ToolDescriptor
+from ....components.tool import ToolDescriptor
 from .api import ToolSearcher
 
 

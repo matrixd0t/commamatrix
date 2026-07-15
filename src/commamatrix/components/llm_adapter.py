@@ -1,4 +1,4 @@
-# api/llm_adapter.py
+﻿# components/llm_adapter.py
 
 from __future__ import annotations
 
@@ -8,12 +8,14 @@ from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING
 from json import dumps
 
+from ..core.utils import to_jsonable
+from ..core.base.service import AbstractService
+from ..core.base.manager import ServiceInstanceManager, ServiceInstanceRegistry
 from .dialog import DialogItem, DialogItemType, DialogRole, DialogOrigin
-from .utils import to_jsonable
-from .service import AbstractService
+from ..core.base.source import PythonProviderSource
 
 if TYPE_CHECKING:
-    from .hooks import BeforeLlmCallCtx
+    from .hook import BeforeLlmCallCtx
 
 LLM_ADAPTER_ATTRIBUTE = "__commamatrix_llm_adapter__"
 
@@ -157,3 +159,19 @@ class LLMAdapter(AbstractService):
     @abstractmethod
     async def ask_llm(self, ctx: BeforeLlmCallCtx) -> LLMResponse:
         ...
+
+
+class LLMAdapterManager(ServiceInstanceManager):
+    def __init__(self, config: Any, registry: ServiceInstanceRegistry) -> None:
+        source = PythonProviderSource(LLMAdapter, LLM_ADAPTER_ATTRIBUTE, "llm_adapter")
+        super().__init__(source, config, registry)
+
+    @property
+    def _active(self) -> LLMAdapter:
+        instances = self.instances
+        if instances:
+            return instances[0]
+        raise RuntimeError("No LLM adapters registered")
+
+    async def ask_llm(self, ctx: Any) -> Any:
+        return await self._active.ask_llm(ctx)

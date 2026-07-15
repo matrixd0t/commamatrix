@@ -1,16 +1,23 @@
-﻿# core/composite.py
+﻿# core/agent/lifecycle.py
 
 from __future__ import annotations
 
 import asyncio
 from typing import Any
 
-from ..api.config import Config
-from ..api.connector import OnEvent
-from ..api.utils import await_if_needed
+from ...components.config import Config
+from ...components.connector import OnEvent
+from ...components.tool import ToolManager
+from ...components.hook import HookManager
+from ...components.connector import ConnectorManager
+from ...components.llm_adapter import LLMAdapterManager
+from ...components.storage import StorageManager
+from ...components.file_storage import FileStorageManager
+from ..base.manager import ServiceInstanceRegistry, CustomInstanceServiceManager
+from ..utils import await_if_needed
 
 
-class RootManager:
+class AgentLifecycle:
     """Root lifecycle composite owning all agent-owned services.
 
     Manages tool, hook, connector, and provider managers as well as
@@ -19,18 +26,10 @@ class RootManager:
     """
 
     def __init__(self, config: Config, on_event: OnEvent | None = None) -> None:
-        from .tool_manager import ToolManager
-        from .hook_manager import HookManager
-        from .connector_manager import ConnectorManager
-        from .llm_adapter_manager import LLMAdapterManager
-        from .storage_manager import StorageManager
-        from .file_storage_manager import FileStorageManager
-        from .service_manager import ServiceRegistry, CustomServiceManager
-
         self._config = config
-        self._registry = ServiceRegistry()
-        self._started = False
+        self._registry = ServiceInstanceRegistry()
         self._refresh_lock = asyncio.Lock()
+        self._started = False
         self._changed = False
 
         self.tool_manager = ToolManager()
@@ -38,7 +37,7 @@ class RootManager:
         self.llm_adapter_manager = LLMAdapterManager(config=config, registry=self._registry)
         self.storage_manager = StorageManager(config=config, registry=self._registry)
         self.file_storage_manager = FileStorageManager(config=config, registry=self._registry)
-        self.custom_service_manager = CustomServiceManager(config=config, registry=self._registry)
+        self.custom_service_manager = CustomInstanceServiceManager(config=config, registry=self._registry)
         self.connector_manager = ConnectorManager(config=config, registry=self._registry, on_event=on_event)
 
         self._children: list[Any] = [
@@ -57,7 +56,7 @@ class RootManager:
             child.on_change = self._mark_changed
 
     @property
-    def registry(self) -> ServiceRegistry:
+    def registry(self) -> ServiceInstanceRegistry:
         return self._registry
 
     def _mark_changed(self) -> None:

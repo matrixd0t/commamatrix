@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import replace
 
-from ...api.hooks import BeforeLlmCallCtx, before_llm_call
+from ...components.hook import BeforeLlmCallCtx, before_llm_call
 
 
 @before_llm_call(priority=-1000)

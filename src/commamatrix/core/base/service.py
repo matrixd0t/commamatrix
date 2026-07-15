@@ -1,19 +1,19 @@
-# api/service.py
+# core/base/service.py
 
 from __future__ import annotations
 
 from abc import ABC
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
-from ..api.config import Config
-from ..extensions import Descriptor, Source
+from ...components.config import Config
+from .descriptor import Descriptor
 
 SERVICE_ATTRIBUTE = "__commamatrix_service__"
 
 
 class AbstractService(ABC):
-    """Lifecycle contract for agent-owned components.
+    """AgentLifecycle contract for agent-owned components.
 
     Pure lifecycle ABC: start / stop / refresh.
 
@@ -39,7 +39,7 @@ class AbstractService(ABC):
 class Service(AbstractService, ABC):
     """AbstractService subclass that auto-registers via SERVICE_ATTRIBUTE.
 
-    Used for services that should be discovered by CustomServiceManager
+    Used for services that should be discovered by CustomInstanceServiceManager
     and provider managers (Storage, FileStorage, LLMAdapter, CodeActManager, etc.).
 
     You generally should subclass THIS instead of AbstractService while designing

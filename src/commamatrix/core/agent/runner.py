@@ -1,11 +1,11 @@
-# core/runner.py
+﻿# core/agent/runner.py
 
 from __future__ import annotations
 
 import asyncio
 import json
 
-from ..api import DialogOrigin
+from ...components.dialog import DialogOrigin
 
 
 class AgentRunner:

@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from types import UnionType
 from typing import Any, Union, get_args, get_origin, TYPE_CHECKING
 
-from ...api.dialog import (
+from ...components.dialog import (
     DialogItem,
     DialogOrigin,
     DialogItemType,
@@ -15,10 +15,10 @@ from ...api.dialog import (
     ORIGIN_REGISTRY,
     resolve_origin_type,
 )
-from ...api.storage import Storage
+from ...components.storage import Storage
 
 if TYPE_CHECKING:
-    from ...api.config import Config
+    from ...components.config import Config
 
 BaseColumns = set(DialogItem.model_fields.keys()) - {"origin"} | set(
     DialogOrigin.model_fields.keys()
