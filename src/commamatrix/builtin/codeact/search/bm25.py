@@ -13,7 +13,14 @@ from .api import ToolSearcher
 
 
 class BM25ToolSearcher(ToolSearcher):
-    """Indexes ``ToolDescriptor.doc`` with BM25 for fast semantic lookup."""
+    """Indexes ``ToolDescriptor.doc`` with BM25 for fast semantic lookup.
+
+    All operations are synchronous by design — CodeAct does not
+    offload them to threads.  The BM25 index is rebuilt in-process
+    via ``bm25s`` tokenisation and scoring.  For very large tool
+    registries consider implementing ``ToolSearcher`` backed by an
+    external search service instead.
+    """
 
     def __init__(self) -> None:
         self._index_fingerprint: str | None = None
@@ -25,19 +32,26 @@ class BM25ToolSearcher(ToolSearcher):
         if fingerprint == self._index_fingerprint:
             return
 
-        self._descriptors = {d.id: d for d in descriptors}
-        self._index_fingerprint = fingerprint
+        new_descriptors = {d.id: d for d in descriptors}
+        new_fingerprint = fingerprint
 
-        if not self._descriptors:
+        if not new_descriptors:
             self._retriever = None
             self._ids = []
+            self._descriptors = new_descriptors
+            self._index_fingerprint = new_fingerprint
             return
 
-        self._ids = list(self._descriptors.keys())
-        docs = [d.doc for d in self._descriptors.values()]
+        new_ids = list(new_descriptors.keys())
+        docs = [d.doc for d in new_descriptors.values()]
 
-        self._retriever = bm25s.BM25()
-        self._retriever.index(bm25s.tokenize(docs))
+        retriever = bm25s.BM25()
+        retriever.index(bm25s.tokenize(docs))
+
+        self._retriever = retriever
+        self._ids = new_ids
+        self._descriptors = new_descriptors
+        self._index_fingerprint = new_fingerprint
 
     def search(self, query: str, *, limit: int = 5) -> list[ToolDescriptor]:
         if self._retriever is None or not self._ids:
@@ -55,19 +69,8 @@ class BM25ToolSearcher(ToolSearcher):
             if score > 0
         ]
 
-    def namespaces(self) -> list[str]:
-        seen: set[str] = set()
-        result: list[str] = []
-        for d in self._descriptors.values():
-            ns = d.namespace
-            if ns not in seen:
-                seen.add(ns)
-                result.append(ns)
-        return result
+    def aliases(self) -> list[str]:
+        return list({d.alias for d in self._descriptors.values() if d.alias})
 
-    def tools(self, namespace: str) -> list[ToolDescriptor]:
-        prefix = namespace + '.'
-        return [
-            d for d in self._descriptors.values()
-            if d.namespace == namespace or d.namespace.startswith(prefix)
-        ]
+    def tools(self, alias: str) -> list[ToolDescriptor]:
+        return [d for d in self._descriptors.values() if d.alias == alias] if alias else []

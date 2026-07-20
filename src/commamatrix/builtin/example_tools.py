@@ -1,11 +1,10 @@
 # builtin/example_tools.py
 
 import asyncio
+from ..components.tool import tool
 
-from ..api import tool
 
-
-@tool
+@tool(alias='basic')
 async def calculator(expression: str) -> str:
     """Evaluate a mathematical expression."""
     try:
@@ -15,7 +14,7 @@ async def calculator(expression: str) -> str:
         return f"Error: {e}"
 
 
-@tool(role="admin")
+@tool(alias='advanced', role="admin")
 async def web_search(query: str = "what is the weather in SF today?") -> str:
     """Web search on query."""
     await asyncio.sleep(0.5)

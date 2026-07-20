@@ -23,4 +23,8 @@ class DockerBackend(ExecutionBackend):
         pass
 
     async def execute(self, code: str, ctx: BeforeToolCallCtx, namespace: dict[str, Any] | None = None) -> ExecutionResult:
-        raise NotImplementedError
+        raise NotImplementedError("Docker CodeAct backend is not implemented yet")
+
+    @staticmethod
+    def is_available() -> bool:
+        return False

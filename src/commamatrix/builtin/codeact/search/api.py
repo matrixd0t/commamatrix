@@ -14,7 +14,19 @@ class ToolSearcher(ABC):
     """Semantic search index over tool descriptors.
 
     Implementations rebuild their index when the tool fingerprint changes
-    and return ranked results for a free-text query.
+    and return ranked results for a free-content query.
+
+    All public methods (rebuild_index, search, aliases, tools) are
+    intentionally synchronous — CodeAct does not offload searcher
+    operations to threads or executors.  The searcher runs directly
+    on the event loop inside async wrappers (e.g. hooks.py,
+    tools.py).  Each implementation is responsible for its own
+    performance characteristics; a searcher backed by an external
+    service may use its own transport internally.
+
+    To avoid blocking the event loop for extended periods,
+    keep the number of indexed descriptors modest, or use a
+    searcher implementation that delegates to an external store.
     """
 
     @abstractmethod
@@ -26,9 +38,9 @@ class ToolSearcher(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def namespaces(self) -> list[str]:
+    def aliases(self) -> list[str]:
         raise NotImplementedError
 
     @abstractmethod
-    def tools(self, namespace: str) -> list[ToolDescriptor]:
+    def tools(self, alias: str) -> list[ToolDescriptor]:
         raise NotImplementedError

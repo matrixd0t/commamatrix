@@ -1,4 +1,4 @@
-# core/base/manager.py
+# core/classes/manager.py
 
 from __future__ import annotations
 
@@ -126,8 +126,18 @@ class Manager(AbstractService, Generic[D]):
             return False
 
         self._source_descriptor_ids[id(source)] = set()
-        self._fingerprint = self._calculate_fingerprint()
-        self._rebuild()
+        snapshot = (
+            dict(self._descriptors),
+            {k: set(v) for k, v in self._source_descriptor_ids.items()},
+            self._fingerprint,
+        )
+        try:
+            self._fingerprint = self._calculate_fingerprint()
+            self._rebuild()
+        except Exception:
+            self._descriptors, self._source_descriptor_ids, self._fingerprint = snapshot
+            self._rebuild()
+            raise
         self._notify_change()
         return True
 
@@ -156,10 +166,20 @@ class Manager(AbstractService, Generic[D]):
             self._source_descriptor_ids = source_descriptor_ids
             return False
 
+        snapshot = (
+            dict(self._descriptors),
+            {k: set(v) for k, v in self._source_descriptor_ids.items()},
+            self._fingerprint,
+        )
         self._descriptors = descriptors
         self._source_descriptor_ids = source_descriptor_ids
-        self._fingerprint = fingerprint
-        self._rebuild()
+        try:
+            self._fingerprint = fingerprint
+            self._rebuild()
+        except Exception:
+            self._descriptors, self._source_descriptor_ids, self._fingerprint = snapshot
+            self._rebuild()
+            raise
         self._notify_change()
         return True
 
@@ -292,7 +312,7 @@ class ServiceInstanceManager(InstanceManager[ServiceDescriptor, AbstractService]
     """Manages AbstractService instances discovered by PythonServiceSource.
 
     Instances are registered in ServiceInstanceRegistry on creation and deregistered on removal.
-    Used as the generic custom-service manager and as a base for provider-specific managers (Storage, LLM, etc.).
+    Used as the generic custom-service manager and for provider-specific managers (Storage, LLM, etc.).
     """
 
     base_type: type[AbstractService] = AbstractService

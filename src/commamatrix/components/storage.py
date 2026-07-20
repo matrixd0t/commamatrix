@@ -5,13 +5,11 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import Any, Optional, TYPE_CHECKING
 
-from ..core.base.service import AbstractService
-from ..core.base.manager import ActiveServiceInstanceManager
+from ..core.classes.service import AbstractService
+from ..core.classes.manager import ActiveServiceInstanceManager
+from ..core.classes.source import PythonServiceSource
 from .config import ConfigField
 from .dialog import DialogItem, DialogOrigin
-
-if TYPE_CHECKING:
-    from ..core.agent import Agent
 
 if TYPE_CHECKING:
     from ..core.agent import Agent
@@ -47,6 +45,15 @@ class Storage(AbstractService):
         raise NotImplementedError
 
 
+class PythonStorageSource(PythonServiceSource):
+    """Storage-specific source with per-module tracking for extension
+    management. Extends PythonServiceSource with module-level
+    descriptor indexing used by add_extension / remove_extension."""
+
+    def __init__(self) -> None:
+        super().__init__(base_type=Storage, marker_attribute=STORAGE_ATTRIBUTE, id_prefix="storage")
+
+
 class StorageManager(ActiveServiceInstanceManager):
     base_type = Storage
     marker_attribute = STORAGE_ATTRIBUTE
@@ -54,7 +61,7 @@ class StorageManager(ActiveServiceInstanceManager):
     active_field = active_storage
 
     def __init__(self, agent, **kwargs) -> None:
-        super().__init__(agent, **kwargs)
+        super().__init__(agent, source=PythonStorageSource(), **kwargs)
 
     async def save_event(self, entry: DialogItem) -> int | None:
         return await self._active.save_event(entry)

@@ -13,25 +13,55 @@ from .protocol import (
     RPCResponse,
     ToolsMethod,
 )
+from .. import is_codeact_internal
 from ....components.llm_adapter import ToolCall
 from ....core.utils import to_jsonable
 
 if TYPE_CHECKING:
     from ....components.hook import BeforeToolCallCtx
+    from ....components.tool import ToolDescriptor
+
+
+def serialize_tool_descriptor(descriptor: ToolDescriptor) -> dict[str, Any]:
+    return {
+        "id": descriptor.id,
+        "namespace": descriptor.namespace,
+        "alias": descriptor.alias,
+        "name": descriptor.name,
+        "doc": descriptor.doc,
+        "schema": descriptor.schema,
+        "meta": descriptor.meta,
+    }
+
+
+def serialize_tool_search_result(descriptor: ToolDescriptor) -> dict[str, Any]:
+    return serialize_tool_descriptor(descriptor)
+
+
+def serialize_tool_schema(descriptor: ToolDescriptor) -> dict[str, Any]:
+    return serialize_tool_descriptor(descriptor)
+
+
+def _make_serializable(obj: Any) -> Any:
+    result = to_jsonable(obj)
+    if isinstance(result, dict):
+        result.pop("agent", None)
+    return result
 
 
 class RPCServer:
-    """Handles inbound RPC calls, routing ``tools.*`` methods."""
+    """Handles inbound RPC calls, routing ``tools.*`` methods.
+
+    Stateless — no per-request state stored on the instance.
+    """
 
     def __init__(self, ctx: BeforeToolCallCtx) -> None:
         self._ctx = ctx
-        self._request_id: str = ""
 
     async def handle(self, raw: dict[str, Any]) -> dict[str, Any]:
         request = _deserialize_request(raw)
-        self._request_id = request.id
         try:
-            result = await self._dispatch(request.method, request.params)
+            result = await self._dispatch(request.id, request.method, request.params)
             response = RPCResponse(id=request.id, result=_make_serializable(result))
         except RPCError as exc:
             response = RPCResponse(id=request.id, error=exc)
@@ -41,77 +71,82 @@ class RPCServer:
             )
         return _serialize_response(response)
 
-    async def _dispatch(self, method: str, params: dict[str, Any]) -> Any:
+    async def _dispatch(self, request_id: str, method: str, params: dict[str, Any]) -> Any:
         parts = method.split(".")
         if not parts or not parts[0]:
             raise RPCError(code=-32600, message="Empty method")
         match parts[0]:
             case Namespace.TOOLS:
-                return await self._dispatch_tools(parts[1:], params)
+                return await self._dispatch_tools(request_id, parts[1:], params)
         raise RPCError(code=-32601, message=f"Unknown namespace: {parts[0]}")
 
-    async def _dispatch_tools(self, path: list[str], params: dict[str, Any]) -> Any:
+    async def _dispatch_tools(self, request_id: str, path: list[str], params: dict[str, Any]) -> Any:
         if not path:
             raise RPCError(code=-32600, message="Empty tools method")
         match path[0]:
             case ToolsMethod.INVOKE:
-                data = params.get("tool_call", params)
-                tool_name = data.get("tool_id") or data["tool_name"]
+                tool_id = params["tool_id"]
+                descriptor = self._ctx.run.agent.tool_manager.resolve_id(tool_id)
+                if descriptor is None:
+                    raise RPCError(code=-32602, message=f"Tool not found: {tool_id!r}")
+                if is_codeact_internal(descriptor):
+                    raise RPCError(code=-32603, message=f"Internal tool with id {tool_id!r} is not accessible from CodeAct")
                 tool_call = ToolCall(
-                    tool_call_id=data.get("tool_call_id") or self._request_id,
-                    tool_name=tool_name,
-                    tool_args=data.get("tool_args", {}),
+                    tool_call_id=params.get("tool_call_id", ""),
+                    tool_name=self._ctx.run.agent.tool_manager.public_name(descriptor),
+                    tool_args=params.get("tool_args", {}),
                 )
                 from ..service import CodeActService as _CAM
                 runtime = self._ctx.run.agent.services.require(_CAM)
                 result = await runtime.invoke_tool(self._ctx, tool_call)
-                return to_jsonable(result)
+                return result
 
             case ToolsMethod.SEARCH:
-                from ..service import CodeActService as _CAM
-                runtime = self._ctx.run.agent.services.get(_CAM)
+                from ..service import CodeActService as _CAM_svc
+                runtime = self._ctx.run.agent.services.get(_CAM_svc)
                 if runtime is None:
                     raise RPCError(code=-32603, message="CodeActService not available")
-                return runtime.searcher.search(
-                    params["query"], limit=params.get("limit", 5)
-                )
+                return [serialize_tool_search_result(d) for d in
+                        runtime.searcher.search(params["query"], limit=params.get("limit", 5))]
 
             case ToolsMethod.SCHEMAS:
-                return self._ctx.run.agent.tool_manager.schemas()
+                tm = self._ctx.run.agent.tool_manager
+                return [
+                    serialize_tool_schema(d)
+                    for d in tm.descriptors
+                    if not is_codeact_internal(d)
+                ]
+
             case ToolsMethod.RESOLVE:
                 descriptor = self._ctx.run.agent.tool_manager.resolve(params["name"])
-                if descriptor is None:
+                if descriptor is None or is_codeact_internal(descriptor):
                     return None
-                return {
-                    "id": descriptor.id,
-                    "namespace": descriptor.namespace,
-                    "alias": descriptor.alias,
-                    "name": descriptor.name,
-                    "doc": descriptor.doc,
-                    "schema": descriptor.schema,
-                }
+                return serialize_tool_descriptor(descriptor)
+
             case ToolsMethod.ALIASES:
-                return list(self._ctx.run.agent.tool_manager.modules.keys())
+                seen: set[str] = set()
+                result: list[str] = []
+                tm = self._ctx.run.agent.tool_manager
+                for alias in tm.modules:
+                    if alias in seen:
+                        continue
+                    tools_in_alias = tm.find_alias(alias)
+                    public_in_alias = [d for d in tools_in_alias
+                                       if not is_codeact_internal(d)]
+                    if public_in_alias:
+                        seen.add(alias)
+                        result.append(alias)
+                return result
+
             case ToolsMethod.LIST:
                 alias = params["alias"]
+                descriptors = self._ctx.run.agent.tool_manager.find_alias(alias)
                 return [
-                    {
-                        "id": descriptor.id,
-                        "name": descriptor.name,
-                        "doc": descriptor.doc,
-                        "schema": descriptor.schema,
-                        "meta": descriptor.meta,
-                    }
-                    for descriptor in self._ctx.run.agent.tool_manager.modules.get(alias, [])
+                    serialize_tool_descriptor(d)
+                    for d in descriptors
+                    if not is_codeact_internal(d)
                 ]
         raise RPCError(code=-32601, message=f"Unknown tools method: {path[0]}")
-
-
-def _make_serializable(obj: Any) -> Any:
-    result = to_jsonable(obj)
-    if isinstance(result, dict):
-        result.pop("agent", None)
-    return result
 
 
 def _deserialize_request(raw: dict[str, Any]) -> RPCRequest:

@@ -42,7 +42,7 @@ async def main(host: str, port: int) -> None:
                     if typing_active:
                         _clear_line()
                         typing_active = False
-                    print(f"\n{msg.get('text', '')}\n{PROMPT}", end='', flush=True)
+                    print(f"\n{msg.get('content', '')}\n{PROMPT}", end='', flush=True)
 
                 elif msg_type == 'image':
                     if typing_active:
@@ -102,7 +102,7 @@ async def main(host: str, port: int) -> None:
             text = await loop.run_in_executor(None, input, PROMPT)
             if not text.strip():
                 continue
-            payload = json.dumps({'session_id': session_id, 'username': username, 'text': text}) + '\n'
+            payload = json.dumps({'session_id': session_id, 'username': username, 'content': text}) + '\n'
             writer.write(payload.encode())
             await writer.drain()
     except (KeyboardInterrupt, EOFError, OSError):

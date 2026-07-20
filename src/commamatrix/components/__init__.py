@@ -11,12 +11,11 @@ from .dialog import (
 from .connector import (
     Connector,
     ConnectorDescriptor,
-    ConnectorSource,
     CONNECTOR_ATTRIBUTE,
     OnRecv,
 )
-from .storage import Storage, STORAGE_ATTRIBUTE
-from .file_storage import FileStorage, FILE_STORAGE_ATTRIBUTE
+from .storage import Storage, STORAGE_ATTRIBUTE, active_storage
+from .file_storage import FileStorage, FILE_STORAGE_ATTRIBUTE, active_file_storage
 from .llm_adapter import (
     LLMAdapter,
     LLM_ADAPTER_ATTRIBUTE,
@@ -24,8 +23,10 @@ from .llm_adapter import (
     LLMResponseTextBlock,
     LLMResponseImageBlock,
     LLMResponseFileBlock,
+    LLMResponseReasoningBlock,
     LLMResponseToolCallBlock,
     LLMResponseBlock,
+    Usage,
     StopReason,
     ToolCall,
     ToolCallResult,
@@ -33,7 +34,7 @@ from .llm_adapter import (
     LLMResponseError,
     LLMTruncatedError,
 )
-from .config import ConfigField, Config, active_storage, active_file_storage
+from .config import ConfigField, Config
 from .tool import tool, ToolSource, ToolDescriptor, DEFAULT_TOOL_SEARCH_AMOUNT
 from .hook import (
     Hook,
@@ -62,7 +63,17 @@ from .hook import (
     AfterRunCtx,
     after_run,
 )
-from ..core.base.service import AbstractService, ServiceDescriptor, SERVICE_ATTRIBUTE, Service
+from ..core.classes.ordering import ConstraintRef
+from .instruction import (
+    Instruction,
+    InstructionCtx,
+    InstructionDescriptor,
+    InstructionManager,
+    instruction,
+    add_instructions,
+    INSTRUCTION_ATTRIBUTE,
+)
+from ..core.classes.service import AbstractService, ServiceDescriptor, SERVICE_ATTRIBUTE, Service
 
 __all__ = [
     "DialogItem",
@@ -73,7 +84,6 @@ __all__ = [
     "resolve_origin_type",
     "Connector",
     "ConnectorDescriptor",
-    "ConnectorSource",
     "CONNECTOR_ATTRIBUTE",
     "OnRecv",
     "Storage",
@@ -86,8 +96,10 @@ __all__ = [
     "LLMResponseTextBlock",
     "LLMResponseImageBlock",
     "LLMResponseFileBlock",
+    "LLMResponseReasoningBlock",
     "LLMResponseToolCallBlock",
     "LLMResponseBlock",
+    "Usage",
     "StopReason",
     "ToolCall",
     "ToolCallResult",
@@ -127,6 +139,14 @@ __all__ = [
     "on_error",
     "AfterRunCtx",
     "after_run",
+    "ConstraintRef",
+    "Instruction",
+    "InstructionCtx",
+    "InstructionDescriptor",
+    "InstructionManager",
+    "instruction",
+    "add_instructions",
+    "INSTRUCTION_ATTRIBUTE",
     "AbstractService",
     "SERVICE_ATTRIBUTE",
     "ServiceDescriptor",

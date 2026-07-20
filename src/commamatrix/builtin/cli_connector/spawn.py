@@ -39,17 +39,9 @@ def spawn_terminal_window(host: str, port: int) -> None:
         subprocess.Popen([emulator, '-e', python, script, host, str(port)])
 
 
-# noinspection PyDeprecation
 def _find_linux_terminal() -> str | None:
     candidates = ('x-terminal-emulator', 'gnome-terminal', 'konsole', 'xfce4-terminal', 'xterm')
     for name in candidates:
         if shutil.which(name):
             return name
     return None
-
-
-def _shell_quote(value: str) -> str:
-    """
-    Экранирование для AppleScript-строки
-    """
-    return value.replace('\\', '\\\\').replace('"', '\\"')

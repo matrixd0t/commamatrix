@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import weakref
 from abc import abstractmethod
@@ -11,9 +12,10 @@ from uuid import uuid4
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 from collections.abc import Awaitable, Callable
 
-from ..core.base.descriptor import Descriptor
-from ..core.base.source import Source, PythonSource
-from ..core.base.manager import Manager
+from ..core.classes.descriptor import Descriptor
+from ..core.classes.source import Source, PythonSource
+from ..core.classes.manager import Manager
+from ..core.classes.ordering import normalize_constraint_refs, ConstraintRef
 
 if TYPE_CHECKING:
     from ..core.agent import Agent
@@ -61,6 +63,17 @@ class RunCtx:
     run_id: str = field(default_factory=lambda: uuid4().hex)
     iteration: int = 0
     state: dict[str, Any] = field(default_factory=dict)
+    tool_output_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    """Serialises ``send + persist`` of tool-call results.
+
+    This lock ensures that tool-result ``DialogItem`` items are stored
+    one at a time and their ``previous_item_id`` chain is kept
+    consistent.  It does NOT impose any ordering on parallel
+    nested tool results — each result carries its own
+    ``tool_call_id`` that links it back to the originating call.
+    """
+
+    tool_output_tail: int | None = None
 
 
 @dataclass(slots=True, kw_only=True)
@@ -87,6 +100,8 @@ class BeforeRunCtx(BaseEventCtx):
 class BeforeLlmCallCtx(BaseEventCtx):
     run: RunCtx
     model: str | None = None
+    api_base: str | None = None
+    api_protocol: str | None = None
     dialog: list[DialogItem]
     tools: list[ToolDescriptor]
     llm_call_params: dict = field(default_factory=dict)
@@ -140,7 +155,17 @@ class Hook(Generic[CtxT]):
     _event: HookEventType
     _ctx_type: type[CtxT]
 
-    def __call__(self, fn: Handler[CtxT] | None = None, /, priority: int = 0) -> Handler[CtxT]:
+    def __call__(
+        self,
+        fn: Handler[CtxT] | None = None,
+        /,
+        priority: int = 0,
+        before: ConstraintRef | Iterable[ConstraintRef] | None = None,
+        after: ConstraintRef | Iterable[ConstraintRef] | None = None,
+    ) -> Handler[CtxT]:
+        before_norm = normalize_constraint_refs(before)
+        after_norm = normalize_constraint_refs(after)
+
         def decorator(f: Handler[CtxT]) -> Handler[CtxT]:
             setattr(
                 f,
@@ -148,6 +173,8 @@ class Hook(Generic[CtxT]):
                 {
                     "event": self._event,
                     "priority": priority,
+                    "before": before_norm,
+                    "after": after_norm,
                 },
             )
             return f
@@ -162,11 +189,16 @@ class Hook(Generic[CtxT]):
 
 @dataclass(frozen=True, slots=True)
 class HookDescriptor(Descriptor):
-    """Metadata for a registered hook handler: event name and priority.
-    Priority determines execution order within the same event."""
+    """Metadata for a registered hook handler: event, priority, name, module,
+    and before/after ordering constraints. Priority determines execution order
+    among unconstrained items; before/after take precedence over priority."""
 
     event: str
     priority: int
+    name: str
+    module: str
+    before: tuple[str, ...] = ()
+    after: tuple[str, ...] = ()
     meta: dict[str, Any] = field(default_factory=dict)
 
     def _fingerprint_payload(self) -> dict[str, Any]:
@@ -174,6 +206,10 @@ class HookDescriptor(Descriptor):
             "id": self.id,
             "event": self.event,
             "priority": self.priority,
+            "name": self.name,
+            "module": self.module,
+            "before": self.before,
+            "after": self.after,
             "meta": self.meta,
         }
 
@@ -211,6 +247,10 @@ class PythonHookSource(PythonSource[HookDescriptor], HookSource):
             id=descriptor_id,
             event=params["event"].value,
             priority=params.get("priority", 0),
+            name=object_name,
+            module=obj.__module__ or "",
+            before=params.get("before", ()),
+            after=params.get("after", ()),
             meta={},
             _source_ref=weakref.ref(self),
         )
@@ -226,8 +266,8 @@ class PythonHookSource(PythonSource[HookDescriptor], HookSource):
 
 
 class HookManager(Manager[HookDescriptor]):
-    """Dispatches hook events in priority order. Groups handlers by
-    event name and sorts each group by priority descending."""
+    """Dispatches hook events respecting before/after constraints,
+    falling back to priority (higher first) for unconstrained items."""
 
     def __init__(self, agent, **kwargs) -> None:
         super().__init__(agent, **kwargs)
@@ -243,21 +283,29 @@ class HookManager(Manager[HookDescriptor]):
             await self._source_of(descriptor).invoke(descriptor, ctx)
 
     def _rebuild(self) -> None:
+        from ..core.classes.ordering import resolve_order
+
         by_event: dict[str, list[HookDescriptor]] = {}
         for descriptor in self.descriptors:
             by_event.setdefault(descriptor.event, []).append(descriptor)
-        for event in by_event:
-            by_event[event].sort(key=lambda d: d.priority, reverse=True)
+        for event, group in by_event.items():
+            by_event[event] = resolve_order(
+                group,
+                aliases=lambda d: (d.name, f"{d.module}.{d.name}" if d.module else d.name),
+                priority=lambda d: d.priority,
+                before=lambda d: d.before,
+                after=lambda d: d.after,
+            )
         self._handlers = by_event
 
 
-on_agent_start = Hook(HookEventType.ON_AGENT_START, OnAgentStartCtx)
-on_parsed = Hook(HookEventType.ON_PARSED, OnParsedCtx)
-before_run = Hook(HookEventType.BEFORE_RUN, BeforeRunCtx)
-before_llm_call = Hook(HookEventType.BEFORE_LLM_CALL, BeforeLlmCallCtx)
-after_llm_call = Hook(HookEventType.AFTER_LLM_CALL, AfterLlmCallCtx)
-before_tool_call = Hook(HookEventType.BEFORE_TOOL_CALL, BeforeToolCallCtx)
-after_tool_call = Hook(HookEventType.AFTER_TOOL_CALL, AfterToolCallCtx)
-before_send = Hook(HookEventType.BEFORE_SEND, BeforeSendCtx)
-on_error = Hook(HookEventType.ON_ERROR, OnErrorCtx)
-after_run = Hook(HookEventType.AFTER_RUN, AfterRunCtx)
+on_agent_start = Hook[OnAgentStartCtx](HookEventType.ON_AGENT_START, OnAgentStartCtx)
+on_parsed = Hook[OnParsedCtx](HookEventType.ON_PARSED, OnParsedCtx)
+before_run = Hook[BeforeRunCtx](HookEventType.BEFORE_RUN, BeforeRunCtx)
+before_llm_call = Hook[BeforeLlmCallCtx](HookEventType.BEFORE_LLM_CALL, BeforeLlmCallCtx)
+after_llm_call = Hook[AfterLlmCallCtx](HookEventType.AFTER_LLM_CALL, AfterLlmCallCtx)
+before_tool_call = Hook[BeforeToolCallCtx](HookEventType.BEFORE_TOOL_CALL, BeforeToolCallCtx)
+after_tool_call = Hook[AfterToolCallCtx](HookEventType.AFTER_TOOL_CALL, AfterToolCallCtx)
+before_send = Hook[BeforeSendCtx](HookEventType.BEFORE_SEND, BeforeSendCtx)
+on_error = Hook[OnErrorCtx](HookEventType.ON_ERROR, OnErrorCtx)
+after_run = Hook[AfterRunCtx](HookEventType.AFTER_RUN, AfterRunCtx)

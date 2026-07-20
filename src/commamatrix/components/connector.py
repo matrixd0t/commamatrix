@@ -18,12 +18,12 @@ from typing import (
     Union as TypingUnion,
     cast,
     get_args,
-    get_origin,
+    get_origin, Iterable,
 )
 
-from ..core.base.service import AbstractService, ServiceDescriptor
-from ..core.base.source import Source, PythonSource
-from ..core.base.manager import ServiceInstanceManager
+from ..core.classes.service import AbstractService, ServiceDescriptor
+from ..core.classes.source import Source, PythonSource, D
+from ..core.classes.manager import ServiceInstanceManager
 from .dialog import DialogItem, DialogOrigin
 
 if TYPE_CHECKING:
@@ -93,7 +93,9 @@ class Connector(AbstractService, Generic[OrgT]):
     async def parse(self, data: dict) -> OnParsedCtx | None: ...
 
     @abstractmethod
-    async def send(self, origin: DialogOrigin, item: DialogItem) -> str: ...
+    async def send(self, origin: DialogOrigin, item: DialogItem) -> str:
+        """Render an item and return its external ID, or an empty string."""
+        ...
 
     @asynccontextmanager
     async def typing(self, origin: DialogOrigin) -> AsyncIterator[None]:
@@ -111,14 +113,7 @@ class ConnectorDescriptor(ServiceDescriptor):
     connector_cls: type[Connector]
 
 
-class ConnectorSource(Source[ConnectorDescriptor]):
-    """Source ABC for connector discovery. Each source produces
-    ConnectorDescriptors for the ConnectorManager."""
-
-    pass
-
-
-class PythonConnectorSource(PythonSource[ConnectorDescriptor], ConnectorSource):
+class PythonConnectorSource(PythonSource[ConnectorDescriptor]):
     """Scans scope for concrete Connector subclasses and builds
     ConnectorDescriptors for each."""
 

@@ -4,7 +4,7 @@
 
 from .protocol import RPCRequest, RPCResponse, RPCError
 from .transport import Transport
-from .stdio import StdioTransport
+from .tcp import TcpTransport
 from .server import RPCServer
 
 __all__ = [
@@ -12,6 +12,6 @@ __all__ = [
     "RPCResponse",
     "RPCError",
     "Transport",
-    "StdioTransport",
+    "TcpTransport",
     "RPCServer",
 ]

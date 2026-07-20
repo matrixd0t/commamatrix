@@ -1,0 +1,188 @@
+# components/instruction.py
+
+from __future__ import annotations
+
+import inspect
+import weakref
+from abc import abstractmethod
+from dataclasses import dataclass, field
+from typing import Any, cast
+from collections.abc import Callable, Iterable
+
+from .hook import before_llm_call, BeforeLlmCallCtx, RunCtx
+from .dialog import DialogItem, DialogItemType, DialogRole
+from ..core.classes.descriptor import Descriptor
+from ..core.classes.source import Source, PythonSource
+from ..core.classes.manager import Manager
+from ..core.classes.ordering import normalize_constraint_refs, ConstraintRef
+
+INSTRUCTION_ATTRIBUTE = "__commamatrix_instruction__"
+
+
+@dataclass(slots=True, kw_only=True)
+class InstructionCtx:
+    """Context passed to instruction handlers."""
+    run: RunCtx
+
+
+type InstructionHandler = Callable[[InstructionCtx], str | None]
+
+
+@dataclass(frozen=True, slots=True)
+class Instruction:
+    """Decorator factory that stamps INSTRUCTION_ATTRIBUTE on handler functions."""
+
+    def __call__(
+        self,
+        fn: InstructionHandler | None = None,
+        /,
+        priority: int = 0,
+        before: ConstraintRef | Iterable[ConstraintRef] | None = None,
+        after: ConstraintRef | Iterable[ConstraintRef] | None = None,
+    ) -> InstructionHandler:
+        before_norm = normalize_constraint_refs(before)
+        after_norm = normalize_constraint_refs(after)
+
+        def decorator(f: InstructionHandler) -> InstructionHandler:
+            setattr(
+                f,
+                INSTRUCTION_ATTRIBUTE,
+                {
+                    "priority": priority,
+                    "before": before_norm,
+                    "after": after_norm,
+                },
+            )
+            return f
+
+        if fn is not None:
+            return decorator(fn)
+        return decorator
+
+
+@dataclass(frozen=True, slots=True)
+class InstructionDescriptor(Descriptor):
+    """Metadata for a registered instruction: name, module, priority,
+    and before/after ordering constraints."""
+
+    name: str
+    module: str
+    priority: int = 0
+    before: tuple[str, ...] = ()
+    after: tuple[str, ...] = ()
+    meta: dict[str, Any] = field(default_factory=dict)
+
+    def _fingerprint_payload(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "module": self.module,
+            "priority": self.priority,
+            "before": self.before,
+            "after": self.after,
+            "meta": self.meta,
+        }
+
+
+class InstructionSource(Source[InstructionDescriptor]):
+    """Source ABC for instruction invocation."""
+
+    @abstractmethod
+    async def invoke(self, descriptor: InstructionDescriptor, ctx: InstructionCtx) -> str | None:
+        raise NotImplementedError
+
+
+class PythonInstructionSource(PythonSource[InstructionDescriptor], InstructionSource):
+    """Scopes to modules with @instruction-decorated functions."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._handlers: dict[str, InstructionHandler] = {}
+
+    def scan(self) -> list[InstructionDescriptor]:
+        self._handlers.clear()
+        return super().scan()
+
+    @property
+    def marker_attribute(self) -> str:
+        return INSTRUCTION_ATTRIBUTE
+
+    def build_descriptor(self, object_name: str, obj: object) -> InstructionDescriptor | None:
+        params = getattr(obj, INSTRUCTION_ATTRIBUTE)
+        descriptor_id = f"instruction://{obj.__module__}/{object_name}"
+        self._handlers[descriptor_id] = cast(InstructionHandler, obj)
+        return InstructionDescriptor(
+            id=descriptor_id,
+            name=object_name,
+            module=obj.__module__ or "",
+            priority=params.get("priority", 0),
+            before=params.get("before", ()),
+            after=params.get("after", ()),
+            meta={},
+            _source_ref=weakref.ref(self),
+        )
+
+    async def invoke(self, descriptor: InstructionDescriptor, ctx: InstructionCtx) -> str | None:
+        handler = self._handlers.get(descriptor.id)
+        if handler is None:
+            raise RuntimeError(f"Instruction {descriptor.id} is not owned by this source")
+        result = handler(ctx)
+        if inspect.isawaitable(result):
+            return await result
+        return result
+
+
+class InstructionManager(Manager[InstructionDescriptor]):
+    """Manages instruction descriptors with before/after ordering."""
+
+    def __init__(self, agent, **kwargs) -> None:
+        super().__init__(agent, **kwargs)
+        self._ordered: list[InstructionDescriptor] = []
+        self._python_source = PythonInstructionSource()
+        self.mount(self._python_source)
+
+    def set_scope(self, scope: list[str]) -> None:
+        self._python_source.set_scope(scope)
+
+    async def collect(self, run: RunCtx) -> list[str]:
+        """Invoke all instructions in order, collect non-None outputs."""
+        ctx = InstructionCtx(run=run)
+        parts: list[str] = []
+        for descriptor in self._ordered:
+            output = await self._source_of(descriptor).invoke(descriptor, ctx)
+            if output is not None:
+                parts.append(output)
+        return parts
+
+    def _rebuild(self) -> None:
+        from ..core.classes.ordering import resolve_order
+
+        self._ordered = resolve_order(
+            self.descriptors,
+            aliases=lambda d: (d.name, f"{d.module}.{d.name}" if d.module else d.name),
+            priority=lambda d: d.priority,
+            before=lambda d: d.before,
+            after=lambda d: d.after,
+        )
+
+
+instruction = Instruction()
+"""
+Default and only instance of instruction decorator factory
+"""
+
+
+@before_llm_call
+async def add_instructions(ctx: BeforeLlmCallCtx) -> None:
+    """Collect instruction outputs and prepend as system message."""
+    instruction_manager: InstructionManager = ctx.run.agent.instruction_manager
+    parts = await instruction_manager.collect(ctx.run)
+    if not parts:
+        return
+    system_item = DialogItem(
+        content="\n\n".join(parts),
+        item_type=DialogItemType.INPUT,
+        role=DialogRole.SYSTEM,
+        origin=ctx.run.origin,
+    )
+    ctx.dialog.insert(0, system_item)

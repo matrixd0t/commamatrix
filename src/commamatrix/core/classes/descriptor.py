@@ -1,4 +1,4 @@
-# core/base/descriptor.py
+# core/classes/descriptor.py
 
 from __future__ import annotations
 

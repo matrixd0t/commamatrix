@@ -13,11 +13,12 @@ from ...components.config import ConfigField
 from ...components.dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
 from ...components.hook import OnParsedCtx
 
+from .context import CliOrigin
+from .spawn import spawn_terminal_window
+
 if TYPE_CHECKING:
     from ...core.agent import Agent
 
-from .context import CliOrigin
-from .spawn import spawn_terminal_window
 
 cli_host = ConfigField[str](name="cli_host", default='127.0.0.1', description='TCP host to listen on')
 cli_port = ConfigField[int](name="cli_port", default=0, description='TCP port (0 = any free)')
@@ -71,7 +72,7 @@ class CliConnector(Connector[CliOrigin]):
                 session_id = msg.get('session_id')
                 if session_id:
                     self._writers[session_id] = writer
-                    await on_recv({'platform': 'cli', 'session_id': session_id, 'username': msg.get('username', 'unknown'), 'text': msg.get('text', '')})
+                    await on_recv({'platform': 'cli', 'session_id': session_id, 'username': msg.get('username', 'unknown'), 'content': msg.get('content', '')})
         except (ConnectionResetError, BrokenPipeError, OSError):
             pass
         finally:
@@ -94,9 +95,9 @@ class CliConnector(Connector[CliOrigin]):
         return OnParsedCtx(
             raw=data,
             connector=self,
-            agent=agent,
+            agent=self.agent,
             dialog_items=[DialogItem(
-                content=data['text'],
+                content=data['content'],
                 item_type=DialogItemType.INPUT,
                 user=f'cli:{username}',
                 role=DialogRole.USER,
@@ -114,13 +115,13 @@ class CliConnector(Connector[CliOrigin]):
             return ''
 
         if item.item_type == DialogItemType.OUTPUT:
-            payload = {'type': 'message', 'text': item.content}
+            payload = {'type': 'message', 'content': item.content}
         elif item.item_type == DialogItemType.IMAGE_OUTPUT:
             payload = {'type': 'image', 'data': item.content}
         elif item.item_type == DialogItemType.FILE_OUTPUT:
             payload = {'type': 'file', 'data': item.content}
         else:
-            payload = {'type': 'message', 'text': item.content}
+            payload = {'type': 'message', 'content': item.content}
 
         try:
             writer.write((json.dumps(payload) + '\n').encode())

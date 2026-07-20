@@ -3,13 +3,13 @@
 ## Architecture
 
 ```
-┌──────────────────────────────────┐          stdin/stdout          ┌───────────────────────┐
+┌──────────────────────────────────┐       loopback TCP/NDJSON     ┌───────────────────────┐
 │  Parent Process (Agent)          │    ─────── JSON/NDJSON ────→   │  Child Process        │
 │                                  │                                │  (Python worker)      │
 │  SubprocessBackend               │    ←────────────────────────   │                       │
-│    ├── asyncio subprocess        │                                │  _RPCClient           │
-│    └── RPCServer                 │                                │    ├── call()         │
-│          └── _dispatch_tools()   │                                │    └── acall()        │
+│    ├── asyncio subprocess        │                                │  AsyncRPCClient       │
+│    └── RPCServer (stateless)     │                                │    ├── request()      │
+│          └── concurrent dispatch │                                │    └── read_responses │
 │                                  │                                │                       │
 │                                  │                                │  Virtual modules      │
 │                                  │                                │    └── <alias>*       │
@@ -29,10 +29,14 @@ Dispatch on the server uses `match/case` with enum comparison.
 
 ## Transport
 
-- **Medium**: stdin/stdout pipes of a child Python process
+- **Medium**: authenticated TCP connection bound to `127.0.0.1`
 - **Encoding**: UTF-8
 - **Framing**: Newline-delimited JSON (NDJSON) — one JSON object per line
+- **Handshake**: worker sends a one-time token; the server replies with `hello_ok`
 - **Bidirectional**: Both parent→child and child→parent use the same format
+- **Concurrency**: `TcpTransport.send()` uses `asyncio.Lock` to prevent interleaving of concurrent frames
+- **Write lock**: Only protects framing — tool execution is not serialized
+- **Reuse**: `TcpTransport` and `TcpServer` are shared by subprocess, Docker and Systemd backends
 
 ## Messages
 
@@ -87,16 +91,18 @@ JSON wire format:
 
 | Code    | Meaning          | Source                   |
 |---------|------------------|--------------------------|
-| -32600  | Invalid request  | Empty method / path      |
-| -32601  | Method not found | Unknown namespace/method |
-| -32602  | Invalid params   | Wrong type, missing key  |
-| -32603  | Internal error   | Unhandled exception      |
+| -32001  | RPC timeout      | Per-call timeout exceeded |
+| -32002  | RPC cancelled    | Parent cancelled request  |
+| -32600  | Invalid request  | Empty method / path       |
+| -32601  | Method not found | Unknown namespace/method  |
+| -32602  | Invalid params   | Tool not found, ambiguity |
+| -32603  | Internal error   | Unhandled exception       |
 
 ---
 
 ## Boot Sequence (parent → child)
 
-The **first message** from parent to child is NOT an RPC call. It is a one-shot payload that carries the code and environment:
+After the TCP handshake, the first message from parent to child is NOT an RPC call. It is a one-shot payload that carries the code and environment:
 
 ```json
 {
@@ -106,23 +112,19 @@ The **first message** from parent to child is NOT an RPC call. It is a one-shot 
   "tool_tree": {
     "github": {
       "__tools__": [
-        {"id": "...", "name": "list_issues", "namespace": "my_plugin.tools", "alias": "github", "doc": "...", "schema": {...}, "metadata": {...}},
+        {"id": "...", "name": "list_issues", "exported_name": "github.list_issues", "alias": "github", "doc": "...", "schema": {...}, "meta": {...}},
         ...
-      ],
-      "sub_namespace": {
-        "__tools__": [...]
-      }
-    },
-    "fs": {
-      "__tools__": [...]
+      ]
     }
   }
 }
 ```
 
-CodeAct-internal tools (`@tool(codeact=True)` — `execute`, `search_tools`, `list_tools`) are **stripped** from `tool_tree` by `_strip_codeact_tools()` and cannot be invoked from inside the sandbox.
+- Only **public** non-CodeAct tools (`meta.codeact` is falsy) appear in `tool_tree`.
+- CodeAct-internal tools (`codeact.execute`, `codeact.search_tools`, `codeact.list_tools`) are excluded.
+- Each tool entry includes `exported_name` — the canonical `alias.name` name used for invocation.
 
-The child deserializes this in `worker.py:main()`, sets up virtual modules from `tool_tree`, and begins executing `code`.
+The child reads this asynchronously, sets up virtual modules from `tool_tree`, and begins executing `code`.
 
 ---
 
@@ -150,24 +152,25 @@ This terminates the RPC cycle — the child process exits after writing this.
 
 While the child executes code, it may call back to the parent for invoking tools (`tools.*`).
 
-The parent's `SubprocessBackend` loops on `transport.recv()`, dispatching each message through `RPCServer.handle()`:
+The parent's `SubprocessBackend` handles RPC requests **concurrently** — each incoming request spawns a separate `asyncio.Task`:
 
 ```
 transport.recv() → message
   if "method" in message:
-      response = await server.handle(message)
-      await transport.send(response)
+      task = create_task(handle_one_request(message))  # non-blocking
+      pending_tasks.add(task)
   elif "result" in message or "error" in message:
-      # Execution complete, break
+      await wait_for_pending_tasks()
+      return result
 ```
 
----
+This allows multiple tool calls from a single `asyncio.gather()` in the worker to execute concurrently on the parent side.
 
 ## Method Namespace: `tools.*`
 
 ### `tools.invoke`
 
-Execute an agent tool by name through the full hook lifecycle.
+Execute an agent tool by its canonical `exported_name` through the full hook lifecycle.
 
 **Request:**
 ```json
@@ -177,19 +180,19 @@ Execute an agent tool by name through the full hook lifecycle.
   "params": {
     "tool_call": {
       "tool_call_id": "",
-      "tool_name": "search_web",
-      "tool_args": {"query": "python"},
-      "tool_id": ""
+      "tool_name": "github.list_issues",
+      "tool_args": {"owner": "user", "repo": "repo"}
     }
   }
 }
 ```
 
 **Processing:**
-1. Construct `ToolCall` from params (uses `request.id` as default `tool_call_id`)
-2. `ctx.run.agent.services.require(CodeActService)` → `CodeActService.invoke_tool()`
-3. `invoke_tool()` calls `ctx.run.agent._run_tool_lifecycle(ctx, tool_call)`
-4. Result is serialized via `to_jsonable()`
+1. Resolve `tool_name` via `ToolManager.resolve(exported_name)` — only matches `alias.name`
+2. Verify tool is public (not a CodeAct-internal tool)
+3. Construct `ToolCall` from params (uses `request.id` as default `tool_call_id`)
+4. `CodeActService.invoke_tool()` → `Agent._run_tool_lifecycle()`
+5. Output persistence is serialized per-run via `run.tool_output_lock`
 
 **Response:**
 ```json
@@ -198,7 +201,7 @@ Execute an agent tool by name through the full hook lifecycle.
 
 ### `tools.search`
 
-Semantic search over tool descriptions.
+Semantic search over public tool descriptions only.
 
 **Request:**
 ```json
@@ -211,12 +214,12 @@ Semantic search over tool descriptions.
 
 **Response:**
 ```json
-{"id": "t2", "result": [{"namespace": "...", "name": "...", "doc": "...", ...}, ...]}
+{"id": "t2", "result": [{"id": "...", "namespace": "...", "alias": "github", "name": "list_issues", "exported_name": "github.list_issues", "doc": "...", "schema": {...}, "meta": {...}}, ...]}
 ```
 
 ### `tools.schemas`
 
-Get all tool schemas (for code generation/introspection).
+Get all public tool schemas (no CodeAct-internal tools).
 
 **Request:**
 ```json
@@ -225,21 +228,21 @@ Get all tool schemas (for code generation/introspection).
 
 **Response:**
 ```json
-{"id": "t3", "result": [{"namespace": "...", "name": "...", "schema": {...}}, ...]}
+{"id": "t3", "result": [{"id": "...", "namespace": "...", "alias": "github", "name": "list_issues", "exported_name": "github.list_issues", "doc": "...", "schema": {...}, "meta": {...}}, ...]}
 ```
 
 ### `tools.resolve`
 
-Resolve a tool name to its descriptor.
+Resolve a canonical `alias.name` to its descriptor. Returns `null` for CodeAct-internal tools.
 
 **Request:**
 ```json
-{"id": "t4", "method": "tools.resolve", "params": {"name": "my_tool"}}
+{"id": "t4", "method": "tools.resolve", "params": {"name": "github.list_issues"}}
 ```
 
 **Response (found):**
 ```json
-{"id": "t4", "result": {"id": "...", "namespace": "...", "alias": "...", "name": "...", "doc": "...", "schema": {...}}}
+{"id": "t4", "result": {"id": "...", "namespace": "...", "alias": "github", "name": "list_issues", "exported_name": "github.list_issues", "doc": "...", "schema": {...}, "meta": {...}}}
 ```
 
 **Response (not found):**
@@ -247,9 +250,11 @@ Resolve a tool name to its descriptor.
 {"id": "t4", "result": null}
 ```
 
+Resolution uses only canonical `alias.name` — no fallback to bare name, namespace, or descriptor ID.
+
 ### `tools.aliases`
 
-List all available tool module aliases (namespaces).
+List all available tool aliases (only those with at least one public tool).
 
 **Request:**
 ```json
@@ -263,7 +268,7 @@ List all available tool module aliases (namespaces).
 
 ### `tools.list`
 
-List tools within a specific alias.
+List public tools within a specific alias.
 
 **Request:**
 ```json
@@ -272,39 +277,49 @@ List tools within a specific alias.
 
 **Response:**
 ```json
-{"id": "t6", "result": [{"id": "...", "name": "list_issues", "doc": "...", "schema": {...}, "metadata": {...}}, ...]}
+{"id": "t6", "result": [{"id": "...", "namespace": "...", "alias": "github", "name": "list_issues", "exported_name": "github.list_issues", "doc": "...", "schema": {...}, "meta": {...}}, ...]}
 ```
 
 ---
 
 ## Client-Side Proxy Objects (worker.py)
 
-### `_RPCClient`
+### `AsyncRPCClient`
 
-Synchronous `call()` and async `acall()` for issuing requests. Thread-safe (one mutex). Calls block the worker thread and wait for a matching response.
+Fully async with `asyncio.Lock` only for write framing. No `threading.Lock` or blocking reads.
 
 ```python
-class _RPCClient:
-    def call(self, method, params=None):
-        # serialize → write → flush → read → deserialize
-        # raises RuntimeError on error response
+class AsyncRPCClient:
+    async def request(self, method, params=None):
+        # Creates Future, sends NDJSON, waits for matching response
+        # Supports concurrent pending requests via request ID correlation
 
-    async def acall(self, method, params=None):
-        return await asyncio.to_thread(self.call, method, params)
+    async def read_responses(self):
+        # Background reader task: matches responses to Futures by request ID
+        # Runs as a separate asyncio Task alongside user code
 ```
+
+Key design:
+- Each `request()` creates a unique ID and a `Future`
+- The `read_responses()` task maps incoming responses to the correct Future by ID
+- Multiple `request()` calls can be made concurrently — responses are matched independently
+- `asyncio.Lock` on write prevents concurrent writes from interleaving bytes in the TCP stream
 
 ### Tool Proxy Function
 
-Each tool in a virtual module (`<alias>.<func_name>`) is an `async` proxy that reconstructs `inspect.Signature` from JSON Schema, binds arguments, and calls `client.acall("tools.invoke", ...)`:
+Each tool in a virtual module (`<alias>.<func_name>`) is an `async` proxy that calls the tool by its canonical `exported_name`:
 
 ```python
 async def proxy(*args, **kwargs):
     bound = signature.bind(*args, **kwargs)
     bound.apply_defaults()
-    return await client.acall("tools.invoke", {
-        "tool_call": {"tool_call_id": "", "tool_name": name, "tool_args": dict(bound.arguments), "tool_id": tool_id}
-    })
+    return await client.request("tools.invoke", {"tool_call": {
+        "tool_call_id": "", "tool_name": exported_name,  # e.g. "github.list_issues"
+        "tool_args": dict(bound.arguments),
+    }})
 ```
+
+Note: `exported_name` is always `alias.name` (canonical). No `tool_id` is sent — resolution is by name only.
 
 ---
 
@@ -317,7 +332,7 @@ async def proxy(*args, **kwargs):
 ```
 tool_tree = {
   "github": {                          → import github
-    "__tools__": [{...}],               → github.list_issues, etc.
+    "__tools__": [{...}],               → github.list_issues, etc. (exported_name = github.list_issues)
     "sub": {                           → import github.sub
       "__tools__": [{...}]
     }
@@ -325,7 +340,7 @@ tool_tree = {
 }
 ```
 
-Each tool in `__tools__` gets a `_make_tool_proxy(client, descriptor)` created with a `inspect.Signature` reconstructed from JSON Schema + metadata.
+Each tool's proxy uses `exported_name` from the descriptor, ensuring the parent receives the canonical `alias.name`.
 
 ### Import Hook
 
@@ -339,7 +354,27 @@ sys.meta_path.insert(0, _Finder())  # installed before code execution
 
 ## Serialization
 
-Both parent and child serialize responses through the same logic:
+### Tool Descriptor Wire Format
+
+All RPC introspection methods use explicit serializers:
+
+```python
+def serialize_tool_descriptor(descriptor):
+    return {
+        "id": descriptor.id,
+        "namespace": descriptor.namespace,
+        "alias": descriptor.alias,
+        "name": descriptor.name,
+        "exported_name": descriptor.exported_name,
+        "doc": descriptor.doc,
+        "schema": descriptor.schema,
+        "meta": descriptor.meta,       # not "metadata"
+    }
+```
+
+Only these fields are transmitted — internal fields like `_source_ref` are excluded.
+
+### Result Serialization
 
 | Type                     | Serialized as                    |
 |--------------------------|----------------------------------|
@@ -353,19 +388,23 @@ Both parent and child serialize responses through the same logic:
 | object with `__dict__`   | non-underscore attributes dict   |
 | everything else          | `str(obj)`                       |
 
-Note: `_make_serializable` (server.py) and `to_jsonable` (api/utils.py) share the same logic but are separate implementations.
+No runtime objects are leaked — `agent`, `Service`, and `Source` instances are never serialized.
 
 ---
 
 ## Data Flow Patterns
 
-### Pattern A: Tool invocation
+### Pattern A: Concurrent tool invocation
 
 ```
-Worker  →  Parent:  {"id": "y", "method": "tools.invoke", "params": {"tool_call": {...}}}
-Parent  →  Parent:  CodeActService.invoke_tool() → Agent._run_tool_lifecycle() → ToolManager.call()
-Parent  →  Worker:  {"id": "y", "result": "result string"}
+Worker  →  Parent:  {"id": "y1", "method": "tools.invoke", "params": {"tool_call": {"tool_name": "github.list_issues", ...}}}
+Worker  →  Parent:  {"id": "y2", "method": "tools.invoke", "params": {"tool_call": {"tool_name": "fs.read_file", ...}}}
+                     (parent processes both concurrently)
+Parent  →  Worker:  {"id": "y2", "result": "file content"}   (second completes first)
+Parent  →  Worker:  {"id": "y1", "result": "issue list"}     (first completes second)
 ```
+
+Responses are correlated by `id` — the `AsyncRPCClient` matches them to the correct `Future`, so `asyncio.gather()` returns correct results regardless of completion order.
 
 ### Pattern B: Virtual import + tool call
 
@@ -376,12 +415,54 @@ await github.list_issues(owner="user", repo="repo")
 
 # Virtual import resolves github to a module from make_tool_module()
 # github.list_issues is a proxy() function that calls:
-client.acall("tools.invoke", {"tool_call": {
-    "tool_call_id": "", "tool_name": "list_issues",
+client.request("tools.invoke", {"tool_call": {
+    "tool_call_id": "", "tool_name": "github.list_issues",
     "tool_args": {"owner": "user", "repo": "repo"},
-    "tool_id": "..."}
-})
+}})
 ```
+
+### Pattern C: Concurrent tool calls
+
+```python
+# Worker executes — both tools run concurrently on parent:
+results = await asyncio.gather(
+    github.list_issues(owner="user", repo="repo"),
+    fs.read_file(path="/tmp/data.txt"),
+)
+```
+
+---
+
+## Stateless Execution Model
+
+Each `await codeact.execute(code, ctx)` call:
+- Creates a **new subprocess**
+- Creates a **new namespace**
+- Creates a **new RPC client/server** pair
+- Creates a **new set of virtual modules**
+- Has its own **timeout scope**
+
+No state is preserved between executions. Data persistence is via `Storage`, `FileStorage`, or tools.
+
+```python
+await execute("x = 10")
+await execute("print(x)")  # → NameError: name 'x' is not defined
+```
+
+---
+
+## Timeout and Cancellation
+
+| Scenario | Behavior |
+|---|---|
+| Code execution timeout | Worker is terminated via `terminate()` → `kill()`; `ExecutionResult` with `returncode=124` |
+| RPC call timeout | Worker receives RPC error `-32001` |
+| Parent cancellation | Worker transport is closed; remaining RPC Futures get `CancelledError` |
+| Graceful shutdown | `terminate()` sent first; after `shutdown_timeout`, `kill()` is used |
+| Large stderr | Read concurrently, truncated at `max_output_bytes` |
+| Large stdout | Truncated at `max_output_bytes` |
+
+No child process is left alive after any of these scenarios — `_cleanup()` guarantees process reaping.
 
 ---
 
@@ -398,5 +479,7 @@ import fs
 await fs.read_file(path="/tmp/data.txt")
 
 # All tools.* RPC methods are accessible as <alias>.<func_name>
-# CodeAct-internal tools (execute, search_tools, list_tools) are NOT available
+# CodeAct-internal tools are NOT available (filtered by is_codeact_internal)
 ```
+
+CodeAct control tools (`codeact.execute`, `codeact.search_tools`, `codeact.list_tools`) are never exposed to the worker — they are only visible to the external LLM.

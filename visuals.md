@@ -771,12 +771,6 @@ classDiagram
     }
     Source <|-- HookSource : extends (binds D=HookDescriptor)
 
-    class ConnectorSource {
-        «components/connector.py»
-        «ABC — no extra methods»
-    }
-    Source <|-- ConnectorSource : extends (binds D=ConnectorDescriptor)
-
     class PythonSource~D~ {
         «core/base/source.py»
         - _scope: list[str]
@@ -877,3 +871,68 @@ HookManager  ──mount(PythonHookSource)──▶ PythonHookSource (components
 ```
 
 Each `Source` tracks its own `available` flag. When a source is invalidated (e.g. module removed from scope), its descriptors are removed from the manager, triggering index rebuild and `on_change` notification.
+
+---
+
+## 9. Agent Run Loop — Response Processing
+
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant HM as HookManager
+    participant Conn as Connector
+    participant Storage
+    participant TM as ToolManager
+
+    loop LLM iteration
+        Agent->>Agent: _call_llm()
+        Note over Agent: load_dialog → before_llm → ask_llm → after_llm → validate
+        Agent-->>Agent: LLMResponse (blocks + meta)
+
+        Agent->>Agent: _process_response()
+
+        loop for each response block
+            Agent->>Agent: block.to_dialog_item(meta propagated)
+            Agent->>HM: fire(BEFORE_SEND, ctx)
+            Agent->>Conn: send(origin, dialog_item)
+            alt delivered
+                Conn-->>Agent: external_id
+                Agent->>Agent: dialog_item.external_id = id
+            else not displayed
+                Conn-->>Agent: "" (empty string)
+                Note over Agent: still persisted below
+            end
+            Agent->>Storage: save_event(dialog_item)
+            Storage-->>Agent: item_id
+            Note over Agent: reasoning, text, tool_call blocks<br/>all stored in original order
+        end
+
+        loop for each tool call block
+            Agent->>Agent: ToolCall(tool_call_id, name, args)
+            Agent->>HM: fire(BEFORE_TOOL_CALL, ctx)
+            alt aborted
+                Agent->>Agent: ToolCallResult.aborted()
+            else
+                Agent->>TM: call(tool_call, ctx)
+                TM-->>Agent: ToolCallResult
+            end
+            Agent->>HM: fire(AFTER_TOOL_CALL, ctx)
+            Agent->>Agent: DialogItem(TOOL_CALL_RESULT)
+            Agent->>Conn: send(origin, result_item)
+            Agent->>Storage: save_event(result_item)
+            Storage-->>Agent: item_id
+        end
+
+        alt tools were called
+            Agent->>Agent: continue (next LLM iteration)
+        else no tools
+            Agent->>Agent: return (end run)
+        end
+    end
+```
+
+Key differences from the previous flow:
+- Every response block (reasoning, text, tool_call) is **sent through the connector** — the connector decides what to render.
+- All blocks are **persisted in order** before any tool executes.
+- Tool results also pass through the connector.
+- Provider-specific metadata (`meta["llm"]`) is preserved across send/store cycles.

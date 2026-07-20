@@ -14,6 +14,7 @@ import importlib
 import json
 import sys
 import types
+from dotenv import load_dotenv
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from typing import Any
@@ -36,7 +37,6 @@ from ...components.hook import (
 )
 from ...components.llm_adapter import (
     LLMResponse,
-    LLMResponseBlock,
     LLMResponseToolCallBlock,
     LLMResponseError,
     LLMTruncatedError,
@@ -46,11 +46,12 @@ from ...components.llm_adapter import (
 )
 from ...components.tool import ToolManager
 from ...components.hook import HookManager
+from ...components.instruction import InstructionManager
 from ...components.connector import ConnectorManager
 from ...components.llm_adapter import LLMAdapterManager
 from ...components.storage import StorageManager, STORAGE_ATTRIBUTE
 from ...components.file_storage import FileStorageManager, FILE_STORAGE_ATTRIBUTE
-from ..base.manager import ServiceInstanceManager
+from ..classes.manager import ServiceInstanceManager, ServiceInstanceRegistry
 from .runner import AgentRunner
 from .lifecycle import AgentLifecycle
 
@@ -71,12 +72,13 @@ class Agent:
     """
 
     def __init__(self, *, config: dict[ConfigField, Any] | Config = {}, auto_load_main: bool = True):
+        load_dotenv()
         if isinstance(config, dict):
             config = Config(overrides=config)
-        self.config = config
+        self.config: Config = config
         self._auto_load_main = auto_load_main
 
-        self.services = ServiceIпомнnstanceRegistry()
+        self.services = ServiceInstanceRegistry()
         self.runner = AgentRunner()
         self._started = False
         self._start_lock = asyncio.Lock()
@@ -84,6 +86,7 @@ class Agent:
 
         self.tool_manager = ToolManager(agent=self)
         self.hook_manager = HookManager(agent=self)
+        self.instruction_manager = InstructionManager(agent=self)
         self.llm_adapter = LLMAdapterManager(agent=self)
         self.storage = StorageManager(agent=self)
         self.file_storage = FileStorageManager(agent=self)
@@ -93,6 +96,7 @@ class Agent:
         children = [
             self.tool_manager,
             self.hook_manager,
+            self.instruction_manager,
             self.llm_adapter,
             self.storage,
             self.file_storage,
@@ -103,7 +107,7 @@ class Agent:
 
     @staticmethod
     def _resolve_module_name(module_or_name: str | types.ModuleType) -> str:
-        """Normalise extension specifier to a module name string."""
+        """Normalize extension specifier to a module name string."""
         if isinstance(module_or_name, str):
             return module_or_name
         if isinstance(module_or_name, types.ModuleType):
@@ -205,12 +209,12 @@ class Agent:
 
                     after_llm_ctx = await self._call_llm(run, last_item_id)
 
-                    last_item_id, used_tools = await self._execute_tools(run, after_llm_ctx.response, last_item_id)
+                    last_item_id, used_tools = await self._process_response(
+                        run, after_llm_ctx.response, last_item_id
+                    )
 
                     if used_tools:
                         continue
-
-                    await self._send_blocks(run, after_llm_ctx.response.content, last_item_id)
 
                     return after_llm_ctx
 
@@ -228,12 +232,14 @@ class Agent:
             )
 
     async def _ensure_started(self) -> None:
-        """Lazy init: add defaults, start lifecycle, fire on_agent_start."""
+        """Lazy init: load .env, add defaults, start lifecycle, fire on_agent_start."""
+        load_dotenv()
         async with self._start_lock:
             if not self._started:
                 prefix = _framework_prefix()
                 if self._auto_load_main:
                     self.add_extension("__main__")
+                self.add_extension(prefix + '.components.instruction')
                 if not self._scope_has_attribute(STORAGE_ATTRIBUTE):
                     self.add_extension(prefix + '.builtin.sqlite')
                 if not self._scope_has_attribute(FILE_STORAGE_ATTRIBUTE):
@@ -299,26 +305,31 @@ class Agent:
         self._validate_response(after_llm_ctx.response, run)
         return after_llm_ctx
 
-    async def _execute_tools(self, run: RunCtx, response: LLMResponse, last_item_id: int | None) -> tuple[int | None, bool]:
-        """Persist tool call blocks and run full lifecycle for each."""
-        tool_calls = [b for b in response.content if isinstance(b, LLMResponseToolCallBlock)]
-        if not tool_calls:
-            return last_item_id, False
+    async def _process_response(self, run: RunCtx, response: LLMResponse, last_item_id: int | None) -> tuple[int | None, bool]:
+        """Send and persist every response block before running its tools."""
+        tool_calls: list[LLMResponseToolCallBlock] = []
 
-        for block in tool_calls:
-            call_item = DialogItem(
-                content=block.content_str(),
-                item_type=DialogItemType.TOOL_CALL,
-                user=run.user,
+        for block in response.content:
+            dialog_item = block.to_dialog_item(
                 role=DialogRole.ASSISTANT,
+                user=run.user,
                 origin=run.origin,
                 previous_item_id=last_item_id,
             )
-            saved_id = await self.storage.save_event(call_item)
-            if saved_id is not None:
-                call_item.item_id = saved_id
-                last_item_id = saved_id
+            if response.meta:
+                item_llm_meta = dialog_item.meta.setdefault("llm", {})
+                item_llm_meta["response"] = response.meta
+                response_llm_meta = response.meta.get("llm")
+                if isinstance(response_llm_meta, dict):
+                    for key in ("provider", "protocol", "response_id", "turn_id"):
+                        if key in response_llm_meta:
+                            item_llm_meta[key] = response_llm_meta[key]
 
+            last_item_id = await self._send_and_store_item(run, dialog_item, last_item_id)
+            if isinstance(block, LLMResponseToolCallBlock):
+                tool_calls.append(block)
+
+        for block in tool_calls:
             tool_call = ToolCall(
                 tool_call_id=block.tool_call_id,
                 tool_name=block.tool_name,
@@ -326,10 +337,10 @@ class Agent:
             )
             last_item_id, _ = await self._run_tool_lifecycle(run, tool_call, last_item_id)
 
-        return last_item_id, True
+        return last_item_id, bool(tool_calls)
 
     async def _run_tool_lifecycle(self, run: RunCtx, tool_call: ToolCall, last_item_id: int | None = None) -> tuple[int | None, ToolCallResult]:
-        """Fire before/after_tool_call hooks, invoke tool, persist result."""
+        """Fire hooks, invoke a tool, then send and persist its result."""
         before_ctx = BeforeToolCallCtx(run=run, tool_call=tool_call)
         await self.hook_manager.fire(HookEventType.BEFORE_TOOL_CALL, before_ctx)
 
@@ -343,49 +354,35 @@ class Agent:
         after_ctx = AfterToolCallCtx(run=run, tool_call=effective_call, result=result)
         await self.hook_manager.fire(HookEventType.AFTER_TOOL_CALL, after_ctx)
 
-        final_result = after_ctx.result
-
-        result_item = DialogItem(
-            content=final_result.dump_json(),
-            item_type=DialogItemType.TOOL_CALL_RESULT,
-            user=run.user,
-            role=DialogRole.TOOL,
-            origin=run.origin,
-            previous_item_id=last_item_id,
-        )
-        saved_id = await self.storage.save_event(result_item)
-        if saved_id is not None:
-            result_item.item_id = saved_id
-            last_item_id = saved_id
-
-        return last_item_id, final_result
-
-    async def _send_blocks(
-        self, run: RunCtx, blocks: list[LLMResponseBlock], last_item_id: int | None
-    ) -> None:
-        """Send non-tool-call blocks via connector and persist each one."""
-        for block in blocks:
-            if isinstance(block, LLMResponseToolCallBlock):
-                continue
-
-            dialog_item = block.to_dialog_item(
-                role=DialogRole.ASSISTANT,
+        async with run.tool_output_lock:
+            tail = run.tool_output_tail if run.tool_output_tail is not None else last_item_id
+            result_item = DialogItem(
+                content=after_ctx.result.dump_json(),
+                item_type=DialogItemType.TOOL_CALL_RESULT,
                 user=run.user,
+                role=DialogRole.TOOL,
                 origin=run.origin,
-                previous_item_id=last_item_id,
+                previous_item_id=tail,
             )
+            last_item_id = await self._send_and_store_item(run, result_item, tail)
+            run.tool_output_tail = last_item_id
 
-            before_send_ctx = BeforeSendCtx(run=run, dialog_item=dialog_item)
-            await self.hook_manager.fire(HookEventType.BEFORE_SEND, before_send_ctx)
+        return last_item_id, after_ctx.result
 
-            if run.connector:
-                external_id = await run.connector.send(run.origin, dialog_item)
-                dialog_item.external_id = external_id
+    async def _send_and_store_item(self, run: RunCtx, dialog_item: DialogItem, last_item_id: int | None) -> int | None:
+        """Let the connector render an item, then persist it regardless of delivery."""
+        before_send_ctx = BeforeSendCtx(run=run, dialog_item=dialog_item)
+        await self.hook_manager.fire(HookEventType.BEFORE_SEND, before_send_ctx)
 
-            saved_id = await self.storage.save_event(dialog_item)
-            if saved_id is not None:
-                dialog_item.item_id = saved_id
-                last_item_id = saved_id
+        if run.connector:
+            external_id = await run.connector.send(run.origin, dialog_item)
+            dialog_item.external_id = external_id or None
+
+        saved_id = await self.storage.save_event(dialog_item)
+        if saved_id is not None:
+            dialog_item.item_id = saved_id
+            return saved_id
+        return last_item_id
 
     async def _handle_error(self, run: RunCtx, error: Exception) -> None:
         """Fire on_error hook; re-raise unless suppressed."""
@@ -398,7 +395,7 @@ class Agent:
         """Raise if the LLM stopped with error or max_tokens."""
         if response.stop_reason == StopReason.ERROR:
             raise LLMResponseError("LLM returned error stop reason")
-        if response.stop_reason == StopReason.MAX_TOKENS:
+        if response.stop_reason == StopReason.LENGTH:
             raise LLMTruncatedError("LLM response truncated (max_tokens)")
 
     def _scope_has_attribute(self, attribute: str) -> bool:

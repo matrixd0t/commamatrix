@@ -9,8 +9,8 @@ from collections.abc import Mapping
 from typing import Any, Optional
 from pydantic import BaseModel, Field
 
-
 DEFAULT_PLATFORM = "unknown"
+DEFAULT_USER = 'unknown'
 
 
 class DialogItemType(StrEnum):
@@ -25,6 +25,7 @@ class DialogItemType(StrEnum):
     FILE_OUTPUT = "file_output"
     TOOL_CALL = "tool_call"
     TOOL_CALL_RESULT = "tool_call_result"
+    REASONING = "reasoning"
 
 
 class DialogRole(StrEnum):
@@ -58,13 +59,12 @@ ORIGIN_REGISTRY: dict[str, type[DialogOrigin]] = {}
 class DialogItem(BaseModel):
     """A single message or event in dialog history. Links to a previous
     item via previous_item_id to form conversation branches."""
-
     item_id: Optional[int] = None
     content: str
     item_type: DialogItemType
-    user: str
     role: DialogRole
     origin: DialogOrigin
+    user: str = DEFAULT_USER
     previous_item_id: Optional[int] = None
     external_id: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -14,11 +14,19 @@ dependencies = [
     "aiosqlite",
     "aiofiles",
     "httpx",
+    "python-dotenv",
 ]
 
 [project.optional-dependencies]
 postgres = ["asyncpg"]
+test = ["pytest", "pytest-asyncio"]
 all = ["commamatrix[postgres]"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+pythonpath = ["src"]
+asyncio_mode = "strict"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/commamatrix"]

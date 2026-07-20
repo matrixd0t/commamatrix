@@ -6,16 +6,16 @@ import functools
 import inspect
 import weakref
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast, get_type_hints, overload
+from typing import Any, cast, get_type_hints, overload
 
 from matrix_fn_schema import build_json_schema
 
-from ..core.base.descriptor import Descriptor
-from ..core.base.source import Source
-from ..core.base.manager import Manager
-from ..core.base.source import PythonSource
+from ..core.classes.descriptor import Descriptor
+from ..core.classes.source import Source
+from ..core.classes.manager import Manager
+from ..core.classes.source import PythonSource
 from .llm_adapter import ToolCall, ToolCallResult
 from .hook import BeforeToolCallCtx
 
@@ -27,36 +27,53 @@ type AsyncOrSyncFunction = Callable[..., object] | Callable[..., Awaitable[objec
 type Decorator[F: AsyncOrSyncFunction] = Callable[[F], F]
 
 
+class AmbiguousToolError(RuntimeError):
+    def __init__(self, name: str, candidates: list[ToolDescriptor]) -> None:
+        lines = [f"Tool name {name!r} is ambiguous. Candidates:"]
+        for d in candidates:
+            lines.append(f"  - {d.id} from {d.namespace} (alias={d.alias})")
+        lines.append("Use distinct aliases or tool names.")
+        super().__init__("\n".join(lines))
+        self.name = name
+        self.candidates = candidates
+
+
 @dataclass(frozen=True, slots=True)
 class ToolDescriptor(Descriptor):
-    """Metadata for a registered tool: namespace, alias, exported name,
-    JSON Schema, and docstring. Used by ToolManager for resolution."""
-
+    """
+    Describes a registered tool: namespace, alias, name, JSON Schema, and docstring.
+    The public name visible to LLM is computed by ToolManager.public_name().
+    Used by ToolManager for resolution.
+    """
     namespace: str
     alias: str
     name: str
-    exported_name: str
     doc: str
     schema: dict[str, Any]
-    metadata: dict[str, Any]
+    meta: dict[str, Any]
 
     def _fingerprint_payload(self) -> dict[str, Any]:
-        meta = self.metadata
         return {
             "id": self.id,
             "namespace": self.namespace,
             "alias": self.alias,
             "name": self.name,
-            "exported_name": self.exported_name,
             "doc": self.doc,
             "schema": self.schema,
-            "meta": meta,
+            "meta": self.meta,
         }
 
 
 class ToolSource(Source[ToolDescriptor]):
-    """Source ABC for tool execution. The invoke() method bridges
-    a descriptor back to the actual callable."""
+    """
+    Source ABC for tool execution.
+
+    The invoke() method bridges a descriptor back to the actual callable.
+    Synchronous tools are called directly on the event loop — CodeAct
+    does **not** offload them to a thread pool.  Long-running or blocking
+    tools must be written as ``async def`` functions so they yield
+    control back to the event loop at await points.
+    """
 
     async def invoke(self, descriptor: ToolDescriptor, kwargs: dict[str, Any], ctx: BeforeToolCallCtx | None = None) -> object:
         raise NotImplementedError
@@ -70,8 +87,8 @@ def tool(**metadata: Any) -> Decorator: ...
 
 def tool(arg: AsyncOrSyncFunction | None = None, **meta: Any):
     """Decorator marking a function as a discoverable tool.
-    Stamps TOOL_ATTRIBUTE with optional metadata. Use bare (@tool)
-    or with keyword arguments for extra metadata."""
+    Stamps TOOL_ATTRIBUTE with optional meta. Use bare (@tool)
+    or with keyword arguments for extra meta."""
     def decorate(fn: AsyncOrSyncFunction, metadata: dict[str, Any]):
         setattr(fn, TOOL_ATTRIBUTE, metadata)
         return fn
@@ -85,7 +102,14 @@ def tool(arg: AsyncOrSyncFunction | None = None, **meta: Any):
 class PythonToolSource(PythonSource[ToolDescriptor], ToolSource):
     """Scans @tool-decorated functions in scope modules, builds
     ToolDescriptors with JSON Schema, and provides invoke() to
-    call the original function (with optional ctx injection)."""
+    call the original function (with optional ctx injection).
+
+    Synchronous tools are invoked directly on the event loop without
+    ``to_thread`` or equivalent offloading.  Tools that perform
+    long-running or blocking work must be declared as ``async def``
+    so they can yield control at await points.  CodeAct does not
+    and will not inject thread-pool execution for synchronous tool
+    functions — that is the tool author's responsibility."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -108,7 +132,11 @@ class PythonToolSource(PythonSource[ToolDescriptor], ToolSource):
         self._functions[descriptor_id] = fn
 
         namespace: str = fn.__module__
-        alias: str = metadata.get('alias', namespace)
+        alias = metadata.get('alias')
+        if alias is None:
+            alias = namespace.rsplit('.', 1)[-1]
+        if alias and not alias.isidentifier():
+            raise ValueError(f"Alias {alias!r} is not a valid Python identifier in tool {fn.__name__!r}")
         alias_for_doc: str | None = metadata.get('alias')
 
         descriptor = ToolDescriptor(
@@ -116,10 +144,9 @@ class PythonToolSource(PythonSource[ToolDescriptor], ToolSource):
             namespace=namespace,
             alias=alias,
             name=object_name,
-            exported_name=object_name,
             doc=self._build_doc(fn, alias=alias_for_doc),
             schema=build_json_schema(_schema_fn(fn)),
-            metadata=metadata,
+            meta=metadata,
             _source_ref=weakref.ref(self),
         )
         return descriptor
@@ -228,7 +255,7 @@ def _type_hints(fn: AsyncOrSyncFunction) -> dict[str, Any]:
 
 
 class ToolManager(Manager[ToolDescriptor]):
-    """Central tool registry. Maintains alias/name/exported_name index
+    """Central tool registry. Maintains alias/name/public_name/id index
     maps for multi-step resolution. The call() method executes a
     ToolCall by resolving the tool name and invoking it through its source."""
 
@@ -238,8 +265,14 @@ class ToolManager(Manager[ToolDescriptor]):
         self.mount(self._python_source)
         self._by_alias: dict[str, list[ToolDescriptor]] = {}
         self._by_name: dict[str, list[ToolDescriptor]] = {}
-        self._by_exported_name: dict[str, list[ToolDescriptor]] = {}
+        self._by_public_name: dict[str, list[ToolDescriptor]] = {}
+        self._by_id: dict[str, ToolDescriptor] = {}
         self._schemas: list[dict[str, Any]] = []
+
+    def public_name(self, descriptor: ToolDescriptor) -> str:
+        if not descriptor.alias:
+            return descriptor.name
+        return f"{descriptor.alias}_{descriptor.name}"
 
     def set_scope(self, scope: list[str]) -> None:
         self._python_source.set_scope(scope)
@@ -252,22 +285,15 @@ class ToolManager(Manager[ToolDescriptor]):
         return self._schemas
 
     def resolve(self, name: str) -> ToolDescriptor | None:
-        if name in self._descriptors:
-            return self._descriptors[name]
+        candidates = self._by_public_name.get(name)
+        if not candidates:
+            return None
+        if len(candidates) == 1:
+            return candidates[0]
+        raise AmbiguousToolError(name, candidates)
 
-        by_exported = self._by_exported_name.get(name)
-        if by_exported:
-            return by_exported[0]
-
-        by_alias = self._by_alias.get(name)
-        if by_alias:
-            return by_alias[0]
-
-        by_name = self._by_name.get(name)
-        if by_name:
-            return by_name[0]
-
-        return None
+    def resolve_id(self, id_str: str) -> ToolDescriptor | None:
+        return self._by_id.get(id_str)
 
     @property
     def modules(self) -> dict[str, list[ToolDescriptor]]:
@@ -307,41 +333,44 @@ class ToolManager(Manager[ToolDescriptor]):
     def _rebuild(self) -> None:
         by_alias: dict[str, list[ToolDescriptor]] = {}
         by_name: dict[str, list[ToolDescriptor]] = {}
-        by_exported: dict[str, list[ToolDescriptor]] = {}
+        by_public: dict[str, list[ToolDescriptor]] = {}
+        by_id: dict[str, ToolDescriptor] = {}
         for descriptor in self.descriptors:
-            by_alias.setdefault(descriptor.alias, []).append(descriptor)
-            if descriptor.namespace != descriptor.alias:
-                by_alias.setdefault(descriptor.namespace, []).append(descriptor)
             by_name.setdefault(descriptor.name, []).append(descriptor)
-            by_exported.setdefault(descriptor.exported_name, []).append(descriptor)
+            by_id[descriptor.id] = descriptor
+            public = self.public_name(descriptor)
+            by_public.setdefault(public, []).append(descriptor)
+            if descriptor.alias:
+                by_alias.setdefault(descriptor.alias, []).append(descriptor)
         self._by_alias = by_alias
         self._by_name = by_name
-        self._by_exported_name = by_exported
+        self._by_public_name = by_public
+        self._by_id = by_id
         self._schemas = []
         for descriptor in self.descriptors:
             schema = dict(descriptor.schema)
-            schema["name"] = descriptor.exported_name
+            schema["name"] = self.public_name(descriptor)
             self._schemas.append(schema)
 
     @property
     def tool_tree(self) -> dict[str, Any]:
-        tree: dict[str, Any] = {}
-        for alias, descriptors in self._by_alias.items():
-            parts = alias.split(".")
-            node = tree
-            for part in parts[:-1]:
-                node = node.setdefault(part, {})
-            leaf = parts[-1]
-            node.setdefault(leaf, {})
-            node[leaf].setdefault("__tools__", [])
-            for d in descriptors:
-                if any(existing["id"] == d.id for existing in node[leaf]["__tools__"]):
-                    continue
-                node[leaf]["__tools__"].append({
-                    "id": d.id,
-                    "name": d.name,
-                    "doc": d.doc,
-                    "schema": d.schema,
-                    "meta": d.metadata,
-                })
+        return self.build_tool_tree(self.descriptors)
+
+    @staticmethod
+    def build_tool_tree(descriptors: Iterable[ToolDescriptor]) -> dict[str, Any]:
+        tree: dict[str, Any] = {"tools": {}}
+        for d in descriptors:
+            if not d.alias:
+                continue
+            node = tree["tools"].setdefault(d.alias, {})
+            node.setdefault("__tools__", [])
+            if any(existing["id"] == d.id for existing in node["__tools__"]):
+                continue
+            node["__tools__"].append({
+                "id": d.id,
+                "name": d.name,
+                "doc": d.doc,
+                "schema": d.schema,
+                "meta": d.meta,
+            })
         return tree

@@ -1,12 +1,13 @@
-# components/file_storage.py
+﻿# components/file_storage.py
 
 from __future__ import annotations
 
 from abc import abstractmethod
 from typing import TYPE_CHECKING
 
-from ..core.base.service import AbstractService
-from ..core.base.manager import ActiveServiceInstanceManager
+from ..core.classes.service import AbstractService
+from ..core.classes.manager import ActiveServiceInstanceManager
+from ..core.classes.source import PythonServiceSource
 from .config import ConfigField
 
 if TYPE_CHECKING:
@@ -22,12 +23,6 @@ active_file_storage = ConfigField[str | None](
 
 
 class FileStorage(AbstractService):
-    """Abstract file/blob storage provider. Subclasses implement
-    save/get/delete for binary data identified by string IDs."""
-
-    def __init__(self, agent: Agent) -> None:
-        super().__init__(agent)
-
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
         if not getattr(cls, "__abstractmethods__", None):
@@ -43,14 +38,19 @@ class FileStorage(AbstractService):
     async def delete(self, file_id: str) -> bool: ...
 
 
-class FileStorageManager(ActiveServiceInstanceManager):
-    """Manages FileStorage providers with active-instance selection.
-    Delegates save/get/delete to the active storage backend."""
+class PythonFileStorageSource(PythonServiceSource):
+    def __init__(self) -> None:
+        super().__init__(base_type=FileStorage, marker_attribute=FILE_STORAGE_ATTRIBUTE, id_prefix="file_storage")
 
+
+class FileStorageManager(ActiveServiceInstanceManager):
     base_type = FileStorage
     marker_attribute = FILE_STORAGE_ATTRIBUTE
-    id_prefix = "file storage"
+    id_prefix = "file_storage"
     active_field = active_file_storage
+
+    def __init__(self, agent, **kwargs) -> None:
+        super().__init__(agent, source=PythonFileStorageSource(), **kwargs)
 
     async def save(self, data: bytes, ext: str | None = None) -> str:
         return await self._active.save(data, ext)

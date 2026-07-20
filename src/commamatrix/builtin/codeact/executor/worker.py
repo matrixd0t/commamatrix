@@ -2,9 +2,14 @@
 
 """CodeAct worker — runs in a child Python process.
 
-Reads a JSON payload from stdin (code + namespace + tool_tree), sets up
-RPC-backed virtual imports for tool modules, executes the code,
-and writes the execution result back to stdout as JSON.
+Connects to the parent over TCP, receives a JSON payload (code + namespace
++ tool_tree), sets up RPC-backed virtual imports for tool modules, executes
+the code, and sends the execution result back over TCP.
+
+The code is compiled with ``PyCF_ALLOW_TOP_LEVEL_AWAIT`` and evaluated
+inside the worker event loop.  This is required because virtual tool
+functions are asynchronous RPC proxies and must be awaited while the
+worker continues processing RPC responses.
 """
 
 import ast
@@ -13,43 +18,73 @@ import contextlib
 import inspect
 import io
 import json
-import os
 import sys
 import time
-import uuid
 from importlib.abc import MetaPathFinder
 from importlib.machinery import ModuleSpec
 from types import ModuleType
 from typing import Any, Callable
-
-
-# ── S/O setup ────────────────────────────────────────────────────────
-
-stdin_bin = os.fdopen(0, "rb", 0)
-stdout_bin = os.fdopen(1, "wb", 0)
+from uuid import uuid4
 
 
 # ── RPC client ───────────────────────────────────────────────────────
 
-class _RPCClient:
-    def __init__(self, reader, writer):
+class AsyncRPCClient:
+    def __init__(self, reader, writer, rpc_timeout: float = 10.0):
         self._reader = reader
         self._writer = writer
-        self._lock = threading.Lock()
+        self._rpc_timeout = rpc_timeout
+        self._write_lock = asyncio.Lock()
+        self._pending: dict[str, asyncio.Future] = {}
+        self._closed = False
 
-    def call(self, method, params=None):
-        request = {"id": uuid.uuid4().hex, "method": method, "params": params or {}}
-        with self._lock:
-            self._writer.write(json.dumps(request, ensure_ascii=False).encode("utf-8") + b"\n")
-            self._writer.flush()
-            response = json.loads(self._reader.readline())
-        if response.get("error"):
-            error = response["error"]
-            raise RuntimeError(f"RPC error {error['code']}: {error['message']}")
-        return response.get("result")
+    async def request(self, method, params=None):
+        if self._closed:
+            raise RuntimeError("RPC client is closed")
+        request_id = uuid4().hex
+        future = asyncio.get_running_loop().create_future()
+        self._pending[request_id] = future
+        payload = {"id": request_id, "method": method, "params": params or {}}
+        async with self._write_lock:
+            self._writer.write(json.dumps(payload, ensure_ascii=False).encode("utf-8") + b"\n")
+            await self._writer.drain()
+        try:
+            return await asyncio.wait_for(future, timeout=self._rpc_timeout)
+        except asyncio.TimeoutError:
+            raise RuntimeError(f"RPC timeout for {method}")
+        finally:
+            self._pending.pop(request_id, None)
 
-    async def acall(self, method, params=None):
-        return await asyncio.to_thread(self.call, method, params)
+    async def read_responses(self):
+        try:
+            while not self._closed:
+                line = await self._reader.readline()
+                if not line:
+                    break
+                response = json.loads(line.decode("utf-8"))
+                rid = response.get("id")
+                if rid in self._pending:
+                    future = self._pending.pop(rid)
+                    if future.done():
+                        continue
+                    if response.get("error"):
+                        error = response["error"]
+                        future.set_exception(RuntimeError(f"RPC error {error['code']}: {error['message']}"))
+                    else:
+                        future.set_result(response.get("result"))
+        except (ConnectionError, EOFError):
+            pass
+        finally:
+            self._closed = True
+            for future in self._pending.values():
+                if not future.done():
+                    future.set_exception(RuntimeError("RPC connection closed"))
+
+    async def close(self):
+        self._closed = True
+        for future in self._pending.values():
+            if not future.done():
+                future.set_exception(RuntimeError("RPC client closed"))
 
 
 # ── Schema / signature helpers ───────────────────────────────────────
@@ -61,12 +96,8 @@ def _schema_type(schema):
         types = [_schema_type(item) for item in schema["anyOf"] if item.get("type") != "null"]
         return types[0] if len(types) == 1 else Any
     return {
-        "string": str,
-        "integer": int,
-        "number": float,
-        "boolean": bool,
-        "array": list,
-        "object": dict,
+        "string": str, "integer": int, "number": float,
+        "boolean": bool, "array": list, "object": dict,
     }.get(schema.get("type"), Any)
 
 
@@ -85,18 +116,13 @@ def _signature(schema, metadata=None):
         kind = getattr(inspect.Parameter, item.get("kind", "KEYWORD_ONLY"), inspect.Parameter.KEYWORD_ONLY)
         has_default = "default" in item or "default" in properties[name]
         default = inspect.Parameter.empty if name in required and not has_default else item.get("default", properties[name].get("default", None))
-        parameter = inspect.Parameter(
-            name, kind, default=default, annotation=_schema_type(properties[name]),
-        )
+        parameter = inspect.Parameter(name, kind, default=default, annotation=_schema_type(properties[name]))
         parameters.append(parameter)
         annotations[name] = parameter.annotation
     if not parameters:
         for name, definition in properties.items():
             default = inspect.Parameter.empty if name in required else definition.get("default", None)
-            parameter = inspect.Parameter(
-                name, inspect.Parameter.KEYWORD_ONLY,
-                default=default, annotation=_schema_type(definition),
-            )
+            parameter = inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY, default=default, annotation=_schema_type(definition))
             parameters.append(parameter)
             annotations[name] = parameter.annotation
     return inspect.Signature(parameters), annotations
@@ -104,21 +130,32 @@ def _signature(schema, metadata=None):
 
 def _make_tool_proxy(client, descriptor):
     signature, annotations = _signature(descriptor.get("schema", {}), descriptor.get("meta", {}))
-    name = descriptor["name"]
-    tool_id = descriptor.get("id", "")
+    tool_id = descriptor["id"]
+    proxy_name = descriptor["name"]
 
     async def proxy(*args, **kwargs):
         bound = signature.bind(*args, **kwargs)
         bound.apply_defaults()
-        return await client.acall("tools.invoke", {"tool_call": {
-            "tool_call_id": "", "tool_name": name, "tool_args": dict(bound.arguments),
+        return await client.request("tools.invoke", {
             "tool_id": tool_id,
-        }})
+            "tool_args": dict(bound.arguments),
+            "tool_call_id": "",
+        })
 
-    proxy.__name__ = name
+    proxy.__name__ = proxy_name
     proxy.__doc__ = descriptor.get("doc", "")
     proxy.__signature__ = signature
     proxy.__annotations__ = annotations
+    return proxy
+
+
+def _make_ambiguous_proxy(name, descriptors):
+    async def proxy(*args, **kwargs):
+        candidates = [f"{d.get('id', '?')} (name={d.get('name', '?')})" for d in descriptors]
+        raise RuntimeError(f"Tool {name!r} is ambiguous — Candidates: " + "; ".join(candidates))
+
+    proxy.__name__ = name
+    proxy.__doc__ = f"AMBIGUOUS: {name!r}"
     return proxy
 
 
@@ -133,28 +170,28 @@ def make_tool_module(fullname, node, client):
     module.__path__ = []
     module.__package__ = fullname
     _modules_cache[fullname] = module
-
-    names = []
+    by_name: dict[str, list[dict[str, Any]]] = {}
     for descriptor in node.get("__tools__", []):
-        name = descriptor["name"]
-        setattr(module, name, _make_tool_proxy(client, descriptor))
+        by_name.setdefault(descriptor["name"], []).append(descriptor)
+    names = []
+    for name, descriptors in by_name.items():
+        if len(descriptors) > 1:
+            proxy = _make_ambiguous_proxy(name, descriptors)
+        else:
+            proxy = _make_tool_proxy(client, descriptors[0])
+        setattr(module, name, proxy)
         names.append(name)
-
     for child_name, child_node in node.items():
         if child_name == "__tools__":
             continue
         child_fullname = f"{fullname}.{child_name}"
         if child_fullname not in _factories:
             _factories[child_fullname] = lambda cn=child_fullname, nd=child_node: make_tool_module(cn, nd, client)
-        child = _factories[child_fullname]()
-        setattr(module, child_name, child)
+        setattr(module, child_name, _factories[child_fullname]())
         names.append(child_name)
-
     module.__all__ = names
     return module
 
-
-# ── Virtual import machinery ─────────────────────────────────────────
 
 class _Finder(MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
@@ -178,16 +215,42 @@ class _Loader:
 
 # ── Entry point ──────────────────────────────────────────────────────
 
-def main():
-    payload = json.loads(stdin_bin.readline())
+async def _send_message(writer: asyncio.StreamWriter, message: dict[str, Any]) -> None:
+    writer.write(json.dumps(message, ensure_ascii=False).encode("utf-8") + b"\n")
+    await writer.drain()
+
+
+async def main(host: str, port: int, token: str) -> None:
+    reader, writer = await asyncio.open_connection(host, port)
+    await _send_message(writer, {"type": "hello", "token": token})
+
+    handshake_line = await reader.readline()
+    if not handshake_line:
+        raise ConnectionError("Parent closed CodeAct TCP connection")
+    if json.loads(handshake_line.decode("utf-8")).get("type") != "hello_ok":
+        raise PermissionError("CodeAct TCP handshake rejected")
+
+    boot_line = await reader.readline()
+    if not boot_line:
+        raise ConnectionError("Parent closed CodeAct TCP connection")
+    payload = json.loads(boot_line.decode("utf-8"))
     code = payload["code"]
     namespace = payload.get("namespace") or {"__name__": "__codeact__"}
     tool_tree = payload.get("tool_tree") or {}
+    rpc_timeout = payload.get("rpc_timeout", 10.0)
 
-    client = _RPCClient(stdin_bin, stdout_bin)
+    client = AsyncRPCClient(reader, writer, rpc_timeout=rpc_timeout)
+    reader_task = asyncio.create_task(client.read_responses())
 
-    for alias, node in tool_tree.items():
-        _factories[alias] = lambda a=alias, n=node: make_tool_module(a, n, client)
+    tools_node = tool_tree.get("tools", {})
+    for alias, node in tools_node.items():
+        _factories[f"tools.{alias}"] = lambda a=f"tools.{alias}", n=node: make_tool_module(a, n, client)
+
+    tools_mod = ModuleType("tools")
+    tools_mod.__path__ = []
+    tools_mod.__package__ = "tools"
+    _modules_cache["tools"] = tools_mod
+    _factories["tools"] = lambda: tools_mod
     sys.meta_path.insert(0, _Finder())
 
     stdout_buf = io.StringIO()
@@ -197,22 +260,40 @@ def main():
     try:
         start = time.monotonic()
         with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
-            compiled = compile(code, "<codeact>", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+            compiled = compile(
+                code,
+                "<codeact>",
+                "exec",
+                flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT,
+            )
             result = eval(compiled, namespace)
-            if result is not None:
-                asyncio.run(result)
+            if inspect.isawaitable(result):
+                await result
         elapsed = (time.monotonic() - start) * 1000
     except BaseException as exc:
         stderr_buf.write(f"{type(exc).__name__}: {exc}")
         returncode = 1
 
-    response = {"id": "", "result": {
-        "stdout": stdout_buf.getvalue(), "stderr": stderr_buf.getvalue(),
-        "returncode": returncode, "elapsed": elapsed,
-    }}
-    stdout_bin.write(json.dumps(response, ensure_ascii=False).encode("utf-8") + b"\n")
-    stdout_bin.flush()
+    reader_task.cancel()
+    try:
+        await reader_task
+    except asyncio.CancelledError:
+        pass
+    await client.close()
+
+    response = {
+        "type": "execution_result", "id": "",
+        "result": {
+            "stdout": stdout_buf.getvalue(), "stderr": stderr_buf.getvalue(),
+            "returncode": returncode, "elapsed": elapsed,
+        },
+    }
+    await _send_message(writer, response)
+    writer.close()
+    await writer.wait_closed()
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) != 7 or sys.argv[1] != "--host" or sys.argv[3] != "--port" or sys.argv[5] != "--token":
+        raise SystemExit("usage: worker.py --host HOST --port PORT --token TOKEN")
+    asyncio.run(main(sys.argv[2], int(sys.argv[4]), sys.argv[6]))

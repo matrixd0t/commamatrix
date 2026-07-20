@@ -31,11 +31,18 @@ class ExecutionResult:
             parts.append(f"exit code: {self.returncode}")
         if self.duration_ms is not None:
             parts.append(f"({self.duration_ms:.0f}ms)")
-        return "\n\n".join(parts)
+        return "\n".join(parts)
 
 
 class ExecutionBackend(ABC):
-    """Runs user code and returns captured output.
+    """
+    Runs code and returns captured output.
+
+    Unlike ToolSearcher, ExecutionBackend methods are async because
+    they manage child processes, pipes, sockets, or containers —
+    all inherently async I/O operations.  start / stop / execute
+    are expected to be truly asynchronous and must not rely on
+    ``to_thread`` or similar thread-offloading primitives.
 
     Implementations may range from a local subprocess to a container
     or service-manager-isolated environment.
@@ -50,7 +57,10 @@ class ExecutionBackend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def execute(
-        self, code: str, ctx: BeforeToolCallCtx, namespace: dict[str, Any] | None = None
-    ) -> ExecutionResult:
+    async def execute(self, code: str, ctx: BeforeToolCallCtx, namespace: dict[str, Any] | None = None) -> ExecutionResult:
         raise NotImplementedError
+
+    @staticmethod
+    def is_available() -> bool:
+        """Override to report whether this backend can be used."""
+        return True

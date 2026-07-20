@@ -1,4 +1,4 @@
-# core/base/source.py
+# core/classes/source.py
 
 from __future__ import annotations
 
@@ -119,13 +119,7 @@ class PythonServiceSource(PythonSource[ServiceDescriptor]):
     via base_type, marker_attribute, and id_prefix to support provider
     slots (LLMAdapter, Storage, FileStorage) alongside plain Service."""
 
-    def __init__(
-        self,
-        base_type: type[AbstractService] = AbstractService,
-        marker_attribute: str = SERVICE_ATTRIBUTE,
-        id_prefix: str = "service"
-    ) -> None:
-
+    def __init__(self, base_type: type[AbstractService] = AbstractService, marker_attribute: str = SERVICE_ATTRIBUTE, id_prefix: str = "service") -> None:
         super().__init__()
         self._base_type = base_type
         self._marker = marker_attribute

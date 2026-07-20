@@ -1,21 +1,25 @@
-# components/llm_adapter.py
+﻿# components/llm_adapter.py
 
 from __future__ import annotations
 
+import base64
 from abc import ABC, abstractmethod
 from enum import StrEnum
 from dataclasses import dataclass, field
+from json import dumps, loads
+from mimetypes import guess_type
 from typing import Any, TYPE_CHECKING
-from json import dumps
+from httpx import AsyncClient, HTTPError
 
 from ..core.utils import to_jsonable
-from ..core.base.service import AbstractService
-from ..core.base.manager import ServiceInstanceManager, ServiceInstanceRegistry
+from ..core.classes.service import AbstractService
+from ..core.classes.manager import ServiceInstanceManager, ServiceInstanceRegistry
+from ..core.classes.source import PythonServiceSource
 from .dialog import DialogItem, DialogItemType, DialogRole, DialogOrigin
-
 
 if TYPE_CHECKING:
     from .hook import BeforeLlmCallCtx
+    from .file_storage import FileStorage
     from ..core.agent import Agent
 
 LLM_ADAPTER_ATTRIBUTE = "__commamatrix_llm_adapter__"
@@ -35,56 +39,47 @@ class LLMTruncatedError(LLMError):
 
 @dataclass(slots=True, kw_only=True)
 class ToolCall:
-    """Data for a single tool invocation request from the LLM."""
-
     tool_call_id: str
     tool_name: str
     tool_args: dict[str, Any]
 
     def dump_json(self) -> str:
-        return dumps(to_jsonable({'tool_call_id': self.tool_call_id, 'tool_name': self.tool_name, 'tool_args': self.tool_args}), ensure_ascii=False)
+        return dumps(to_jsonable({"tool_call_id": self.tool_call_id, "tool_name": self.tool_name, "tool_args": self.tool_args}), ensure_ascii=False)
 
 
 @dataclass(slots=True, kw_only=True)
 class ToolCallResult:
-    """Result of a tool call. Contains output content and an abort flag
-    set by before_tool_call hooks."""
-
     tool_call_id: str
     content: Any
     abort: bool = False
 
     @classmethod
     def aborted(cls, tool_call_id: str, reason: str) -> ToolCallResult:
-        return cls(tool_call_id=tool_call_id, abort=True, content=f'Tool call aborted: {reason}')
+        return cls(tool_call_id=tool_call_id, abort=True, content=f"Tool call aborted: {reason}")
 
     def dump_json(self) -> str:
-        return dumps({'tool_call_id': self.tool_call_id, 'content': to_jsonable(self.content)}, ensure_ascii=False)
+        return dumps({"tool_call_id": self.tool_call_id, "content": to_jsonable(self.content)}, ensure_ascii=False)
 
 
 class StopReason(StrEnum):
-    """Why the LLM stopped generating: end of turn, tool use, max tokens, or error."""
-
-    END_TURN = 'end_turn'
-    TOOL_USE = 'tool_use'
-    MAX_TOKENS = 'max_tokens'
-    ERROR = 'error'
+    END_TURN = "end_turn"
+    TOOL_USE = "tool_use"
+    LENGTH = "length"
+    ERROR = "error"
 
 
 @dataclass(slots=True, kw_only=True)
 class Usage:
-    """Token and cost tracking for an LLM response."""
-
-    usd: float
     input_tokens: int
     output_tokens: int
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
+    reasoning_tokens: int = 0
 
 
+@dataclass(slots=True, kw_only=True)
 class LLMResponseBlock(ABC):
-    """Typed block within an LLM response. Subclasses represent text,
-    images, files, and tool calls as a uniform sequence."""
+    meta: dict[str, Any] = field(default_factory=dict)
 
     @abstractmethod
     def content_str(self) -> str: ...
@@ -100,15 +95,16 @@ class LLMResponseBlock(ABC):
             user=user,
             origin=origin,
             previous_item_id=previous_item_id,
+            meta=dict(self.meta),
         )
 
 
 @dataclass(slots=True, kw_only=True)
 class LLMResponseTextBlock(LLMResponseBlock):
-    text: str
+    content: str
 
     def content_str(self) -> str:
-        return self.text
+        return self.content
 
     def item_type(self) -> DialogItemType:
         return DialogItemType.OUTPUT
@@ -121,7 +117,7 @@ class LLMResponseImageBlock(LLMResponseBlock):
     content: bytes | None = None
 
     def content_str(self) -> str:
-        return dumps({'image': {'ref': self.ref, 'ext': self.ext}}, ensure_ascii=False)
+        return dumps({"image": {"ref": self.ref, "ext": self.ext}}, ensure_ascii=False)
 
     def item_type(self) -> DialogItemType:
         return DialogItemType.IMAGE_OUTPUT
@@ -134,10 +130,21 @@ class LLMResponseFileBlock(LLMResponseBlock):
     content: bytes | None = None
 
     def content_str(self) -> str:
-        return dumps({'file': {'ref': self.ref, 'ext': self.ext}}, ensure_ascii=False)
+        return dumps({"file": {"ref": self.ref, "ext": self.ext}}, ensure_ascii=False)
 
     def item_type(self) -> DialogItemType:
         return DialogItemType.FILE_OUTPUT
+
+
+@dataclass(slots=True, kw_only=True)
+class LLMResponseReasoningBlock(LLMResponseBlock):
+    content: str
+
+    def content_str(self) -> str:
+        return self.content
+
+    def item_type(self) -> DialogItemType:
+        return DialogItemType.REASONING
 
 
 @dataclass(slots=True, kw_only=True)
@@ -147,7 +154,7 @@ class LLMResponseToolCallBlock(LLMResponseBlock):
     tool_args: dict[str, Any]
 
     def content_str(self) -> str:
-        return dumps({'tool_call_id': self.tool_call_id, 'tool_name': self.tool_name, 'tool_args': self.tool_args}, ensure_ascii=False)
+        return dumps({"tool_call_id": self.tool_call_id, "tool_name": self.tool_name, "tool_args": self.tool_args}, ensure_ascii=False)
 
     def item_type(self) -> DialogItemType:
         return DialogItemType.TOOL_CALL
@@ -167,9 +174,10 @@ class LLMResponse:
 
 
 class LLMAdapter(AbstractService):
-    """Abstract LLM provider. Subclasses implement ask_llm() to
-    convert a BeforeLlmCallCtx into an LLMResponse by calling
-    the actual provider API."""
+    """
+    Abstract LLM adapter.
+    Subclasses implement ask_llm() to convert a BeforeLlmCallCtx into an LLMResponse.
+    """
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
@@ -181,16 +189,22 @@ class LLMAdapter(AbstractService):
         ...
 
 
+class PythonLLMAdapterSource(PythonServiceSource):
+    def __init__(self) -> None:
+        super().__init__(base_type=LLMAdapter, marker_attribute=LLM_ADAPTER_ATTRIBUTE, id_prefix="llm_adapter")
+
+
 class LLMAdapterManager(ServiceInstanceManager):
-    """Manages LLM adapter instances using first-adapter pattern.
-    The first discovered adapter is used for all LLM calls."""
+    """
+    Manages LLM adapter instances. Adapter selection logic is todo
+    """
 
     base_type = LLMAdapter
     marker_attribute = LLM_ADAPTER_ATTRIBUTE
     id_prefix = "llm_adapter"
 
     def __init__(self, agent: Agent, **kwargs: object) -> None:
-        super().__init__(agent, **kwargs)
+        super().__init__(agent, source=PythonLLMAdapterSource(), **kwargs)
 
     @property
     def _active(self) -> LLMAdapter:
@@ -201,3 +215,53 @@ class LLMAdapterManager(ServiceInstanceManager):
 
     async def ask_llm(self, ctx: Any) -> Any:
         return await self._active.ask_llm(ctx)
+
+
+_retreiver_headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "Accept": "*/*",
+    "Accept-Language": "en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": "gzip",
+    "Connection": "keep-alive",
+}
+_retreiver = AsyncClient(headers=_retreiver_headers, follow_redirects=True, timeout=120)
+
+
+def ext_to_mime(ext: str) -> str:
+    mime_type, _ = guess_type(f"file.{ext}")
+    if not mime_type and ext == "webp":
+        return "image/webp"
+    return mime_type or "application/octet-stream"
+
+
+async def resolve_file_uri(storage: FileStorage | None, item: DialogItem) -> str:
+    if storage is None:
+        raise RuntimeError("FileStorage is required for image/file items")
+    item_map = {
+        DialogItemType.FILE_INPUT: "file",
+        DialogItemType.FILE_OUTPUT: "file",
+        DialogItemType.IMAGE_INPUT: "image",
+        DialogItemType.IMAGE_OUTPUT: "image",
+    }
+    if item.item_type not in item_map:
+        return ""
+    try:
+        data = loads(item.content).get(item_map[item.item_type], {})
+        ref = str(data.get("ref", ""))
+        ext = str(data.get("ext", "")).lstrip(".").lower()
+        if not ref:
+            return ""
+        if ref.startswith("http"):
+            try:
+                rq = await _retreiver.head(ref)
+                rq.raise_for_status()
+                return ref
+            except HTTPError:
+                return ""
+        raw_bytes = await storage.get(ref)
+        if not raw_bytes:
+            return ""
+        mime = ext_to_mime(ext) if ext else "application/octet-stream"
+        return f"data:{mime};base64,{base64.b64encode(raw_bytes).decode('utf-8')}"
+    except KeyError:
+        return ""
