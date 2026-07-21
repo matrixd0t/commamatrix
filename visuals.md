@@ -238,6 +238,7 @@ sequenceDiagram
     participant SM as AgentLifecycle
     participant TM as ToolManager
     participant HM as HookManager
+    participant IM as InstructionManager
     participant LM as LLMAdapterManager
     participant StM as StorageManager
     participant FStM as FileStorageManager
@@ -251,22 +252,22 @@ sequenceDiagram
     activate Agent
 
     alt auto_load_main (default True)
-        Agent->>Agent: add_extension("__main__")
+        Agent->>Agent: add_extensions("__main__")
     end
 
     alt no Storage in scope
-        Agent->>Agent: add_extension("commamatrix.builtin.sqlite")
+        Agent->>Agent: add_extensions("commamatrix.builtin.sqlite")
         Note over Agent: SqliteStorage becomes available
     end
 
     alt no FileStorage in scope
-        Agent->>Agent: add_extension("commamatrix.builtin.fs")
+        Agent->>Agent: add_extensions("commamatrix.builtin.fs")
         Note over Agent: SimpleFileStorage becomes available
     end
 
     Agent->>SM: set_scope(self._extension_scope)
     activate SM
-    Note over SM: propagates scope to all 7 children<br/>sets "changed" flag if changed
+    Note over SM: propagates scope to all 8 children<br/>sets "changed" flag if changed
     SM-->>Agent: done
     deactivate SM
 
@@ -288,6 +289,13 @@ sequenceDiagram
     Note over HM: PythonHookSource scans scope<br/>for @Hook → HOOK_ATTRIBUTE
     HM-->>SM: done
     deactivate HM
+
+    SM->>IM: start()
+    activate IM
+    IM->>IM: start sources, scan, rebuild
+    Note over IM: PythonInstructionSource scans scope<br/>for @instruction → INSTRUCTION_ATTRIBUTE
+    IM-->>SM: done
+    deactivate IM
 
     SM->>LM: start()
     activate LM
@@ -357,6 +365,7 @@ sequenceDiagram
     participant StM as StorageManager
     participant LM as LLMAdapterManager
     participant HM as HookManager
+    participant IM as InstructionManager
     participant TM as ToolManager
     participant Runner as AgentRunner
 
@@ -402,6 +411,11 @@ sequenceDiagram
     activate HM
     HM->>HM: invalidate sources, stop
     deactivate HM
+
+    SM->>IM: stop()
+    activate IM
+    IM->>IM: invalidate sources, stop
+    deactivate IM
 
     SM->>TM: stop()
     activate TM
@@ -474,10 +488,12 @@ flowchart TD
     O --> P{"Which subclass?"}
 
     P -->|"HookManager"| Q["group by event,<br/>sort by priority"]
+    P -->|"InstructionManager"| InsOrd["sort by priority<br/>with before/after constraints"]
     P -->|"ToolManager"| R["build _by_alias, _by_name,<br/>_by_exported_name index maps"]
     P -->|"InstanceManager"| S["no extra rebuild<br/>(reconciliation handles it)"]
 
     Q --> T
+    InsOrd --> T
     R --> T
     S --> T
 
@@ -615,6 +631,16 @@ classDiagram
     }
     Manager <|-- HookManager : extends
 
+    class InstructionManager {
+        - _ordered: list[InstructionDescriptor]
+        + collect(run) async → list[str]
+        + set_scope(scope)
+        ──────────────────────────────────
+        Inherits: mount, scan, invalidate
+        Adds: ordered instruction collection with before/after constraints
+    }
+    Manager <|-- InstructionManager : extends
+
     class InstanceManager~D,I~ {
         «Generic — I: AbstractService»
         # _instances: dict[str, I]
@@ -703,6 +729,7 @@ classDiagram
 
     AgentLifecycle o--> ToolManager : owns
     AgentLifecycle o--> HookManager : owns
+    AgentLifecycle o--> InstructionManager : owns
     AgentLifecycle o--> LLMAdapterManager : owns
     AgentLifecycle o--> StorageManager : owns
     AgentLifecycle o--> FileStorageManager : owns
@@ -731,6 +758,7 @@ classDiagram
 | `Manager[D]` | `AbstractService` | source mounting, fingerprint-based `scan()`, invalidation, `start()`→refresh (core/base/manager.py) |
 | `ToolManager` | `Manager` | name-resolution index maps, `call()` / `resolve()` / `schemas()` |
 | `HookManager` | `Manager` | event-grouped handler map, priority-ordered `fire()` |
+| `InstructionManager` | `Manager` | ordered instruction collection, `collect()` → system prompt fragments |
 | `InstanceManager[D,I]` | `Manager` | instance create/start/stop/reconcile lifecycle + refresh |
 | `ServiceInstanceManager` | `InstanceManager` | *Binds D=ServiceDescriptor I=AbstractService*; integrates with `ServiceInstanceRegistry` |
 | `ActiveServiceInstanceManager` | `ServiceInstanceManager` | active-instance selection (`_select_active()`) by config or first-available |
@@ -765,12 +793,6 @@ classDiagram
     }
     Source <|-- ToolSource : extends (binds D=ToolDescriptor)
 
-    class HookSource {
-        «components/hook.py»
-        + invoke(descriptor, ctx) async → object (abstract)
-    }
-    Source <|-- HookSource : extends (binds D=HookDescriptor)
-
     class PythonSource~D~ {
         «core/base/source.py»
         - _scope: list[str]
@@ -794,6 +816,13 @@ classDiagram
         Scopes: modules with @Hook → HOOK_ATTRIBUTE
     }
     PythonSource <|-- PythonHookSource : D=HookDescriptor
+
+    class PythonInstructionSource {
+        «components/instruction.py»
+        ──────────────────────────────────
+        Scopes: modules with @instruction → INSTRUCTION_ATTRIBUTE
+    }
+    PythonSource <|-- PythonInstructionSource : D=InstructionDescriptor
 
     class PythonConnectorSource {
         «components/connector.py»
@@ -840,6 +869,16 @@ classDiagram
     }
     Descriptor <|-- HookDescriptor
 
+    class InstructionDescriptor {
+        «components/instruction.py»
+        + name: str
+        + module: str
+        + priority: int
+        + before: tuple[str, ...]
+        + after: tuple[str, ...]
+    }
+    Descriptor <|-- InstructionDescriptor
+
     class ServiceDescriptor {
         «core/base/service.py»
         + service_cls: type[AbstractService]
@@ -859,6 +898,7 @@ classDiagram
 ```
 PythonToolSource      (components/tool.py)      ──scan()──▶ ToolDescriptor       ──▶ ToolManager indexes
 PythonHookSource      (components/hook.py)      ──scan()──▶ HookDescriptor       ──▶ HookManager groups by event
+PythonInstructionSource (components/instruction.py) ──scan()──▶ InstructionDescriptor ──▶ InstructionManager ordered list
 PythonConnectorSource (components/connector.py)  ──scan()──▶ ConnectorDescriptor  ──▶ ConnectorManager creates instances
 PythonServiceSource   (core/base/source.py)     ──scan()──▶ ServiceDescriptor    ──▶ ServiceInstanceManager / StorageManager / FileStorageManager / LLMAdapterManager
 ```
@@ -868,6 +908,7 @@ Each source is mounted into an `Manager` subclass. The manager calls `source.sca
 ```
 ToolManager  ──mount(PythonToolSource)──▶ PythonToolSource (components/tool.py) ──scan()──▶ [ToolDescriptor, ...]
 HookManager  ──mount(PythonHookSource)──▶ PythonHookSource (components/hook.py) ──scan()──▶ [HookDescriptor, ...]
+InstructionManager ──mount(PythonInstructionSource)──▶ PythonInstructionSource (components/instruction.py) ──scan()──▶ [InstructionDescriptor, ...]
 ```
 
 Each `Source` tracks its own `available` flag. When a source is invalidated (e.g. module removed from scope), its descriptors are removed from the manager, triggering index rebuild and `on_change` notification.

@@ -84,15 +84,7 @@ class InstructionDescriptor(Descriptor):
         }
 
 
-class InstructionSource(Source[InstructionDescriptor]):
-    """Source ABC for instruction invocation."""
-
-    @abstractmethod
-    async def invoke(self, descriptor: InstructionDescriptor, ctx: InstructionCtx) -> str | None:
-        raise NotImplementedError
-
-
-class PythonInstructionSource(PythonSource[InstructionDescriptor], InstructionSource):
+class PythonInstructionSource(PythonSource[InstructionDescriptor]):
     """Scopes to modules with @instruction-decorated functions."""
 
     def __init__(self) -> None:
@@ -167,8 +159,41 @@ class InstructionManager(Manager[InstructionDescriptor]):
 
 
 instruction = Instruction()
-"""
-Default and only instance of instruction decorator factory
+"""Decorator for registering instruction functions that generate system prompt fragments.
+
+The decorated function must accept a single ``InstructionCtx`` argument and return
+``str | None``.  Return a string to include it in the system prompt, ``None`` to skip.
+
+The function may be sync or async.
+
+Signature::
+
+    def my_instruction(ctx: InstructionCtx) -> str | None: ...
+
+Args for the decorator (all optional):
+    priority: int = 0           — higher runs first
+    before: ConstraintRef       — must execute before the named instruction
+    after: ConstraintRef        — must execute after the named instruction
+
+Examples::
+
+    @instruction
+    def current_date(ctx: InstructionCtx) -> str:
+        return f"Today: {datetime.now():%Y-%m-%d}"
+
+    @instruction(priority=10)
+    def system_info(ctx: InstructionCtx) -> str:
+        return "You are a helpful assistant."
+
+    @instruction(before="system_info")
+    def user_tz(ctx: InstructionCtx) -> str | None:
+        tz = ctx.run.state.get("timezone")
+        return f"User timezone: {tz}" if tz else None
+
+    @instruction(after=current_date)
+    async def dynamic_rules(ctx: InstructionCtx) -> str:
+        rules = await fetch_rules(ctx.run.user)
+        return "\\n".join(rules)
 """
 
 

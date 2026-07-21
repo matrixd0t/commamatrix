@@ -42,3 +42,8 @@ class ApiCodec(ABC):
     @abstractmethod
     def parse_response(self, body: dict[str, Any]) -> LLMResponse:
         ...
+
+    @staticmethod
+    @abstractmethod
+    def serialize_tools(ctx: BeforeLlmCallCtx) -> list[dict[str, Any]]:
+        ...

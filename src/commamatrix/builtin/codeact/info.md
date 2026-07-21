@@ -3,7 +3,7 @@
 ## Architecture
 
 ```
-┌──────────────────────────────────┐       loopback TCP/NDJSON     ┌───────────────────────┐
+┌──────────────────────────────────┐       loopback TCP/NDJSON      ┌───────────────────────┐
 │  Parent Process (Agent)          │    ─────── JSON/NDJSON ────→   │  Child Process        │
 │                                  │                                │  (Python worker)      │
 │  SubprocessBackend               │    ←────────────────────────   │                       │

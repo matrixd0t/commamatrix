@@ -48,7 +48,7 @@ class Storage(AbstractService):
 class PythonStorageSource(PythonServiceSource):
     """Storage-specific source with per-module tracking for extension
     management. Extends PythonServiceSource with module-level
-    descriptor indexing used by add_extension / remove_extension."""
+    descriptor indexing used by add_extensions / remove_extensions."""
 
     def __init__(self) -> None:
         super().__init__(base_type=Storage, marker_attribute=STORAGE_ATTRIBUTE, id_prefix="storage")

@@ -87,11 +87,10 @@ class LLMHTTPAdapter(LLMAdapter):
                 pass
         return self._detect_protocol(self._resolve_model(ctx))
 
-    @staticmethod
-    def _detect_protocol(model_name: str) -> ApiProtocol:
-        if model_name.startswith("claude-"):
+    def _detect_protocol(self, model_name: str) -> ApiProtocol:
+        if 'claude' in model_name:
             return ApiProtocol.ANTHROPIC_MESSAGES
-        return ApiProtocol.CHAT_COMPLETIONS
+        return ApiProtocol(self.config.get(api_protocol))
 
     def _build_headers(self, protocol: ApiProtocol) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}

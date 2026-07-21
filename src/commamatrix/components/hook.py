@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import inspect
 import weakref
-from abc import abstractmethod
 from dataclasses import dataclass, field
 from enum import StrEnum
 from uuid import uuid4
@@ -13,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 from collections.abc import Awaitable, Callable
 
 from ..core.classes.descriptor import Descriptor
-from ..core.classes.source import Source, PythonSource
+from ..core.classes.source import PythonSource
 from ..core.classes.manager import Manager
 from ..core.classes.ordering import normalize_constraint_refs, ConstraintRef
 
@@ -214,16 +213,7 @@ class HookDescriptor(Descriptor):
         }
 
 
-class HookSource(Source[HookDescriptor]):
-    """Source ABC for hook invocation. Each source owns the handler
-    callables it discovered and must implement invoke()."""
-
-    @abstractmethod
-    async def invoke(self, descriptor: HookDescriptor, ctx: object) -> object:
-        raise NotImplementedError
-
-
-class PythonHookSource(PythonSource[HookDescriptor], HookSource):
+class PythonHookSource(PythonSource[HookDescriptor]):
     """Scopes to modules with @Hook-decorated functions. Maintains an
     internal handler map for direct invocation by descriptor ID."""
 
@@ -300,12 +290,151 @@ class HookManager(Manager[HookDescriptor]):
 
 
 on_agent_start = Hook[OnAgentStartCtx](HookEventType.ON_AGENT_START, OnAgentStartCtx)
+"""Fired once when the agent starts (after lifecycle init).
+
+The decorated function must accept ``OnAgentStartCtx`` and return ``None``.
+
+Example::
+
+    @on_agent_start
+    async def log_start(ctx: OnAgentStartCtx) -> None:
+        print(f"Agent {ctx.agent} started")
+"""
+
 on_parsed = Hook[OnParsedCtx](HookEventType.ON_PARSED, OnParsedCtx)
+"""Fired after a connector parses an incoming event.
+
+The decorated function must accept ``OnParsedCtx`` and return ``None``.
+
+Example::
+
+    @on_parsed(priority=5)
+    async def log_message(ctx: OnParsedCtx) -> None:
+        for item in ctx.dialog_items:
+            print(f"[{item.origin}] {item.content}")
+"""
+
 before_run = Hook[BeforeRunCtx](HookEventType.BEFORE_RUN, BeforeRunCtx)
+"""Fired before a run starts. Set ``ctx.abort = True`` to cancel the run.
+
+The decorated function must accept ``BeforeRunCtx`` and return ``None``.
+
+Example::
+
+    @before_run
+    async def check_rate_limit(ctx: BeforeRunCtx) -> None:
+        if await is_rate_limited(ctx.run.user):
+            ctx.abort = True
+
+    @before_run(after=check_rate_limit)
+    async def log_run(ctx: BeforeRunCtx) -> None:
+        logger.info("Run %s started for %s", ctx.run.run_id, ctx.run.user)
+"""
+
 before_llm_call = Hook[BeforeLlmCallCtx](HookEventType.BEFORE_LLM_CALL, BeforeLlmCallCtx)
+"""Fired before the LLM is called.  Mutate ``ctx.dialog``, ``ctx.model``,
+``ctx.api_base``, ``ctx.tools``, or ``ctx.llm_call_params`` to influence the call.
+
+The decorated function must accept ``BeforeLlmCallCtx`` and return ``None``.
+
+Example::
+
+    @before_llm_call
+    async def override_model(ctx: BeforeLlmCallCtx) -> None:
+        if ctx.run.state.get("use_fast_model"):
+            ctx.model = "gpt-4o-mini"
+
+    @before_llm_call(after=override_model)
+    async def add_model_specific_instructions(ctx: BeforeLlmCallCtx) -> None:
+        ...
+"""
+
 after_llm_call = Hook[AfterLlmCallCtx](HookEventType.AFTER_LLM_CALL, AfterLlmCallCtx)
+"""Fired after the LLM responds.  Inspect or mutate ``ctx.response``.
+
+The decorated function must accept ``AfterLlmCallCtx`` and return ``None``.
+
+Signature::
+
+    def my_hook(ctx: AfterLlmCallCtx) -> None: ...
+
+Example::
+
+    @after_llm_call
+    async def log_tokens(ctx: AfterLlmCallCtx) -> None:
+        usage = ctx.response.usage
+        if usage:
+            print(f"Tokens: {usage.input_tokens} in / {usage.output_tokens} out")
+"""
+
 before_tool_call = Hook[BeforeToolCallCtx](HookEventType.BEFORE_TOOL_CALL, BeforeToolCallCtx)
+"""Fired before a tool is invoked.  Set ``ctx.abort_tool_call = True`` to skip
+the call; mutate ``ctx.tool_call`` to change arguments.
+
+The decorated function must accept ``BeforeToolCallCtx`` and return ``None``.
+
+Example::
+
+    @before_tool_call
+    async def guard_dangerous_tools(ctx: BeforeToolCallCtx) -> None:
+        if ctx.tool_call.tool_name == "run_sql" and "DROP" in str(ctx.tool_call.tool_args):
+            ctx.abort_tool_call = True
+            ctx.abort_reason = "DROP statements are not allowed"
+"""
+
 after_tool_call = Hook[AfterToolCallCtx](HookEventType.AFTER_TOOL_CALL, AfterToolCallCtx)
+"""Fired after a tool returns its result.  Mutate ``ctx.result`` to alter
+what the LLM sees.
+
+The decorated function must accept ``AfterToolCallCtx`` and return ``None``.
+
+Example::
+
+    @after_tool_call
+    async def truncate_long_results(ctx: AfterToolCallCtx) -> None:
+        if len(ctx.result.content) > 10_000:
+            ctx.result.content = ctx.result.content[:10_000] + "\\n... (truncated)"
+"""
+
 before_send = Hook[BeforeSendCtx](HookEventType.BEFORE_SEND, BeforeSendCtx)
+"""Fired before a dialog item is sent to the connector and persisted.
+
+The decorated function must accept ``BeforeSendCtx`` and return ``None``.
+
+Example::
+
+    @before_send
+    async def censor_output(ctx: BeforeSendCtx) -> None:
+        ctx.dialog_item.content = ctx.dialog_item.content.replace("SECRET", "***")
+"""
+
 on_error = Hook[OnErrorCtx](HookEventType.ON_ERROR, OnErrorCtx)
+"""Fired when an exception occurs during a run.  Set ``ctx.suppress = True``
+to prevent the error from being re-raised.
+
+The decorated function must accept ``OnErrorCtx`` and return ``None``.
+
+Example::
+
+    @on_error
+    async def log_error(ctx: OnErrorCtx) -> None:
+        logger.exception("Run %s failed: %s", ctx.run.run_id, ctx.error)
+
+    @on_error(after=log_error)
+    async def suppress_timeout(ctx: OnErrorCtx) -> None:
+        if isinstance(ctx.error, TimeoutError):
+            ctx.suppress = True
+"""
+
 after_run = Hook[AfterRunCtx](HookEventType.AFTER_RUN, AfterRunCtx)
+"""Fired after a run completes (success or failure).  ``ctx.error`` is
+``None`` on success, the exception on failure.
+
+The decorated function must accept ``AfterRunCtx`` and return ``None``.
+
+Example::
+
+    @after_run
+    async def cleanup(ctx: AfterRunCtx) -> None:
+        ctx.run.state.clear()
+"""

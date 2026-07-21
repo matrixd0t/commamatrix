@@ -24,6 +24,11 @@ class ChatCompletionsCodec(ApiCodec):
     endpoint = "/chat/completions"
 
     @staticmethod
+    def serialize_tools(ctx: BeforeLlmCallCtx) -> list[dict[str, Any]]:
+        tm = ctx.run.agent.tool_manager
+        return [{"type": "function", "function": {**t.schema, "name": tm.public_name(t)}} for t in ctx.tools]
+
+    @staticmethod
     def _llm_meta(item: Any) -> dict[str, Any]:
         meta = item.meta.get("llm", {})
         return meta if isinstance(meta, dict) else {}
@@ -48,24 +53,11 @@ class ChatCompletionsCodec(ApiCodec):
 
     @classmethod
     def _response_wire(cls, source_item: Any) -> dict[str, Any] | None:
-        response = cls._llm_meta(source_item).get("response", {})
-        if not isinstance(response, dict):
-            return None
-        response_llm = response.get("llm", {})
-        if not isinstance(response_llm, dict):
-            return None
-        wire = response_llm.get("wire", {})
+        wire = cls._llm_meta(source_item).get("response_wire", {})
         if not isinstance(wire, dict):
             return None
         value = wire.get("value")
         return value if isinstance(value, dict) else None
-
-    def serialize_tools(self, ctx: BeforeLlmCallCtx) -> list[dict[str, Any]]:
-        tm = ctx.run.agent.tool_manager
-        return [
-            {"type": "function", "function": {**t.schema, "name": tm.public_name(t)}}
-            for t in ctx.tools
-        ]
 
     async def build_request(self, *, model: str, ctx: BeforeLlmCallCtx) -> dict[str, Any]:
         messages: list[dict[str, Any]] = []

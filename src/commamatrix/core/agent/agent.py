@@ -4,7 +4,7 @@
 Agent creates all native managers, wires them into AgentLifecycle for
 lifecycle management, and provides the public API: start(), stop(),
 handle(raw), and run(). Extensions are activated per-agent via
-add_extension() — no global auto-discovery.
+add_extensions() — no global auto-discovery.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import types
 from dotenv import load_dotenv
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Callable
 
 from ...components.config import Config, ConfigField
 from ...components.dialog import DialogItem, DialogItemType, DialogRole
@@ -106,38 +106,104 @@ class Agent:
         self.manager = AgentLifecycle(children=children, registry=self.services)
 
     @staticmethod
-    def _resolve_module_name(module_or_name: str | types.ModuleType) -> str:
-        """Normalize extension specifier to a module name string."""
+    def _resolve_module_name(module_or_name: str | types.ModuleType) -> str | None:
+        """Normalize extension specifier to a module name string, or None if invalid."""
         if isinstance(module_or_name, str):
             return module_or_name
         if isinstance(module_or_name, types.ModuleType):
             return module_or_name.__name__
-        raise TypeError(f"Expected str or module, got {type(module_or_name).__name__}")
+        return None
 
-    def add_extension(self, module_or_name: str | types.ModuleType) -> None:
-        """Import a module and register it with all its submodules in this agent's scope."""
-        module_name = self._resolve_module_name(module_or_name)
+    async def _apply_extensions(
+        self,
+        *module_or_name: str | types.ModuleType,
+        handler: Callable[[str], bool],
+    ) -> list[str]:
+        """Iterate entries, resolve names, skip invalid, call *handler* per valid name.
+
+        *handler* receives a resolved module name and returns ``True`` if the
+        operation succeeded.  After all entries are processed the scope is
+        propagated and managers are refreshed when the agent is started and
+        at least one entry was handled.
+        """
+        handled: list[str] = []
+        for entry in module_or_name:
+            module_name = self._resolve_module_name(entry)
+            if module_name is None:
+                continue
+            try:
+                if handler(module_name):
+                    handled.append(module_name)
+            except Exception:
+                continue
+        if handled and self._started:
+            self.manager.set_scope(self._extension_scope)
+            await self.manager.refresh()
+        return handled
+
+    def _do_add(self, module_name: str) -> bool:
         if module_name not in self._extension_scope:
             self._extension_scope.append(module_name)
         if module_name not in sys.modules:
             importlib.import_module(module_name)
-
         prefix = module_name + "."
         for name in sorted(sys.modules):
             if name.startswith(prefix) and name not in self._extension_scope:
                 self._extension_scope.append(name)
+        return True
 
-    async def remove_extension(self, module_or_name: str | types.ModuleType) -> None:
-        """Remove a module and its submodules from this agent's scope and deactivate."""
-        module_name = self._resolve_module_name(module_or_name)
+    def _do_remove(self, module_name: str) -> bool:
         prefix = module_name + "."
+        before = len(self._extension_scope)
         self._extension_scope = [
             m for m in self._extension_scope
             if m != module_name and not m.startswith(prefix)
         ]
-        if self._started:
-            self.manager.set_scope(self._extension_scope)
-            await self.manager.refresh()
+        return len(self._extension_scope) < before
+
+    def _do_reload(self, module_name: str) -> bool:
+        prefix = module_name + "."
+        submodules = [n for n in self._extension_scope if n == module_name or n.startswith(prefix)]
+        for name in submodules:
+            sys.modules.pop(name, None)
+        importlib.import_module(module_name)
+        new_prefix_modules = [
+            n for n in sorted(sys.modules)
+            if n.startswith(prefix) and n not in self._extension_scope
+        ]
+        alive = {module_name, *new_prefix_modules}
+        self._extension_scope = [
+            n for n in self._extension_scope
+            if n != module_name and not n.startswith(prefix)
+        ]
+        for name in sorted(alive):
+            if name not in self._extension_scope:
+                self._extension_scope.append(name)
+        return True
+
+    async def add_extensions(self, *module_or_name: str | types.ModuleType) -> list[str]:
+        """Import modules and register them with submodules in this agent's scope.
+
+        Returns names that were successfully imported. Invalid specifiers are silently skipped.
+        """
+        return await self._apply_extensions(*module_or_name, handler=self._do_add)
+
+    async def remove_extensions(self, *module_or_name: str | types.ModuleType) -> list[str]:
+        """Remove modules and their submodules from scope and deactivate.
+
+        Returns names that were successfully removed. Invalid specifiers are silently skipped.
+        """
+        return await self._apply_extensions(*module_or_name, handler=self._do_remove)
+
+    async def reload_extensions(self, *module_or_name: str | types.ModuleType) -> list[str]:
+        """Reload modules from disk and refresh all managers.
+
+        Purges each module and its submodules from sys.modules, re-imports them,
+        updates the extension scope, and triggers a full manager refresh so descriptors pick up the new code.
+
+        Returns names that were successfully reloaded. Invalid specifiers are silently skipped.
+        """
+        return await self._apply_extensions(*module_or_name, handler=self._do_reload)
 
     async def refresh_extensions(self) -> None:
         """Propagate scope and refresh all services."""
@@ -238,12 +304,12 @@ class Agent:
             if not self._started:
                 prefix = _framework_prefix()
                 if self._auto_load_main:
-                    self.add_extension("__main__")
-                self.add_extension(prefix + '.components.instruction')
+                    await self.add_extensions("__main__")
+                await self.add_extensions(prefix + '.components.instruction')
                 if not self._scope_has_attribute(STORAGE_ATTRIBUTE):
-                    self.add_extension(prefix + '.builtin.sqlite')
+                    await self.add_extensions(prefix + '.builtin.sqlite')
                 if not self._scope_has_attribute(FILE_STORAGE_ATTRIBUTE):
-                    self.add_extension(prefix + '.builtin.fs')
+                    await self.add_extensions(prefix + '.builtin.fs')
                 self.manager.set_scope(self._extension_scope)
                 await self.manager.start()
                 await self.hook_manager.fire(
@@ -318,12 +384,11 @@ class Agent:
             )
             if response.meta:
                 item_llm_meta = dialog_item.meta.setdefault("llm", {})
-                item_llm_meta["response"] = response.meta
-                response_llm_meta = response.meta.get("llm")
-                if isinstance(response_llm_meta, dict):
-                    for key in ("provider", "protocol", "response_id", "turn_id"):
-                        if key in response_llm_meta:
-                            item_llm_meta[key] = response_llm_meta[key]
+                response_llm = response.meta.get("llm")
+                if isinstance(response_llm, dict):
+                    response_wire = response_llm.get("wire")
+                    if isinstance(response_wire, dict):
+                        item_llm_meta["response_wire"] = response_wire
 
             last_item_id = await self._send_and_store_item(run, dialog_item, last_item_id)
             if isinstance(block, LLMResponseToolCallBlock):

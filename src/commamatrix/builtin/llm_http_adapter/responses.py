@@ -37,18 +37,6 @@ class ResponsesCodec(ApiCodec):
     def _tool_result_content(content: Any) -> str:
         return content if isinstance(content, str) else dumps(content, ensure_ascii=False)
 
-    def serialize_tools(self, ctx: BeforeLlmCallCtx) -> list[dict[str, Any]]:
-        tm = ctx.run.agent.tool_manager
-        return [
-            {
-                "type": "function",
-                "name": tm.public_name(t),
-                "description": t.schema.get("description", ""),
-                "parameters": t.schema["parameters"],
-            }
-            for t in ctx.tools
-        ]
-
     async def build_request(self, *, model: str, ctx: BeforeLlmCallCtx) -> dict[str, Any]:
         input_items: list[dict[str, Any]] = []
 
@@ -130,6 +118,13 @@ class ResponsesCodec(ApiCodec):
                     for part in summary
                     if isinstance(part, dict) and part.get("type") == "summary_text"
                 )
+                if not summary_text:
+                    content_parts = output_item.get("content", ())
+                    summary_text = "\n".join(
+                        part.get("text", "")
+                        for part in content_parts
+                        if isinstance(part, dict) and part.get("type") == "reasoning_text"
+                    )
                 response.content.append(
                     LLMResponseReasoningBlock(
                         content=summary_text,
@@ -163,7 +158,8 @@ class ResponsesCodec(ApiCodec):
                 )
 
         status = body.get("status")
-        if status == "incomplete" or body.get("incomplete_details", {}).get("reason") == "max_output_tokens":
+        idetails = body.get("incomplete_details", {})
+        if status == "incomplete" or idetails and idetails.get("reason") == "max_output_tokens":
             response.stop_reason = StopReason.LENGTH
         elif any(isinstance(block, LLMResponseToolCallBlock) for block in response.content):
             response.stop_reason = StopReason.TOOL_USE
@@ -179,3 +175,8 @@ class ResponsesCodec(ApiCodec):
                 reasoning_tokens=usage.get("output_tokens_details", {}).get("reasoning_tokens", 0),
             )
         return response
+
+    @staticmethod
+    def serialize_tools(ctx: BeforeLlmCallCtx) -> list[dict[str, Any]]:
+        tm = ctx.run.agent.tool_manager
+        return [{"type": "function", **t.schema, "name": tm.public_name(t)} for t in ctx.tools]

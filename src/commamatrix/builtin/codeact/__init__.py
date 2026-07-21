@@ -3,7 +3,7 @@
 """CodeAct plugin — optional-by-import Python execution with virtual tool modules.
 
 Importing this package makes CodeAct available as a Service.
-The ``CodeActService`` is discovered automatically and managed by the agent's service lifecycle when added via ``agent.add_extension``.
+The ``CodeActService`` is discovered automatically and managed by the agent's service lifecycle when added via ``agent.add_extensions``.
 """
 
 from __future__ import annotations

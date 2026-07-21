@@ -30,3 +30,6 @@ asyncio_mode = "strict"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/commamatrix"]
+
+[tool.hatch.build]
+include = ["src/commamatrix/**/*.py", "src/commamatrix/**/*.md"]

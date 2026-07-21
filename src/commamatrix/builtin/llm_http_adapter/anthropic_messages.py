@@ -23,6 +23,15 @@ class AnthropicMessagesCodec(ApiCodec):
     endpoint = "/v1/messages"
 
     @staticmethod
+    def serialize_tools(ctx: BeforeLlmCallCtx) -> list[dict[str, Any]]:
+        tm = ctx.run.agent.tool_manager
+        return [{
+            "name": tm.public_name(t),
+            "description": t.schema.get("description", ""),
+            "input_schema": t.schema.get("parameters", {}),
+        } for t in ctx.tools]
+
+    @staticmethod
     def _wire_value(item: Any) -> dict[str, Any] | None:
         llm_meta = item.meta.get("llm", {})
         if not isinstance(llm_meta, dict):
@@ -47,17 +56,6 @@ class AnthropicMessagesCodec(ApiCodec):
             existing.extend(content)
         else:
             existing.append({"type": "text", "text": content})
-
-    def serialize_tools(self, ctx: BeforeLlmCallCtx) -> list[dict[str, Any]]:
-        tm = ctx.run.agent.tool_manager
-        return [
-            {
-                "name": tm.public_name(tool),
-                "description": tool.doc,
-                "input_schema": tool.schema,
-            }
-            for tool in ctx.tools
-        ]
 
     async def build_request(self, *, model: str, ctx: BeforeLlmCallCtx) -> dict[str, Any]:
         messages: list[dict[str, Any]] = []
