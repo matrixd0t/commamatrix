@@ -22,7 +22,7 @@ class AgentRunner:
             sort_keys=True, separators=(',', ':'),
         )
 
-    async def submit(self, key: str, coro) -> None:
+    async def submit(self, key: str, coro) -> asyncio.Task:
         old_task = self._tasks.pop(key, None)
         new_task = asyncio.create_task(coro)
         self._tasks[key] = new_task
@@ -37,6 +37,8 @@ class AgentRunner:
                 await old_task
             except (asyncio.CancelledError, Exception):
                 pass
+
+        return new_task
 
     async def stop(self) -> None:
         tasks = list(self._tasks.values())

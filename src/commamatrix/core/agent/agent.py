@@ -47,13 +47,24 @@ from ...components.llm_adapter import (
 from ...components.tool import ToolManager
 from ...components.hook import HookManager
 from ...components.instruction import InstructionManager
-from ...components.connector import ConnectorManager
+from ...components.connector import ConnectorManager, CONNECTOR_ATTRIBUTE as CONNECTOR_ATTR
 from ...components.llm_adapter import LLMAdapterManager
 from ...components.storage import StorageManager, STORAGE_ATTRIBUTE
 from ...components.file_storage import FileStorageManager, FILE_STORAGE_ATTRIBUTE
 from ..classes.manager import ServiceInstanceManager, ServiceInstanceRegistry
+from ..classes.service import AbstractService
 from .runner import AgentRunner
 from .lifecycle import AgentLifecycle
+
+
+def _http_deps_available() -> bool:
+    """Check if starlette and uvicorn are installed."""
+    try:
+        import starlette  # noqa: F401
+        import uvicorn  # noqa: F401
+        return True
+    except ImportError:
+        return False
 
 
 def _framework_prefix() -> str:
@@ -71,12 +82,16 @@ class Agent:
     AgentLifecycle, and exposes convenience properties for direct access.
     """
 
-    def __init__(self, *, config: dict[ConfigField, Any] | Config = {}, auto_load_main: bool = True):
+    def __init__(self, *, config: dict[ConfigField, Any] | Config = {}, auto_load_main: bool = True, auto_load_http: bool = True):
         load_dotenv()
         if isinstance(config, dict):
             config = Config(overrides=config)
         self.config: Config = config
         self._auto_load_main = auto_load_main
+        if auto_load_http and not _http_deps_available():
+            print("Warning: starlette and/or uvicorn not installed. HTTP server disabled. Install with: pip install commamatrix[http]")
+            auto_load_http = False
+        self._auto_load_http = auto_load_http
 
         self.services = ServiceInstanceRegistry()
         self.runner = AgentRunner()
@@ -90,7 +105,7 @@ class Agent:
         self.llm_adapter = LLMAdapterManager(agent=self)
         self.storage = StorageManager(agent=self)
         self.file_storage = FileStorageManager(agent=self)
-        self.service_manager = ServiceInstanceManager(agent=self)
+        self.service_manager: ServiceInstanceManager[AbstractService] = ServiceInstanceManager(agent=self)
         self.connector_manager = ConnectorManager(agent=self)
 
         children = [
@@ -227,8 +242,12 @@ class Agent:
     async def __aexit__(self, exc_type, exc, traceback) -> None:
         await self.stop()
 
-    async def handle(self, raw: dict) -> None:
-        """Parse an incoming event, and spawn runs per origin."""
+    async def handle(self, raw: dict) -> list[asyncio.Task]:
+        """Parse an incoming event, and spawn runs per origin.
+
+        Returns the list of created run tasks so that transports that
+        need synchronous completion (e.g. HTTP) can await them.
+        """
         await self._ensure_started()
         parsed: OnParsedCtx | None = None
         connectors = self.connector_manager.resolve()
@@ -237,16 +256,19 @@ class Agent:
             if parsed is not None:
                 break
         if parsed is None:
-            return
+            return []
 
         await self._resolve_previous_item(parsed)
         await self.hook_manager.fire(HookEventType.ON_PARSED, parsed)
 
+        tasks: list[asyncio.Task] = []
         for run, history in self._split_runs(parsed):
-            await self.runner.submit(
+            task = await self.runner.submit(
                 self.runner.make_key(run.origin, run.user),
                 self.run(run, history=history),
             )
+            tasks.append(task)
+        return tasks
 
     @asynccontextmanager
     async def _typing(self, run: RunCtx):
@@ -310,6 +332,8 @@ class Agent:
                     await self.add_extensions(prefix + '.builtin.sqlite')
                 if not self._scope_has_attribute(FILE_STORAGE_ATTRIBUTE):
                     await self.add_extensions(prefix + '.builtin.fs')
+                if self._auto_load_http:
+                    await self.add_extensions(prefix + '.builtin.http_connector')
                 self.manager.set_scope(self._extension_scope)
                 await self.manager.start()
                 await self.hook_manager.fire(

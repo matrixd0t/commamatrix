@@ -308,7 +308,10 @@ class InstanceManager(Manager[D], Generic[D, S]):
         pass
 
 
-class ServiceInstanceManager(InstanceManager[ServiceDescriptor, AbstractService]):
+SvcT = TypeVar("SvcT", bound=AbstractService)
+
+
+class ServiceInstanceManager(InstanceManager[ServiceDescriptor, SvcT], Generic[SvcT]):
     """Manages AbstractService instances discovered by PythonServiceSource.
 
     Instances are registered in ServiceInstanceRegistry on creation and deregistered on removal.
@@ -323,27 +326,27 @@ class ServiceInstanceManager(InstanceManager[ServiceDescriptor, AbstractService]
         source = source or PythonServiceSource(self.base_type, self.marker_attribute, self.id_prefix)
         super().__init__(agent, python_source=source, **kwargs)
 
-    def _create_instance(self, descriptor: ServiceDescriptor) -> AbstractService:
+    def _create_instance(self, descriptor: ServiceDescriptor) -> SvcT:
         return descriptor.service_cls(agent=self.agent)
 
-    async def _start_instance(self, instance: AbstractService) -> None:
+    async def _start_instance(self, instance: SvcT) -> None:
         await await_if_needed(instance.start())
 
-    async def _stop_instance(self, instance: AbstractService) -> None:
+    async def _stop_instance(self, instance: SvcT) -> None:
         await await_if_needed(instance.stop())
 
-    async def _refresh_instance(self, instance: AbstractService) -> None:
+    async def _refresh_instance(self, instance: SvcT) -> None:
         await await_if_needed(instance.refresh())
 
-    def _on_instance_added(self, instance: AbstractService, sid: str, descriptor: ServiceDescriptor) -> None:
+    def _on_instance_added(self, instance: SvcT, sid: str, descriptor: ServiceDescriptor) -> None:
         self._registry[sid] = instance
         self._registry[descriptor.service_cls] = instance
 
-    def _on_instance_removed(self, instance: AbstractService) -> None:
+    def _on_instance_removed(self, instance: SvcT) -> None:
         self._registry.remove_by_instance(instance)
 
 
-class ActiveServiceInstanceManager(ServiceInstanceManager):
+class ActiveServiceInstanceManager(ServiceInstanceManager[SvcT]):
     """Extends ServiceInstanceManager with active-instance selection.
 
     When multiple instances are available, the one configured via active_field is used; falls back to the first available.
@@ -373,10 +376,10 @@ class ActiveServiceInstanceManager(ServiceInstanceManager):
             self._active_id = next(iter(self._instances))
 
     @property
-    def _active(self) -> Any | None:
+    def _active(self) -> SvcT:
         if self._active_id is None:
             raise RuntimeError(f"No active {self.id_prefix}")
-        return self._instances.get(self._active_id)
+        return self._instances[self._active_id]
 
 
 class ServiceInstanceRegistry:

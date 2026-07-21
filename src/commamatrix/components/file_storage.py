@@ -43,7 +43,7 @@ class PythonFileStorageSource(PythonServiceSource):
         super().__init__(base_type=FileStorage, marker_attribute=FILE_STORAGE_ATTRIBUTE, id_prefix="file_storage")
 
 
-class FileStorageManager(ActiveServiceInstanceManager):
+class FileStorageManager(ActiveServiceInstanceManager[FileStorage]):
     base_type = FileStorage
     marker_attribute = FILE_STORAGE_ATTRIBUTE
     id_prefix = "file_storage"

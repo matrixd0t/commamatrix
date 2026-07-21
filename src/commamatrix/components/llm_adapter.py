@@ -194,7 +194,7 @@ class PythonLLMAdapterSource(PythonServiceSource):
         super().__init__(base_type=LLMAdapter, marker_attribute=LLM_ADAPTER_ATTRIBUTE, id_prefix="llm_adapter")
 
 
-class LLMAdapterManager(ServiceInstanceManager):
+class LLMAdapterManager(ServiceInstanceManager[LLMAdapter]):
     """
     Manages LLM adapter instances. Adapter selection logic is todo
     """

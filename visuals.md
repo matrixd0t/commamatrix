@@ -668,7 +668,7 @@ classDiagram
         Inherits: instance lifecycle
         Adds: creates via service_cls(agent), registry hooks, class-var source defaults
     }
-    InstanceManager <|-- ServiceInstanceManager : D=ServiceDescriptor, I=AbstractService
+    InstanceManager <|-- ServiceInstanceManager : D=ServiceDescriptor, I=SvcT
 
     class ActiveServiceInstanceManager {
         «abstract — subclass must set base_type, marker_attribute, active_field»
@@ -690,21 +690,21 @@ classDiagram
         Inherits: active selection
         Adds: delegates save_event/get_branch/find → active Storage
     }
-    ActiveServiceInstanceManager <|-- StorageManager : base_type=Storage, marker_attribute=STORAGE_ATTRIBUTE
+    ActiveServiceInstanceManager <|-- StorageManager : SvcT=Storage
 
     class FileStorageManager {
         ──────────────────────────────────
         Inherits: active selection
         Adds: delegates save/get/delete → active FileStorage
     }
-    ActiveServiceInstanceManager <|-- FileStorageManager : base_type=FileStorage, marker_attribute=FILE_STORAGE_ATTRIBUTE
+    ActiveServiceInstanceManager <|-- FileStorageManager : SvcT=FileStorage
 
     class LLMAdapterManager {
         ──────────────────────────────────
         Inherits: instance lifecycle (NOT active selection)
         Adds: first-adapter pattern — forwards ask_llm → first instance
     }
-    ServiceInstanceManager <|-- LLMAdapterManager : extends (skips active selection)
+    ServiceInstanceManager <|-- LLMAdapterManager : SvcT=LLMAdapter
 
     class ConnectorManager {
         + resolve() → list[Connector]
@@ -712,7 +712,7 @@ classDiagram
         Inherits: instance lifecycle
         Adds: wires self.agent.handle
     }
-    ServiceInstanceManager <|-- ConnectorManager : extends (scans CONNECTOR_ATTRIBUTE)
+    ServiceInstanceManager <|-- ConnectorManager : SvcT=Connector
 
     class AgentLifecycle {
         «root composite — NOT an AbstractService»
@@ -755,18 +755,18 @@ classDiagram
 | `Service` | `AbstractService` | `start()` / `stop()` / `refresh()` lifecycle + stamps `SERVICE_ATTRIBUTE` |
 | `Storage`, `FileStorage`, `LLMAdapter` | `AbstractService` | `start()` / `stop()` / `refresh()` + stamps own provider marker |
 | `Connector` | `AbstractService` | `start()` (launches listener) / `stop()` (cancels) + stamps `CONNECTOR_ATTRIBUTE` |
-| `Manager[D]` | `AbstractService` | source mounting, fingerprint-based `scan()`, invalidation, `start()`→refresh (core/base/manager.py) |
+| `Manager[D]` | `AbstractService` | source mounting, fingerprint-based `scan()`, invalidation, `start()`→refresh (core/classes/manager.py) |
 | `ToolManager` | `Manager` | name-resolution index maps, `call()` / `resolve()` / `schemas()` |
 | `HookManager` | `Manager` | event-grouped handler map, priority-ordered `fire()` |
 | `InstructionManager` | `Manager` | ordered instruction collection, `collect()` → system prompt fragments |
 | `InstanceManager[D,I]` | `Manager` | instance create/start/stop/reconcile lifecycle + refresh |
-| `ServiceInstanceManager` | `InstanceManager` | *Binds D=ServiceDescriptor I=AbstractService*; integrates with `ServiceInstanceRegistry` |
-| `ActiveServiceInstanceManager` | `ServiceInstanceManager` | active-instance selection (`_select_active()`) by config or first-available |
-| `StorageManager` | `ActiveServiceInstanceManager` | delegates to active `Storage` |
-| `FileStorageManager` | `ActiveServiceInstanceManager` | delegates to active `FileStorage` |
-| `LLMAdapterManager` | `ServiceInstanceManager` | first-adapter pattern (no active selection) |
-| `ServiceInstanceManager` (generic) | `ServiceInstanceManager` | discovers custom `Service` subclasses (default params) |
-| `ConnectorManager` | `ServiceInstanceManager` | wires `agent.handle`, `resolve()` returns connectors |
+| `ServiceInstanceManager[SvcT]` | `InstanceManager` | *Binds D=ServiceDescriptor, I=SvcT*; `instances` → `list[SvcT]`; integrates with `ServiceInstanceRegistry` |
+| `ActiveServiceInstanceManager[SvcT]` | `ServiceInstanceManager` | active-instance selection (`_select_active()`) by config or first-available; `_active` → `SvcT` |
+| `StorageManager` | `ActiveServiceInstanceManager[Storage]` | delegates to active `Storage` |
+| `FileStorageManager` | `ActiveServiceInstanceManager[FileStorage]` | delegates to active `FileStorage` |
+| `LLMAdapterManager` | `ServiceInstanceManager[LLMAdapter]` | first-adapter pattern (no active selection) |
+| `ServiceInstanceManager` (generic) | `ServiceInstanceManager[AbstractService]` | discovers custom `Service` subclasses (default params) |
+| `ConnectorManager` | `ServiceInstanceManager[Connector]` | wires `agent.handle`, `resolve()` → `list[Connector]` |
 
 ---
 
@@ -776,7 +776,7 @@ classDiagram
 classDiagram
     class Source~D~ {
         «ABC — Generic[D: Descriptor]»
-        «core/base/source.py»
+        «core/classes/source.py»
         # _invalidation_callbacks: list
         # _available: bool
         + available → bool (property)
@@ -794,7 +794,7 @@ classDiagram
     Source <|-- ToolSource : extends (binds D=ToolDescriptor)
 
     class PythonSource~D~ {
-        «core/base/source.py»
+        «core/classes/source.py»
         - _scope: list[str]
         + set_scope(scope)
         ──────────────────────────────────
@@ -832,7 +832,7 @@ classDiagram
     PythonSource <|-- PythonConnectorSource : D=ConnectorDescriptor
 
     class PythonServiceSource {
-        «core/base/source.py»
+        «core/classes/source.py»
         ──────────────────────────────────
         Unified service source. Defaults to SERVICE_ATTRIBUTE/AbstractService/"service".
         Accepts base_type, marker_attribute, id_prefix for provider slots.
@@ -840,7 +840,7 @@ classDiagram
     PythonSource <|-- PythonServiceSource : D=ServiceDescriptor
 
     class Descriptor {
-        «core/base/descriptor.py»
+        «core/classes/descriptor.py»
         «frozen dataclass»
         + id: str
         + _source_ref: weakref
@@ -880,7 +880,7 @@ classDiagram
     Descriptor <|-- InstructionDescriptor
 
     class ServiceDescriptor {
-        «core/base/service.py»
+        «core/classes/service.py»
         + service_cls: type[AbstractService]
         + metadata: dict
     }
@@ -900,7 +900,7 @@ PythonToolSource      (components/tool.py)      ──scan()──▶ ToolDescri
 PythonHookSource      (components/hook.py)      ──scan()──▶ HookDescriptor       ──▶ HookManager groups by event
 PythonInstructionSource (components/instruction.py) ──scan()──▶ InstructionDescriptor ──▶ InstructionManager ordered list
 PythonConnectorSource (components/connector.py)  ──scan()──▶ ConnectorDescriptor  ──▶ ConnectorManager creates instances
-PythonServiceSource   (core/base/source.py)     ──scan()──▶ ServiceDescriptor    ──▶ ServiceInstanceManager / StorageManager / FileStorageManager / LLMAdapterManager
+PythonServiceSource   (core/classes/source.py)     ──scan()──▶ ServiceDescriptor    ──▶ ServiceInstanceManager / StorageManager / FileStorageManager / LLMAdapterManager
 ```
 
 Each source is mounted into an `Manager` subclass. The manager calls `source.scan()` which produces descriptors. The manager's `_rebuild()` then builds specialized indexes (event→handlers map, alias→name→descriptor maps, instance reconciliation sets).

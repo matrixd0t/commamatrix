@@ -43,9 +43,24 @@ class TestAgentRunnerSubmit:
         async def work():
             result.append("done")
 
-        await runner.submit("key1", work())
+        task = await runner.submit("key1", work())
+        assert isinstance(task, asyncio.Task)
         await asyncio.sleep(0.05)
         assert result == ["done"]
+        await runner.stop()
+
+    @pytest.mark.asyncio
+    async def test_submit_returns_task(self):
+        runner = AgentRunner()
+
+        async def work():
+            return 42
+
+        task = await runner.submit("key1", work())
+        assert isinstance(task, asyncio.Task)
+        assert task is runner._tasks["key1"]
+        value = await task
+        assert value == 42
         await runner.stop()
 
     @pytest.mark.asyncio

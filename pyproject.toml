@@ -18,9 +18,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+http = ["starlette", "uvicorn"]
 postgres = ["asyncpg"]
-test = ["pytest", "pytest-asyncio"]
-all = ["commamatrix[postgres]"]
+test = ["pytest", "pytest-asyncio", "commamatrix[http]"]
+all = ["commamatrix[http,postgres]"]
+
+[dependency-groups]
+dev = ["commamatrix[test]"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -32,4 +36,4 @@ asyncio_mode = "strict"
 packages = ["src/commamatrix"]
 
 [tool.hatch.build]
-include = ["src/commamatrix/**/*.py", "src/commamatrix/**/*.md"]
+include = ["src/commamatrix/**/*.py", "src/commamatrix/**/*.md", "src/commamatrix/**/*.html"]

@@ -54,7 +54,7 @@ class PythonStorageSource(PythonServiceSource):
         super().__init__(base_type=Storage, marker_attribute=STORAGE_ATTRIBUTE, id_prefix="storage")
 
 
-class StorageManager(ActiveServiceInstanceManager):
+class StorageManager(ActiveServiceInstanceManager[Storage]):
     base_type = Storage
     marker_attribute = STORAGE_ATTRIBUTE
     id_prefix = "storage"

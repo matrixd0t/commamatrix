@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from .hook import OnParsedCtx
     from ..core.agent import Agent
 
-type OnRecv = Callable[[dict], Awaitable[None]]
+type OnRecv = Callable[[dict], Awaitable[list[asyncio.Task]]]
 
 CONNECTOR_ATTRIBUTE = "__commamatrix_connector__"
 
@@ -135,7 +135,7 @@ class PythonConnectorSource(PythonSource[ConnectorDescriptor]):
         )
 
 
-class ConnectorManager(ServiceInstanceManager):
+class ConnectorManager(ServiceInstanceManager[Connector]):
     """Manages connector instances. Wires agent.handle on each connector
     during creation and provides resolve() to retrieve all active connectors."""
 

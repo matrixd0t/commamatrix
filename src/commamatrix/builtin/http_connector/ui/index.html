@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CommaMatrix</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0d1117;--surface:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--user-bg:#1f2937;--assistant-bg:#161b22;--error:#f85149;--success:#3fb950;--radius:8px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column}
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+header h1{font-size:16px;font-weight:600}
+header .status{font-size:12px;color:var(--muted);margin-left:auto}
+#messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:80%;padding:10px 14px;border-radius:var(--radius);word-wrap:break-word;white-space:pre-wrap;line-height:1.5;font-size:14px}
+.msg.user{background:var(--user-bg);align-self:flex-end;border-bottom-right-radius:2px}
+.msg.assistant{background:var(--assistant-bg);border:1px solid var(--border);align-self:flex-start;border-bottom-left-radius:2px}
+.msg .role{font-size:11px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px}
+.msg.reasoning{background:var(--surface);border:1px dashed var(--border);align-self:flex-start;font-size:13px;color:var(--muted)}
+.msg.reasoning summary{cursor:pointer;color:var(--accent);font-size:12px}
+.msg.tool-call{background:var(--surface);border:1px solid var(--border);align-self:flex-start;font-size:13px;font-family:monospace}
+.msg.tool-result{background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.3);align-self:flex-start;font-size:13px}
+.msg.tool-result summary{cursor:pointer;color:var(--success);font-size:12px}
+.msg.image{background:var(--surface);border:1px solid var(--border);align-self:flex-start;font-size:13px;color:var(--muted)}
+.msg.file{background:var(--surface);border:1px solid var(--border);align-self:flex-start;font-size:13px}
+.msg.file .icon{color:var(--accent);margin-right:6px}
+.msg.error{background:rgba(248,81,73,0.1);border:1px solid var(--error);color:var(--error);align-self:center;font-size:13px}
+.msg .placeholder{color:var(--muted);font-style:italic;font-size:13px}
+#input-area{background:var(--surface);border-top:1px solid var(--border);padding:12px 16px;display:flex;gap:8px;flex-shrink:0}
+#input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:10px 14px;font-size:14px;font-family:inherit;resize:none;outline:none;min-height:42px;max-height:200px}
+#input:focus{border-color:var(--accent)}
+#send-btn,#cancel-btn{background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:10px 18px;font-size:14px;font-weight:500;cursor:pointer;flex-shrink:0}
+#send-btn:hover{opacity:0.9}
+#send-btn:disabled{opacity:0.4;cursor:not-allowed}
+#cancel-btn{background:var(--error);display:none}
+.typing{color:var(--muted);font-size:13px;align-self:flex-start;padding:4px 0}
+.typing span{animation:blink 1.2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+</style>
+</head>
+<body>
+<header>
+  <h1>CommaMatrix</h1>
+  <span class="status" id="status">Ready</span>
+</header>
+<div id="messages"></div>
+<div id="input-area">
+  <textarea id="input" rows="1" placeholder="Type a message..." autofocus></textarea>
+  <button id="send-btn">Send</button>
+  <button id="cancel-btn">Cancel</button>
+</div>
+<script>
+(function(){
+const messagesEl=document.getElementById('messages');
+const inputEl=document.getElementById('input');
+const sendBtn=document.getElementById('send-btn');
+const cancelBtn=document.getElementById('cancel-btn');
+const statusEl=document.getElementById('status');
+
+let sessionId=localStorage.getItem('cm_session_id');
+if(!sessionId){sessionId=crypto.randomUUID();localStorage.setItem('cm_session_id',sessionId)}
+let abortController=null;
+let lastExternalId=localStorage.getItem('cm_last_ext_id')||null;
+
+function scrollToBottom(){
+  requestAnimationFrame(()=>{messagesEl.scrollTop=messagesEl.scrollHeight});
+}
+
+function addMessage(cls,content,role){
+  const div=document.createElement('div');
+  div.className='msg '+cls;
+  if(role){const r=document.createElement('div');r.className='role';r.textContent=role;div.appendChild(r)}
+  const c=document.createElement('div');c.textContent=content;div.appendChild(c);
+  messagesEl.appendChild(div);scrollToBottom();return div;
+}
+
+function addReasoning(content){
+  const det=document.createElement('details');det.className='msg reasoning';
+  const sum=document.createElement('summary');sum.textContent='Reasoning';det.appendChild(sum);
+  const c=document.createElement('div');c.textContent=content;det.appendChild(c);
+  messagesEl.appendChild(det);scrollToBottom();
+}
+
+function addToolCall(name,args){
+  const div=document.createElement('div');div.className='msg tool-call';
+  div.textContent='Tool: '+name+'\n'+args;
+  messagesEl.appendChild(div);scrollToBottom();
+}
+
+function addToolResult(content){
+  const det=document.createElement('details');det.className='msg tool-result';
+  const sum=document.createElement('summary');sum.textContent='Tool Result';det.appendChild(sum);
+  const c=document.createElement('div');
+  try{
+    const parsed=JSON.parse(content);
+    c.textContent=typeof parsed.result==='string'?parsed.result:JSON.stringify(parsed.result,null,2);
+  }catch{c.textContent=content}
+  det.appendChild(c);
+  messagesEl.appendChild(det);scrollToBottom();
+}
+
+function addImageOutput(content){
+  const div=document.createElement('div');div.className='msg image';
+  try{
+    const data=JSON.parse(content);
+    if(data.url&&data.url.startsWith('data:image')){
+      const img=document.createElement('img');img.src=data.url;img.style.maxWidth='300px';img.style.borderRadius='4px';
+      div.appendChild(img);
+    }else{
+      div.textContent='Image: '+content;
+    }
+  }catch{div.textContent='Image: '+content}
+  messagesEl.appendChild(div);scrollToBottom();
+}
+
+function addFileOutput(content){
+  const div=document.createElement('div');div.className='msg file';
+  try{
+    const data=JSON.parse(content);
+    const icon=document.createElement('span');icon.className='icon';icon.textContent='';div.appendChild(icon);
+    const span=document.createElement('span');
+    span.textContent=(data.filename||data.name||data.path||'file')+(data.size?' ('+data.size+' bytes)':'');
+    div.appendChild(span);
+  }catch{
+    const icon=document.createElement('span');icon.className='icon';icon.textContent='';div.appendChild(icon);
+    const span=document.createElement('span');span.textContent=content;div.appendChild(span);
+  }
+  messagesEl.appendChild(div);scrollToBottom();
+}
+
+function addPlaceholder(type){
+  const div=document.createElement('div');div.className='msg assistant';
+  const p=document.createElement('div');p.className='placeholder';
+  p.textContent='['+type+']';div.appendChild(p);
+  messagesEl.appendChild(div);scrollToBottom();
+}
+
+function addError(text){addMessage('error',text)}
+
+function setProcessing(on){
+  sendBtn.disabled=on;cancelBtn.style.display=on?'block':'none';
+  statusEl.textContent=on?'Processing...':'Ready';
+}
+
+function renderItem(item){
+  switch(item.item_type){
+    case 'reasoning':   addReasoning(item.content); break;
+    case 'tool_call':
+      try{const tc=JSON.parse(item.content);addToolCall(tc.tool_name||'unknown',tc.tool_args||'{}')}
+      catch{addToolCall('tool',item.content)}
+      break;
+    case 'tool_call_result': addToolResult(item.content); break;
+    case 'image_output': addImageOutput(item.content); break;
+    case 'file_output':  addFileOutput(item.content); break;
+    case 'image_input':  addPlaceholder('Image Input: '+item.content); break;
+    case 'file_input':   addPlaceholder('File Input: '+item.content); break;
+    default:             addMessage('assistant',item.content,'Assistant');
+  }
+}
+
+async function send(){
+  const text=inputEl.value.trim();if(!text)return;
+  inputEl.value='';inputEl.style.height='auto';
+  addMessage('user',text,'You');
+  setProcessing(true);
+  abortController=new AbortController();
+
+  try{
+    const resp=await fetch('/api/message',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({session_id:sessionId,content:text,username:'web',previous_external_id:lastExternalId}),
+      signal:abortController.signal
+    });
+
+    const contentType=resp.headers.get('content-type')||'';
+
+    if(contentType.includes('text/event-stream')){
+      await handleSSE(resp);
+    }else{
+      await handleJSON(resp);
+    }
+  }catch(e){
+    if(e.name==='AbortError'){addError('Cancelled')}
+    else{addError('Network error: '+e.message)}
+  }finally{
+    abortController=null;setProcessing(false);
+    localStorage.setItem('cm_last_ext_id',lastExternalId||'');
+  }
+}
+
+async function handleSSE(resp){
+  const reader=resp.body.getReader();
+  const decoder=new TextDecoder();
+  let buffer='';
+
+  while(true){
+    const{value,done}=await reader.read();
+    if(done)break;
+    buffer+=decoder.decode(value,{stream:true});
+    const lines=buffer.split('\n');
+    buffer=lines.pop();
+
+    for(const line of lines){
+      if(!line.startsWith('data: '))continue;
+      const payload=line.slice(6);
+      try{
+        const data=JSON.parse(payload);
+        if(data.type==='done')continue;
+        renderItem(data);
+        if(data.external_id){lastExternalId=data.external_id}
+        if(data.session_id&&!sessionId){sessionId=data.session_id;localStorage.setItem('cm_session_id',sessionId)}
+      }catch{}
+    }
+  }
+
+  if(buffer.startsWith('data: ')){
+    try{
+      const data=JSON.parse(buffer.slice(6));
+      if(data.type!=='done'){
+        renderItem(data);
+        if(data.external_id){lastExternalId=data.external_id}
+      }
+    }catch{}
+  }
+}
+
+async function handleJSON(resp){
+  if(!resp.ok){const e=await resp.json().catch(()=>({error:'HTTP '+resp.status}));addError(e.error||'Error');return}
+  const data=await resp.json();
+  sessionId=data.session_id;localStorage.setItem('cm_session_id',sessionId);
+  if(data.items){for(const item of data.items){renderItem(item)}}
+  if(data.last_external_id){lastExternalId=data.last_external_id}
+}
+
+function cancel(){if(abortController)abortController.abort()}
+
+sendBtn.addEventListener('click',send);
+cancelBtn.addEventListener('click',cancel);
+inputEl.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}});
+inputEl.addEventListener('input',()=>{inputEl.style.height='auto';inputEl.style.height=Math.min(inputEl.scrollHeight,200)+'px'});
+})();
+</script>
+</body>
+</html>
