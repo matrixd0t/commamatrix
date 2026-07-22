@@ -9,10 +9,13 @@ from ...components.dialog import DialogItemType, DialogRole
 from ...components.hook import BeforeLlmCallCtx
 from ...components.llm_adapter import (
     LLMResponse,
+    LLMResponseBlock,
     LLMResponseReasoningBlock,
     LLMResponseTextBlock,
     LLMResponseToolCallBlock,
     StopReason,
+    StreamDelta,
+    StreamEnd,
     Usage,
 )
 from .codec import ApiCodec, wire_meta
@@ -21,6 +24,7 @@ from .codec import ApiCodec, wire_meta
 class AnthropicMessagesCodec(ApiCodec):
     protocol = "anthropic_messages"
     endpoint = "/v1/messages"
+    can_stream = True
 
     @staticmethod
     def serialize_tools(ctx: BeforeLlmCallCtx) -> list[dict[str, Any]]:
@@ -117,14 +121,6 @@ class AnthropicMessagesCodec(ApiCodec):
     def parse_response(self, body: dict[str, Any]) -> LLMResponse:
         response = LLMResponse(
             raw=body,
-            model=body.get("model"),
-            meta={
-                "llm": {
-                    "protocol": self.protocol,
-                    "response_id": body.get("id"),
-                    "turn_id": body.get("id"),
-                }
-            },
         )
 
         for content_block in body.get("content", ()):
@@ -170,3 +166,133 @@ class AnthropicMessagesCodec(ApiCodec):
                 cache_write_tokens=usage.get("cache_creation_input_tokens", 0),
             )
         return response
+
+    def parse_stream_event(
+        self,
+        event_type: str | None,
+        data: dict[str, Any],
+        acc: dict[str, Any],
+    ) -> StreamDelta | LLMResponseBlock | None:
+        msg_type = data.get("type")
+
+        if msg_type == "message_start":
+            message = data.get("message", {})
+            acc["response_id"] = message.get("id", "")
+            acc["model"] = message.get("model", "")
+            msg_usage = message.get("usage", {})
+            acc["usage"] = Usage(
+                input_tokens=msg_usage.get("input_tokens", 0),
+                output_tokens=0,
+                cache_read_tokens=msg_usage.get("cache_read_input_tokens", 0),
+                cache_write_tokens=msg_usage.get("cache_creation_input_tokens", 0),
+            )
+            return None
+
+        if msg_type == "content_block_start":
+            index = data.get("index", 0)
+            block = data.get("content_block", {})
+            block_type = block.get("type")
+            acc["current_block"] = {"index": index, "type": block_type, "text_buf": ""}
+            if block_type == "tool_use":
+                acc["current_block"]["id"] = block.get("id", "")
+                acc["current_block"]["name"] = block.get("name", "")
+                acc["current_block"]["args_buf"] = ""
+            return None
+
+        if msg_type == "content_block_delta":
+            delta = data.get("delta", {})
+            delta_type = delta.get("type")
+            if delta_type == "thinking_delta":
+                text = delta.get("thinking", "")
+                current = acc.get("current_block")
+                if current:
+                    current["text_buf"] += text
+                return StreamDelta(content=text, delta_type="reasoning")
+            if delta_type == "text_delta":
+                text = delta.get("text", "")
+                current = acc.get("current_block")
+                if current:
+                    current["text_buf"] += text
+                return StreamDelta(content=text, delta_type="text")
+            if delta_type == "input_json_delta":
+                current = acc.get("current_block")
+                if current:
+                    current.setdefault("args_buf", "")
+                    current["args_buf"] += delta.get("partial_json", "")
+            return None
+
+        if msg_type == "content_block_stop":
+            current = acc.get("current_block")
+            if current is None:
+                return None
+            block_type = current.get("type")
+            if block_type == "tool_use":
+                try:
+                    tool_args = loads(current["args_buf"]) if current["args_buf"] else {}
+                except (ValueError, TypeError):
+                    tool_args = {}
+                block = LLMResponseToolCallBlock(
+                    tool_call_id=current["id"],
+                    tool_name=current["name"],
+                    tool_args=tool_args,
+                    meta=wire_meta("anthropic_messages.tool_use", current),
+                )
+                acc["current_block"] = None
+                return block
+            if block_type in ("text", "thinking"):
+                acc.setdefault("completed_blocks", []).append({
+                    "type": block_type,
+                    "text_buf": current.get("text_buf", ""),
+                })
+            acc["current_block"] = None
+            return None
+
+        if msg_type == "message_delta":
+            delta = data.get("delta", {})
+            stop = delta.get("stop_reason")
+            if stop == "tool_use":
+                acc["stop_reason"] = StopReason.TOOL_USE
+            elif stop == "max_tokens":
+                acc["stop_reason"] = StopReason.LENGTH
+            else:
+                acc["stop_reason"] = StopReason.END_TURN
+            delta_usage = data.get("usage", {})
+            prev = acc.get("usage")
+            if prev:
+                acc["usage"] = Usage(
+                    input_tokens=prev.input_tokens,
+                    output_tokens=delta_usage.get("output_tokens", prev.output_tokens),
+                    cache_read_tokens=prev.cache_read_tokens,
+                    cache_write_tokens=prev.cache_write_tokens,
+                )
+            else:
+                acc["usage"] = Usage(
+                    input_tokens=0,
+                    output_tokens=delta_usage.get("output_tokens", 0),
+                )
+            return None
+
+        return None
+
+    def flush_stream(self, acc: dict[str, Any]) -> tuple[list[LLMResponseBlock], StreamEnd]:
+        blocks: list[LLMResponseBlock] = []
+
+        for block_data in acc.get("completed_blocks", []):
+            block_type = block_data["type"]
+            text_buf = block_data["text_buf"]
+            if block_type == "thinking" and text_buf:
+                blocks.append(LLMResponseReasoningBlock(
+                    content=text_buf,
+                    meta=wire_meta("anthropic_messages.content_block", {"type": "thinking", "thinking": text_buf}),
+                ))
+            elif block_type == "text" and text_buf:
+                blocks.append(LLMResponseTextBlock(
+                    content=text_buf,
+                    meta=wire_meta("anthropic_messages.content_block", {"type": "text", "text": text_buf}),
+                ))
+
+        end = StreamEnd(
+            stop_reason=acc.get("stop_reason", StopReason.END_TURN),
+            usage=acc.get("usage"),
+        )
+        return blocks, end

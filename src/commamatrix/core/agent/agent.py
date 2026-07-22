@@ -37,10 +37,13 @@ from ...components.hook import (
 )
 from ...components.llm_adapter import (
     LLMResponse,
+    LLMResponseBlock,
     LLMResponseToolCallBlock,
     LLMResponseError,
     LLMTruncatedError,
     StopReason,
+    StreamDelta,
+    StreamEnd,
     ToolCall,
     ToolCallResult,
 )
@@ -295,13 +298,52 @@ class Agent:
                 while True:
                     run.iteration += 1
 
-                    after_llm_ctx = await self._call_llm(run, last_item_id)
+                    dialog = await self._load_dialog(last_item_id)
+                    tools_list = list(self.tool_manager.descriptors)
+                    before_llm_ctx = BeforeLlmCallCtx(run=run, dialog=dialog, tools=tools_list)
+                    await self.hook_manager.fire(HookEventType.BEFORE_LLM_CALL, before_llm_ctx)
 
-                    last_item_id, used_tools = await self._process_response(
-                        run, after_llm_ctx.response, last_item_id
-                    )
+                    stream = run.connector.supports_streaming if run.connector else False
+                    blocks: list[LLMResponseBlock] = []
+                    tool_calls: list[LLMResponseToolCallBlock] = []
+                    llm_response: LLMResponse | None = None
 
-                    if used_tools:
+                    async for event in self.llm_adapter.ask_llm(before_llm_ctx, stream=stream):
+                        if isinstance(event, StreamDelta):
+                            if run.connector:
+                                await run.connector.send_stream_chunk(run.origin, event)
+                        elif isinstance(event, LLMResponseBlock):
+                            blocks.append(event)
+                            dialog_item = event.to_dialog_item(
+                                role=DialogRole.ASSISTANT, user=run.user,
+                                origin=run.origin, previous_item_id=last_item_id,
+                            )
+                            last_item_id = await self._send_and_store_item(run, dialog_item, last_item_id)
+                            if isinstance(event, LLMResponseToolCallBlock):
+                                tool_calls.append(event)
+                        elif isinstance(event, StreamEnd):
+                            llm_response = LLMResponse(
+                                content=blocks,
+                                stop_reason=event.stop_reason,
+                                usage=event.usage,
+                                meta=event.meta,
+                            )
+
+                    if llm_response is None:
+                        raise LLMResponseError("Adapter yielded no StreamEnd event")
+                    after_llm_ctx = AfterLlmCallCtx(run=run, response=llm_response)
+                    await self.hook_manager.fire(HookEventType.AFTER_LLM_CALL, after_llm_ctx)
+                    self._validate_response(after_llm_ctx.response, run)
+
+                    for block in tool_calls:
+                        tool_call = ToolCall(
+                            tool_call_id=block.tool_call_id,
+                            tool_name=block.tool_name,
+                            tool_args=block.tool_args,
+                        )
+                        last_item_id, _ = await self._run_tool_lifecycle(run, tool_call, last_item_id)
+
+                    if tool_calls:
                         continue
 
                     return after_llm_ctx
@@ -377,56 +419,6 @@ class Agent:
         if last_item_id is None:
             return []
         return await self.storage.get_branch(last_item_id)
-
-    async def _call_llm(self, run: RunCtx, last_item_id: int | None) -> AfterLlmCallCtx:
-        """Load dialog, fire before_llm, call adapter, fire after_llm, validate."""
-        dialog = await self._load_dialog(last_item_id)
-
-        tools_list = list(self.tool_manager.descriptors)
-        before_llm_ctx = BeforeLlmCallCtx(run=run, dialog=dialog, tools=tools_list)
-
-        await self.hook_manager.fire(HookEventType.BEFORE_LLM_CALL, before_llm_ctx)
-
-        llm_response = await self.llm_adapter.ask_llm(before_llm_ctx)
-        after_llm_ctx = AfterLlmCallCtx(run=run, response=llm_response)
-
-        await self.hook_manager.fire(HookEventType.AFTER_LLM_CALL, after_llm_ctx)
-
-        self._validate_response(after_llm_ctx.response, run)
-        return after_llm_ctx
-
-    async def _process_response(self, run: RunCtx, response: LLMResponse, last_item_id: int | None) -> tuple[int | None, bool]:
-        """Send and persist every response block before running its tools."""
-        tool_calls: list[LLMResponseToolCallBlock] = []
-
-        for block in response.content:
-            dialog_item = block.to_dialog_item(
-                role=DialogRole.ASSISTANT,
-                user=run.user,
-                origin=run.origin,
-                previous_item_id=last_item_id,
-            )
-            if response.meta:
-                item_llm_meta = dialog_item.meta.setdefault("llm", {})
-                response_llm = response.meta.get("llm")
-                if isinstance(response_llm, dict):
-                    response_wire = response_llm.get("wire")
-                    if isinstance(response_wire, dict):
-                        item_llm_meta["response_wire"] = response_wire
-
-            last_item_id = await self._send_and_store_item(run, dialog_item, last_item_id)
-            if isinstance(block, LLMResponseToolCallBlock):
-                tool_calls.append(block)
-
-        for block in tool_calls:
-            tool_call = ToolCall(
-                tool_call_id=block.tool_call_id,
-                tool_name=block.tool_name,
-                tool_args=block.tool_args,
-            )
-            last_item_id, _ = await self._run_tool_lifecycle(run, tool_call, last_item_id)
-
-        return last_item_id, bool(tool_calls)
 
     async def _run_tool_lifecycle(self, run: RunCtx, tool_call: ToolCall, last_item_id: int | None = None) -> tuple[int | None, ToolCallResult]:
         """Fire hooks, invoke a tool, then send and persist its result."""

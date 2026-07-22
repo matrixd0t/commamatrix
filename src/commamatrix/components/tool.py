@@ -214,9 +214,10 @@ def _schema_fn(fn: AsyncOrSyncFunction) -> AsyncOrSyncFunction:
 def _inject(fn: AsyncOrSyncFunction, kwargs: dict[str, Any], ctx: BeforeToolCallCtx) -> dict[str, Any]:
     injectable = _injectable_params(fn)
     result = dict(kwargs)
+    from .hook import BeforeToolCallCtx as _BTC
+    injectable_types = {_BTC}
     for name, param_type in injectable.items():
-        if param_type in _get_injectable_types():
-            from .hook import BeforeToolCallCtx as _BTC
+        if param_type in injectable_types:
             if param_type is _BTC:
                 result[name] = ctx
     return result

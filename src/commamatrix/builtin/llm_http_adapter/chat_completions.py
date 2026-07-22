@@ -9,10 +9,13 @@ from ...components.dialog import DialogItemType, DialogRole
 from ...components.hook import BeforeLlmCallCtx
 from ...components.llm_adapter import (
     LLMResponse,
+    LLMResponseBlock,
     LLMResponseReasoningBlock,
     LLMResponseTextBlock,
     LLMResponseToolCallBlock,
     StopReason,
+    StreamDelta,
+    StreamEnd,
     Usage,
     resolve_file_uri,
 )
@@ -22,6 +25,7 @@ from .codec import ApiCodec, wire_meta
 class ChatCompletionsCodec(ApiCodec):
     protocol = "chat_completions"
     endpoint = "/chat/completions"
+    can_stream = True
 
     @staticmethod
     def serialize_tools(ctx: BeforeLlmCallCtx) -> list[dict[str, Any]]:
@@ -168,12 +172,8 @@ class ChatCompletionsCodec(ApiCodec):
         message = choice["message"]
         response = LLMResponse(
             raw=body,
-            model=body.get("model"),
             meta={
                 "llm": {
-                    "protocol": self.protocol,
-                    "response_id": body.get("id"),
-                    "turn_id": body.get("id"),
                     "wire": {
                         "kind": "chat_completions.assistant_message",
                         "value": message,
@@ -236,3 +236,150 @@ class ChatCompletionsCodec(ApiCodec):
                 reasoning_tokens=usage.get("completion_tokens_details", {}).get("reasoning_tokens", 0),
             )
         return response
+
+    def enable_streaming(self, body: dict[str, Any]) -> dict[str, Any]:
+        body["stream"] = True
+        body["stream_options"] = {"include_usage": True}
+        return body
+
+    def parse_stream_event(
+        self,
+        event_type: str | None,
+        data: dict[str, Any],
+        acc: dict[str, Any],
+    ) -> StreamDelta | LLMResponseBlock | None:
+        choices = data.get("choices")
+        usage = data.get("usage")
+        response_id = data.get("id")
+        model = data.get("model")
+        if response_id:
+            acc["response_id"] = response_id
+        if model:
+            acc["model"] = model
+
+        if not choices and usage is not None:
+            acc["usage"] = Usage(
+                input_tokens=usage.get("prompt_tokens", 0),
+                output_tokens=usage.get("completion_tokens", 0),
+                reasoning_tokens=usage.get("completion_tokens_details", {}).get("reasoning_tokens", 0),
+            )
+            return None
+
+        if not choices:
+            return None
+
+        choice = choices[0]
+        delta = choice.get("delta", {})
+        finish_reason = choice.get("finish_reason")
+
+        text = delta.get("content")
+        if text:
+            acc.setdefault("text_buf", "")
+            acc["text_buf"] += text
+            return StreamDelta(content=text, delta_type="text")
+
+        for field_name in ("reasoning_content", "reasoning"):
+            reasoning_val = delta.get(field_name)
+            if reasoning_val is None:
+                continue
+            if isinstance(reasoning_val, str):
+                acc.setdefault("reasoning_buf", "")
+                acc["reasoning_buf"] += reasoning_val
+                acc.setdefault("reasoning_field", field_name)
+                return StreamDelta(content=reasoning_val, delta_type="reasoning")
+            if isinstance(reasoning_val, dict):
+                text_val = reasoning_val.get("summary", reasoning_val.get("content", ""))
+                if text_val:
+                    acc.setdefault("reasoning_buf", "")
+                    acc["reasoning_buf"] += str(text_val)
+                    acc.setdefault("reasoning_field", field_name)
+                    return StreamDelta(content=str(text_val), delta_type="reasoning")
+
+        tool_calls = delta.get("tool_calls")
+        if tool_calls:
+            tc_acc = acc.setdefault("tool_calls", {})
+            for tc in tool_calls:
+                idx = tc.get("index", 0)
+                entry = tc_acc.get(idx)
+                if entry is None:
+                    entry = {"id": tc.get("id", ""), "name": "", "args_buf": ""}
+                    tc_acc[idx] = entry
+                if tc.get("id"):
+                    entry["id"] = tc["id"]
+                fn = tc.get("function", {})
+                if fn.get("name"):
+                    entry["name"] = fn["name"]
+                if fn.get("arguments"):
+                    entry["args_buf"] += fn["arguments"]
+            return None
+
+        if finish_reason:
+            stop_reason = StopReason.END_TURN
+            if finish_reason == "tool_calls":
+                stop_reason = StopReason.TOOL_USE
+            elif finish_reason in ("length", "max_tokens"):
+                stop_reason = StopReason.LENGTH
+            acc["stop_reason"] = stop_reason
+            return None
+
+        return None
+
+    def flush_stream(self, acc: dict[str, Any]) -> tuple[list[LLMResponseBlock], StreamEnd]:
+        blocks: list[LLMResponseBlock] = []
+
+        text_buf = acc.get("text_buf", "")
+        reasoning_buf = acc.get("reasoning_buf", "")
+
+        wire_assistant: dict[str, Any] = {"role": "assistant"}
+        if reasoning_buf:
+            field = acc.get("reasoning_field", "reasoning_content")
+            wire_assistant[field] = reasoning_buf
+        if text_buf:
+            wire_assistant["content"] = text_buf
+
+        tc_acc = acc.get("tool_calls", {})
+        if tc_acc:
+            wire_tool_calls = []
+            for idx in sorted(tc_acc):
+                entry = tc_acc[idx]
+                wire_tool_calls.append({
+                    "id": entry["id"],
+                    "type": "function",
+                    "function": {
+                        "name": entry["name"],
+                        "arguments": entry["args_buf"],
+                    },
+                })
+            wire_assistant["tool_calls"] = wire_tool_calls
+
+        if reasoning_buf:
+            field = acc.get("reasoning_field", "reasoning_content")
+            blocks.append(LLMResponseReasoningBlock(
+                content=reasoning_buf,
+                meta=wire_meta("chat_completions.assistant_field", reasoning_buf, field=field),
+            ))
+
+        if text_buf:
+            blocks.append(LLMResponseTextBlock(
+                content=text_buf,
+                meta=wire_meta("chat_completions.assistant_message", wire_assistant),
+            ))
+
+        for idx in sorted(tc_acc):
+            entry = tc_acc[idx]
+            try:
+                tool_args = loads(entry["args_buf"]) if entry["args_buf"] else {}
+            except (ValueError, TypeError):
+                tool_args = {}
+            blocks.append(LLMResponseToolCallBlock(
+                tool_call_id=entry["id"],
+                tool_name=entry["name"],
+                tool_args=tool_args,
+                meta=wire_meta("chat_completions.tool_call", entry),
+            ))
+
+        end = StreamEnd(
+            stop_reason=acc.get("stop_reason", StopReason.END_TURN),
+            usage=acc.get("usage"),
+        )
+        return blocks, end

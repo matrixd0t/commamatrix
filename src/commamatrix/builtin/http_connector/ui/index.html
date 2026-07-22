@@ -61,6 +61,8 @@ let sessionId=localStorage.getItem('cm_session_id');
 if(!sessionId){sessionId=crypto.randomUUID();localStorage.setItem('cm_session_id',sessionId)}
 let abortController=null;
 let lastExternalId=localStorage.getItem('cm_last_ext_id')||null;
+let streamingPreview=null;
+let streamingType=null;
 
 function scrollToBottom(){
   requestAnimationFrame(()=>{messagesEl.scrollTop=messagesEl.scrollHeight});
@@ -78,7 +80,7 @@ function addReasoning(content){
   const det=document.createElement('details');det.className='msg reasoning';
   const sum=document.createElement('summary');sum.textContent='Reasoning';det.appendChild(sum);
   const c=document.createElement('div');c.textContent=content;det.appendChild(c);
-  messagesEl.appendChild(det);scrollToBottom();
+  messagesEl.appendChild(det);scrollToBottom();return det;
 }
 
 function addToolCall(name,args){
@@ -143,6 +145,10 @@ function setProcessing(on){
 }
 
 function renderItem(item){
+  if(streamingPreview&&streamingType===item.item_type){
+    streamingPreview.remove();
+    streamingPreview=null;streamingType=null;
+  }
   switch(item.item_type){
     case 'reasoning':   addReasoning(item.content); break;
     case 'tool_call':
@@ -158,12 +164,29 @@ function renderItem(item){
   }
 }
 
+function handleStreamChunk(data){
+  const chunkType=data.item_type||'output';
+  if(!streamingPreview||streamingType!==chunkType){
+    if(streamingPreview){streamingPreview.remove()}
+    if(chunkType==='reasoning'){
+      streamingPreview=addReasoning('');
+    }else{
+      streamingPreview=addMessage('assistant','','Assistant');
+    }
+    streamingType=chunkType;
+  }
+  const contentEl=streamingPreview.querySelector('div:last-child')||streamingPreview;
+  contentEl.textContent+=data.content;
+  scrollToBottom();
+}
+
 async function send(){
   const text=inputEl.value.trim();if(!text)return;
   inputEl.value='';inputEl.style.height='auto';
   addMessage('user',text,'You');
   setProcessing(true);
   abortController=new AbortController();
+  streamingPreview=null;streamingType=null;
 
   try{
     const resp=await fetch('/api/message',{
@@ -207,6 +230,7 @@ async function handleSSE(resp){
       try{
         const data=JSON.parse(payload);
         if(data.type==='done')continue;
+        if(data.type==='stream_chunk'){handleStreamChunk(data);continue}
         renderItem(data);
         if(data.external_id){lastExternalId=data.external_id}
         if(data.session_id&&!sessionId){sessionId=data.session_id;localStorage.setItem('cm_session_id',sessionId)}
@@ -218,8 +242,8 @@ async function handleSSE(resp){
     try{
       const data=JSON.parse(buffer.slice(6));
       if(data.type!=='done'){
-        renderItem(data);
-        if(data.external_id){lastExternalId=data.external_id}
+        if(data.type==='stream_chunk'){handleStreamChunk(data)}
+        else{renderItem(data);if(data.external_id){lastExternalId=data.external_id}}
       }
     }catch{}
   }

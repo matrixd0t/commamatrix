@@ -112,7 +112,6 @@ class TestLLMResponse:
         assert r.stop_reason == StopReason.END_TURN
         assert r.content == []
         assert r.usage is None
-        assert r.model is None
 
     def test_with_content(self):
         r = LLMResponse(

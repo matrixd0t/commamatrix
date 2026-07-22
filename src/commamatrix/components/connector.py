@@ -25,6 +25,7 @@ from ..core.classes.service import AbstractService, ServiceDescriptor
 from ..core.classes.source import Source, PythonSource, D
 from ..core.classes.manager import ServiceInstanceManager
 from .dialog import DialogItem, DialogOrigin
+from .llm_adapter import StreamDelta
 
 if TYPE_CHECKING:
     from .hook import OnParsedCtx
@@ -38,11 +39,11 @@ OrgT = TypeVar("OrgT", bound=DialogOrigin)
 
 
 class Connector(AbstractService, Generic[OrgT]):
-    """Abstract platform adapter. Subclasses implement parse() to
-    convert platform format into OnParsedCtx, and send() to deliver
-    outgoing messages. Lifecycle: start() launches listener, stop() cancels."""
+    """Abstract platform adapter. Subclasses implement parse() to convert platform format into OnParsedCtx, and send() to deliver outgoing messages.
+    Lifecycle: start() launches listener, stop() cancels."""
 
     origin_types: ClassVar[tuple[type[DialogOrigin], ...]] = ()
+    supports_streaming: ClassVar[bool] = False
 
     def __init__(self, agent: Agent) -> None:
         super().__init__(agent)
@@ -96,6 +97,10 @@ class Connector(AbstractService, Generic[OrgT]):
     async def send(self, origin: DialogOrigin, item: DialogItem) -> str:
         """Render an item and return its external ID, or an empty string."""
         ...
+
+    async def send_stream_chunk(self, origin: DialogOrigin, chunk: StreamDelta) -> None:
+        """Send a real-time content delta to the platform for live rendering."""
+        pass
 
     @asynccontextmanager
     async def typing(self, origin: DialogOrigin) -> AsyncIterator[None]:

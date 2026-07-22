@@ -9,10 +9,13 @@ from ...components.dialog import DialogItemType, DialogRole
 from ...components.hook import BeforeLlmCallCtx
 from ...components.llm_adapter import (
     LLMResponse,
+    LLMResponseBlock,
     LLMResponseReasoningBlock,
     LLMResponseTextBlock,
     LLMResponseToolCallBlock,
     StopReason,
+    StreamDelta,
+    StreamEnd,
     Usage,
 )
 from .codec import ApiCodec, wire_meta
@@ -21,6 +24,7 @@ from .codec import ApiCodec, wire_meta
 class ResponsesCodec(ApiCodec):
     protocol = "responses"
     endpoint = "/responses"
+    can_stream = True
 
     @staticmethod
     def _wire_value(item: Any) -> dict[str, Any] | None:
@@ -99,14 +103,6 @@ class ResponsesCodec(ApiCodec):
     def parse_response(self, body: dict[str, Any]) -> LLMResponse:
         response = LLMResponse(
             raw=body,
-            model=body.get("model"),
-            meta={
-                "llm": {
-                    "protocol": self.protocol,
-                    "response_id": body.get("id"),
-                    "turn_id": body.get("id"),
-                }
-            },
         )
 
         for output_item in body.get("output", ()):
@@ -180,3 +176,128 @@ class ResponsesCodec(ApiCodec):
     def serialize_tools(ctx: BeforeLlmCallCtx) -> list[dict[str, Any]]:
         tm = ctx.run.agent.tool_manager
         return [{"type": "function", **t.schema, "name": tm.public_name(t)} for t in ctx.tools]
+
+    def parse_stream_event(
+        self,
+        event_type: str | None,
+        data: dict[str, Any],
+        acc: dict[str, Any],
+    ) -> StreamDelta | LLMResponseBlock | None:
+        etype = data.get("type", event_type)
+
+        if etype == "response.created":
+            response_obj = data.get("response", {})
+            acc["response_id"] = response_obj.get("id", "")
+            acc["model"] = response_obj.get("model", "")
+            return None
+
+        if etype == "response.output_text.delta":
+            text = data.get("delta", "")
+            acc.setdefault("text_buf", "")
+            acc["text_buf"] += text
+            return StreamDelta(content=text, delta_type="text")
+
+        if etype == "response.reasoning_summary_text.delta":
+            text = data.get("delta", "")
+            acc.setdefault("reasoning_buf", "")
+            acc["reasoning_buf"] += text
+            return StreamDelta(content=text, delta_type="reasoning")
+
+        if etype == "response.function_call_arguments.delta":
+            item_id = data.get("item_id", "")
+            tc_acc = acc.setdefault("tool_calls", {})
+            entry = tc_acc.get(item_id)
+            if entry is None:
+                entry = {"args_buf": ""}
+                tc_acc[item_id] = entry
+            entry["args_buf"] += data.get("delta", "")
+            return None
+
+        if etype == "response.output_item.done":
+            item = data.get("item", {})
+            item_type = item.get("type")
+            if item_type == "function_call":
+                item_id = item.get("id", "")
+                tc_acc = acc.get("tool_calls", {})
+                entry = tc_acc.get(item_id, {})
+                args_buf = entry.get("args_buf", item.get("arguments", "{}"))
+                try:
+                    tool_args = loads(args_buf) if isinstance(args_buf, str) else args_buf
+                except (ValueError, TypeError):
+                    tool_args = {}
+                return LLMResponseToolCallBlock(
+                    tool_call_id=item.get("call_id", item_id),
+                    tool_name=item.get("name", ""),
+                    tool_args=tool_args,
+                    meta=wire_meta("responses.output_item", item),
+                )
+            if item_type == "message":
+                acc.setdefault("completed_message_ids", []).append(item.get("id", ""))
+            if item_type == "reasoning":
+                acc.setdefault("completed_reasoning_ids", []).append(item.get("id", ""))
+            return None
+
+        if etype == "response.completed":
+            response_obj = data.get("response", {})
+            acc["response"] = response_obj
+            return None
+
+        return None
+
+    def flush_stream(self, acc: dict[str, Any]) -> tuple[list[LLMResponseBlock], StreamEnd]:
+        blocks: list[LLMResponseBlock] = []
+        response_obj = acc.get("response", {})
+
+        for output_item in response_obj.get("output", ()):
+            item_type = output_item.get("type")
+            if item_type == "reasoning":
+                summary = output_item.get("summary", ())
+                summary_text = "\n".join(
+                    part.get("text", "")
+                    for part in summary
+                    if isinstance(part, dict) and part.get("type") == "summary_text"
+                )
+                if not summary_text:
+                    content_parts = output_item.get("content", ())
+                    summary_text = "\n".join(
+                        part.get("text", "")
+                        for part in content_parts
+                        if isinstance(part, dict) and part.get("type") == "reasoning_text"
+                    )
+                if summary_text:
+                    blocks.append(LLMResponseReasoningBlock(
+                        content=summary_text,
+                        meta=wire_meta("responses.output_item", output_item),
+                    ))
+            elif item_type == "message":
+                texts = [
+                    part.get("text", "")
+                    for part in output_item.get("content", ())
+                    if isinstance(part, dict) and part.get("type") == "output_text"
+                ]
+                text = "".join(texts)
+                if text:
+                    blocks.append(LLMResponseTextBlock(
+                        content=text,
+                        meta=wire_meta("responses.output_item", output_item),
+                    ))
+
+        stop_reason = StopReason.END_TURN
+        status = response_obj.get("status")
+        idetails = response_obj.get("incomplete_details", {})
+        if status == "incomplete" or (idetails and idetails.get("reason") == "max_output_tokens"):
+            stop_reason = StopReason.LENGTH
+
+        usage_data = response_obj.get("usage", {})
+        usage = Usage(
+            input_tokens=usage_data.get("input_tokens", 0),
+            output_tokens=usage_data.get("output_tokens", 0),
+            cache_read_tokens=usage_data.get("input_tokens_details", {}).get("cached_tokens", 0),
+            reasoning_tokens=usage_data.get("output_tokens_details", {}).get("reasoning_tokens", 0),
+        ) if usage_data else None
+
+        end = StreamEnd(
+            stop_reason=stop_reason,
+            usage=usage,
+        )
+        return blocks, end

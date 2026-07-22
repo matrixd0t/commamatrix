@@ -8,7 +8,7 @@ from typing import Any
 
 from ...components.dialog import DialogItem
 from ...components.hook import BeforeLlmCallCtx
-from ...components.llm_adapter import LLMResponse
+from ...components.llm_adapter import LLMResponse, LLMResponseBlock, StreamDelta, StreamEnd
 
 
 class ApiProtocol(StrEnum):
@@ -27,6 +27,7 @@ def wire_meta(kind: str, value: Any, **extra: Any) -> dict[str, Any]:
 class ApiCodec(ABC):
     protocol: ApiProtocol | str
     endpoint: str
+    can_stream: bool = False
 
     registry: dict[str, ApiCodec | str] = {}
 
@@ -47,3 +48,18 @@ class ApiCodec(ABC):
     @abstractmethod
     def serialize_tools(ctx: BeforeLlmCallCtx) -> list[dict[str, Any]]:
         ...
+
+    def enable_streaming(self, body: dict[str, Any]) -> dict[str, Any]:
+        body["stream"] = True
+        return body
+
+    def parse_stream_event(
+        self,
+        event_type: str | None,
+        data: dict[str, Any],
+        acc: dict[str, Any],
+    ) -> StreamDelta | LLMResponseBlock | None:
+        raise NotImplementedError(f"{self.__class__.__name__} does not support streaming")
+
+    def flush_stream(self, acc: dict[str, Any]) -> tuple[list[LLMResponseBlock], StreamEnd]:
+        raise NotImplementedError(f"{self.__class__.__name__} does not support streaming")

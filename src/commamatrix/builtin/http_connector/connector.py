@@ -20,6 +20,7 @@ from ...components.config import ConfigField
 from ...components.connector import Connector
 from ...components.dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
 from ...components.hook import OnParsedCtx
+from ...components.llm_adapter import StreamDelta
 
 if TYPE_CHECKING:
     from ...core.agent import Agent
@@ -44,6 +45,7 @@ class HttpRequestContext:
 
 
 class HttpConnector(Connector[HttpOrigin]):
+    supports_streaming = True
 
     def __init__(self, agent: Agent) -> None:
         super().__init__(agent)
@@ -185,6 +187,19 @@ class HttpConnector(Connector[HttpOrigin]):
             await queue.put(_serialize_item(item))
 
         return ext_id
+
+    async def send_stream_chunk(self, origin: DialogOrigin, chunk: StreamDelta) -> None:
+        if not isinstance(origin, HttpOrigin):
+            return
+        queue = self._sse_queues.get(origin.session_id)
+        if queue is not None:
+            delta_to_item = {"text": "output", "reasoning": "reasoning"}
+            await queue.put({
+                "type": "stream_chunk",
+                "delta_type": chunk.delta_type,
+                "item_type": delta_to_item.get(chunk.delta_type, chunk.delta_type),
+                "content": chunk.content,
+            })
 
     def _get_session_lock(self, session_id: str) -> asyncio.Lock:
         lock = self._session_locks.get(session_id)

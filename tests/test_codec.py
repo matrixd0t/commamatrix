@@ -58,7 +58,6 @@ class TestChatCompletionsCodec:
         assert resp.content[0].content == "Hello!"
         assert resp.usage.input_tokens == 10
         assert resp.usage.output_tokens == 5
-        assert resp.model == "gpt-4"
 
     def test_parse_tool_calls(self):
         codec = ChatCompletionsCodec()

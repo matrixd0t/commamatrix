@@ -8,6 +8,7 @@ from enum import StrEnum
 from dataclasses import dataclass, field
 from json import dumps, loads
 from mimetypes import guess_type
+from collections.abc import AsyncIterator
 from typing import Any, TYPE_CHECKING
 from httpx import AsyncClient, HTTPError
 
@@ -161,6 +162,20 @@ class LLMResponseToolCallBlock(LLMResponseBlock):
 
 
 @dataclass(slots=True, kw_only=True)
+class StreamDelta:
+    content: str
+    delta_type: str
+    meta: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True, kw_only=True)
+class StreamEnd:
+    stop_reason: StopReason = StopReason.END_TURN
+    usage: Usage | None = None
+    meta: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True, kw_only=True)
 class LLMResponse:
     """Complete LLM response composed of typed content blocks
     with stop reason and usage statistics."""
@@ -168,7 +183,6 @@ class LLMResponse:
     stop_reason: StopReason = StopReason.END_TURN
     content: list[LLMResponseBlock] = field(default_factory=list)
     usage: Usage | None = None
-    model: str | None = None
     raw: Any = None
     meta: dict[str, Any] = field(default_factory=dict)
 
@@ -176,7 +190,8 @@ class LLMResponse:
 class LLMAdapter(AbstractService):
     """
     Abstract LLM adapter.
-    Subclasses implement ask_llm() to convert a BeforeLlmCallCtx into an LLMResponse.
+    Subclasses implement ask_llm() as an async generator yielding
+    StreamDelta, LLMResponseBlock, and StreamEnd events.
     """
 
     def __init_subclass__(cls, **kwargs: object) -> None:
@@ -184,9 +199,8 @@ class LLMAdapter(AbstractService):
         if not getattr(cls, "__abstractmethods__", None):
             setattr(cls, LLM_ADAPTER_ATTRIBUTE, True)
 
-    @abstractmethod
-    async def ask_llm(self, ctx: BeforeLlmCallCtx) -> LLMResponse:
-        ...
+    def ask_llm(self, ctx: BeforeLlmCallCtx, *, stream: bool = False) -> AsyncIterator[StreamDelta | LLMResponseBlock | StreamEnd]:
+        raise NotImplementedError
 
 
 class PythonLLMAdapterSource(PythonServiceSource):
@@ -213,8 +227,8 @@ class LLMAdapterManager(ServiceInstanceManager[LLMAdapter]):
             return instances[0]
         raise RuntimeError("No LLM adapters registered")
 
-    async def ask_llm(self, ctx: Any) -> Any:
-        return await self._active.ask_llm(ctx)
+    def ask_llm(self, ctx: BeforeLlmCallCtx, *, stream: bool = False) -> AsyncIterator[StreamDelta | LLMResponseBlock | StreamEnd]:
+        return self._active.ask_llm(ctx, stream=stream)
 
 
 _retreiver_headers = {
