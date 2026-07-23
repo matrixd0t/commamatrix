@@ -220,7 +220,10 @@ class TestChatCompletionsCodecStreaming:
             "choices": [{"delta": {"tool_calls": [{"index": 0, "id": "tc1", "function": {"name": "fn"}}]}, "finish_reason": None}]
         }
         result = codec.parse_stream_event(None, data, acc)
-        assert result is None
+        assert isinstance(result, StreamDelta)
+        assert result.delta_type == "tool_call"
+        assert result.content == ""
+        assert result.meta["tool_name"] == "fn"
         assert acc["tool_calls"][0]["id"] == "tc1"
         assert acc["tool_calls"][0]["name"] == "fn"
 
@@ -315,7 +318,10 @@ class TestResponsesCodecStreaming:
         acc: dict = {}
         data = {"type": "response.function_call_arguments.delta", "item_id": "fc1", "delta": '{"x":'}
         result = codec.parse_stream_event(None, data, acc)
-        assert result is None
+        assert isinstance(result, StreamDelta)
+        assert result.delta_type == "tool_call"
+        assert result.content == '{"x":'
+        assert result.meta["tool_call_id"] == "fc1"
         assert acc["tool_calls"]["fc1"]["args_buf"] == '{"x":'
 
     def test_parse_output_item_done_function_call(self):
@@ -409,7 +415,10 @@ class TestAnthropicMessagesCodecStreaming:
         acc: dict = {"current_block": {"type": "tool_use", "id": "tu1", "name": "fn", "args_buf": ""}}
         data = {"type": "content_block_delta", "delta": {"type": "input_json_delta", "partial_json": '{"x":'}}
         result = codec.parse_stream_event(None, data, acc)
-        assert result is None
+        assert isinstance(result, StreamDelta)
+        assert result.delta_type == "tool_call"
+        assert result.content == '{"x":'
+        assert result.meta["tool_name"] == "fn"
         assert acc["current_block"]["args_buf"] == '{"x":'
 
     def test_parse_content_block_start_tool_use(self):
@@ -590,15 +599,20 @@ class TestHttpConnectorStreaming:
         http_origin = HttpOrigin(session_id="s1")
         conn._sse_queues["s1"] = queue
 
-        chunk = StreamDelta(content="Hello", delta_type="text")
+        chunk = StreamDelta(
+            content='{"code":',
+            delta_type="tool_call",
+            meta={"tool_name": "execute", "tool_call_id": "tc1"},
+        )
         await conn.send_stream_chunk(http_origin, chunk)
 
         assert not queue.empty()
         item = await queue.get()
         assert item["type"] == "stream_chunk"
-        assert item["delta_type"] == "text"
-        assert item["item_type"] == "output"
-        assert item["content"] == "Hello"
+        assert item["delta_type"] == "tool_call"
+        assert item["item_type"] == "tool_call"
+        assert item["content"] == '{"code":'
+        assert item["meta"]["tool_name"] == "execute"
 
     @pytest.mark.asyncio
     async def test_send_stream_chunk_wrong_origin_ignored(self):

@@ -62,14 +62,18 @@ class RunCtx:
     run_id: str = field(default_factory=lambda: uuid4().hex)
     iteration: int = 0
     state: dict[str, Any] = field(default_factory=dict)
+    chain_state: dict[str, Any] = field(default_factory=dict)
+    """Persistent state that carries across messages in the conversation chain.
+
+    Unlike ``state`` (per-run only), ``chain_state`` is serialised into every 
+    ``DialogItem.meta["chain"]`` and restored from the last item of the conversation branch when a new run starts.  
+    This lets hooks and tools make cross-message decisions (e.g. enabling CodeAct mode).
+    """
     tool_output_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     """Serialises ``send + persist`` of tool-call results.
-
-    This lock ensures that tool-result ``DialogItem`` items are stored
-    one at a time and their ``previous_item_id`` chain is kept
-    consistent.  It does NOT impose any ordering on parallel
-    nested tool results — each result carries its own
-    ``tool_call_id`` that links it back to the originating call.
+    
+    This lock ensures that tool-result ``DialogItem`` items are stored one at a time and their ``previous_item_id`` chain is kept consistent.  
+    It does NOT impose any ordering on parallel nested tool results — each result carries its own ``tool_call_id`` that links it back to the originating call.
     """
 
     tool_output_tail: int | None = None

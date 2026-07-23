@@ -24,7 +24,10 @@ def _make_desc(name: str, alias: str = "test") -> ToolDescriptor:
         alias=alias,
         name=name,
         doc=f"Tool {name}",
-        schema={"type": "function", "parameters": {"type": "object", "properties": {}, "required": []}},
+        schema={
+            "type": "function",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
         meta={},
         _source_ref=weakref.ref(src),
     )
@@ -39,8 +42,12 @@ def _make_ctx(tools=None):
     agent = SimpleNamespace(
         tool_manager=SimpleNamespace(
             descriptors=descriptors,
-            resolve_id=lambda id_str: next((d for d in descriptors if d.id == id_str), None),
-            resolve=lambda name: next((d for d in descriptors if f"{d.alias}_{d.name}" == name), None),
+            resolve_id=lambda id_str: next(
+                (d for d in descriptors if d.id == id_str), None
+            ),
+            resolve=lambda name: next(
+                (d for d in descriptors if f"{d.alias}_{d.name}" == name), None
+            ),
             public_name=lambda d: f"{d.alias}_{d.name}" if d.alias else d.name,
             build_tool_tree=ToolManager.build_tool_tree,
             modules={d.alias: [d] for d in descriptors if d.alias},
@@ -69,18 +76,12 @@ class TestRPCServerDispatch:
         assert "error" in resp
 
     @pytest.mark.asyncio
-    async def test_tools_schemas(self):
-        ctx = _make_ctx()
-        server = RPCServer(ctx)
-        resp = await server.handle({"id": "1", "method": "tools.schemas"})
-        assert "result" in resp
-        assert len(resp["result"]) == 1
-
-    @pytest.mark.asyncio
     async def test_tools_resolve(self):
         ctx = _make_ctx()
         server = RPCServer(ctx)
-        resp = await server.handle({"id": "1", "method": "tools.resolve", "params": {"name": "test_echo"}})
+        resp = await server.handle(
+            {"id": "1", "method": "tools.resolve", "params": {"name": "test_echo"}}
+        )
         assert "result" in resp
         assert resp["result"]["name"] == "echo"
 
@@ -88,31 +89,10 @@ class TestRPCServerDispatch:
     async def test_tools_resolve_not_found(self):
         ctx = _make_ctx()
         server = RPCServer(ctx)
-        resp = await server.handle({"id": "1", "method": "tools.resolve", "params": {"name": "nonexistent"}})
+        resp = await server.handle(
+            {"id": "1", "method": "tools.resolve", "params": {"name": "nonexistent"}}
+        )
         assert resp["result"] is None
-
-    @pytest.mark.asyncio
-    async def test_tools_aliases(self):
-        ctx = _make_ctx()
-        server = RPCServer(ctx)
-        resp = await server.handle({"id": "1", "method": "tools.aliases"})
-        assert "result" in resp
-        assert "test" in resp["result"]
-
-    @pytest.mark.asyncio
-    async def test_tools_list(self):
-        ctx = _make_ctx()
-        server = RPCServer(ctx)
-        resp = await server.handle({"id": "1", "method": "tools.list", "params": {"alias": "test"}})
-        assert "result" in resp
-        assert len(resp["result"]) == 1
-
-    @pytest.mark.asyncio
-    async def test_tools_list_empty_alias(self):
-        ctx = _make_ctx()
-        server = RPCServer(ctx)
-        resp = await server.handle({"id": "1", "method": "tools.list", "params": {"alias": "nonexistent"}})
-        assert resp["result"] == []
 
     @pytest.mark.asyncio
     async def test_unknown_tools_method(self):

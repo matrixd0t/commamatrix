@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import sys
 import weakref
 
 from collections.abc import Awaitable, Callable, Iterable
@@ -45,6 +46,7 @@ class ToolDescriptor(Descriptor):
     The public name visible to LLM is computed by ToolManager.public_name().
     Used by ToolManager for resolution.
     """
+
     namespace: str
     alias: str
     name: str
@@ -75,7 +77,12 @@ class ToolSource(Source[ToolDescriptor]):
     control back to the event loop at await points.
     """
 
-    async def invoke(self, descriptor: ToolDescriptor, kwargs: dict[str, Any], ctx: BeforeToolCallCtx | None = None) -> object:
+    async def invoke(
+        self,
+        descriptor: ToolDescriptor,
+        kwargs: dict[str, Any],
+        ctx: BeforeToolCallCtx | None = None,
+    ) -> object:
         raise NotImplementedError
 
 
@@ -89,6 +96,7 @@ def tool(arg: AsyncOrSyncFunction | None = None, **meta: Any):
     """Decorator marking a function as a discoverable tool.
     Stamps TOOL_ATTRIBUTE with optional meta. Use bare (@tool)
     or with keyword arguments for extra meta."""
+
     def decorate(fn: AsyncOrSyncFunction, metadata: dict[str, Any]):
         setattr(fn, TOOL_ATTRIBUTE, metadata)
         return fn
@@ -127,17 +135,22 @@ class PythonToolSource(PythonSource[ToolDescriptor], ToolSource):
         fn = cast(AsyncOrSyncFunction, obj)
         raw_meta: dict[str, Any] = getattr(fn, TOOL_ATTRIBUTE)
         metadata = dict(raw_meta)
-        metadata['signature'] = _signature_metadata(fn)
+        metadata["signature"] = _signature_metadata(fn)
         descriptor_id = f"python://{fn.__module__}/{object_name}"
         self._functions[descriptor_id] = fn
 
         namespace: str = fn.__module__
-        alias = metadata.get('alias')
+        alias = metadata.get("alias")
         if alias is None:
-            alias = namespace.rsplit('.', 1)[-1]
+            module = sys.modules.get(namespace)
+            alias = getattr(module, "__commamatrix_extension_alias__", None)
+            if alias is None:
+                alias = namespace.rsplit(".", 1)[-1]
         if alias and not alias.isidentifier():
-            raise ValueError(f"Alias {alias!r} is not a valid Python identifier in tool {fn.__name__!r}")
-        alias_for_doc: str | None = metadata.get('alias')
+            raise ValueError(
+                f"Alias {alias!r} is not a valid Python identifier in tool {fn.__name__!r}"
+            )
+        alias_for_doc: str | None = metadata.get("alias")
 
         descriptor = ToolDescriptor(
             id=descriptor_id,
@@ -151,7 +164,12 @@ class PythonToolSource(PythonSource[ToolDescriptor], ToolSource):
         )
         return descriptor
 
-    async def invoke(self, descriptor: ToolDescriptor, kwargs: dict[str, Any], ctx: BeforeToolCallCtx | None = None) -> object:
+    async def invoke(
+        self,
+        descriptor: ToolDescriptor,
+        kwargs: dict[str, Any],
+        ctx: BeforeToolCallCtx | None = None,
+    ) -> object:
         fn = self._functions.get(descriptor.id)
         if fn is None:
             raise RuntimeError(f"Tool {descriptor.id} is not owned by this source")
@@ -186,11 +204,17 @@ def _is_injectable(annotation: Any) -> bool:
 
 def _injectable_params(fn: AsyncOrSyncFunction) -> dict[str, type]:
     hints = _type_hints(fn)
-    return {
-        name: hints[name]
-        for name, hint in hints.items()
-        if _is_injectable(hint)
+    injectable = {
+        name: hints[name] for name, hint in hints.items() if _is_injectable(hint)
     }
+    ctx_parameter = inspect.signature(fn).parameters.get("ctx")
+    if (
+        ctx_parameter is not None
+        and "ctx" not in hints
+        and ctx_parameter.annotation is inspect.Parameter.empty
+    ):
+        injectable["ctx"] = BeforeToolCallCtx
+    return injectable
 
 
 def _schema_fn(fn: AsyncOrSyncFunction) -> AsyncOrSyncFunction:
@@ -211,10 +235,13 @@ def _schema_fn(fn: AsyncOrSyncFunction) -> AsyncOrSyncFunction:
     return wrapper
 
 
-def _inject(fn: AsyncOrSyncFunction, kwargs: dict[str, Any], ctx: BeforeToolCallCtx) -> dict[str, Any]:
+def _inject(
+    fn: AsyncOrSyncFunction, kwargs: dict[str, Any], ctx: BeforeToolCallCtx
+) -> dict[str, Any]:
     injectable = _injectable_params(fn)
     result = dict(kwargs)
     from .hook import BeforeToolCallCtx as _BTC
+
     injectable_types = {_BTC}
     for name, param_type in injectable.items():
         if param_type in injectable_types:
@@ -271,9 +298,7 @@ class ToolManager(Manager[ToolDescriptor]):
         self._schemas: list[dict[str, Any]] = []
 
     def public_name(self, descriptor: ToolDescriptor) -> str:
-        if not descriptor.alias:
-            return descriptor.name
-        return f"{descriptor.alias}_{descriptor.name}"
+        return self.public_name_from_descriptor(descriptor)
 
     def set_scope(self, scope: list[str]) -> None:
         self._python_source.set_scope(scope)
@@ -306,10 +331,17 @@ class ToolManager(Manager[ToolDescriptor]):
     def find_alias(self, alias: str) -> list[ToolDescriptor]:
         return self._by_alias.get(alias, [])
 
-    async def invoke(self, descriptor: ToolDescriptor, kwargs: dict[str, Any], ctx: BeforeToolCallCtx | None = None) -> Any:
+    async def invoke(
+        self,
+        descriptor: ToolDescriptor,
+        kwargs: dict[str, Any],
+        ctx: BeforeToolCallCtx | None = None,
+    ) -> Any:
         return await self._source_of(descriptor).invoke(descriptor, kwargs, ctx=ctx)
 
-    async def call(self, tool_call: ToolCall, ctx: BeforeToolCallCtx | None = None) -> ToolCallResult:
+    async def call(
+        self, tool_call: ToolCall, ctx: BeforeToolCallCtx | None = None
+    ) -> ToolCallResult:
         descriptor = self.resolve(tool_call.tool_name)
         if descriptor is None:
             return ToolCallResult(
@@ -360,18 +392,34 @@ class ToolManager(Manager[ToolDescriptor]):
     @staticmethod
     def build_tool_tree(descriptors: Iterable[ToolDescriptor]) -> dict[str, Any]:
         tree: dict[str, Any] = {"tools": {}}
+
+        def add_descriptor(node: dict[str, Any], descriptor: ToolDescriptor) -> None:
+            entries = node.setdefault("__tools__", [])
+            if any(existing["id"] == descriptor.id for existing in entries):
+                return
+            entries.append(
+                {
+                    "id": descriptor.id,
+                    "namespace": descriptor.namespace,
+                    "alias": descriptor.alias,
+                    "name": descriptor.name,
+                    "doc": descriptor.doc,
+                    "schema": descriptor.schema,
+                    "meta": descriptor.meta,
+                }
+            )
+
         for d in descriptors:
-            if not d.alias:
-                continue
-            node = tree["tools"].setdefault(d.alias, {})
-            node.setdefault("__tools__", [])
-            if any(existing["id"] == d.id for existing in node["__tools__"]):
-                continue
-            node["__tools__"].append({
-                "id": d.id,
-                "name": d.name,
-                "doc": d.doc,
-                "schema": d.schema,
-                "meta": d.meta,
-            })
+            if d.alias:
+                add_descriptor(tree["tools"].setdefault(d.alias, {}), d)
+
+            # Also expose a tool-name module so generated CodeAct code can use
+            # ``import tools.echo as echo`` without knowing the source alias.
+            add_descriptor(tree["tools"].setdefault(d.name, {}), d)
         return tree
+
+    @staticmethod
+    def public_name_from_descriptor(descriptor: ToolDescriptor) -> str:
+        if not descriptor.alias:
+            return descriptor.name
+        return f"{descriptor.alias}_{descriptor.name}"

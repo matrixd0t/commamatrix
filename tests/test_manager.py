@@ -42,7 +42,7 @@ class TestServiceInstanceRegistry:
 
     def test_require_missing_raises(self):
         reg = ServiceInstanceRegistry()
-        with pytest.raises(KeyError, match="not registered"):
+        with pytest.raises(KeyError, match="Service int not registered"):
             reg.require(int)
 
     def test_contains_class(self):

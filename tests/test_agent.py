@@ -29,6 +29,12 @@ class TestAgentInit:
         assert agent.service_manager is not None
         assert agent.connector_manager is not None
 
+    def test_service_is_exported_from_package_root(self):
+        from commamatrix import Service
+        from commamatrix.core.classes.service import Service as CoreService
+
+        assert Service is CoreService
+
     def test_config_from_dict(self):
         f = ConfigField[str](name="k", default="v")
         agent = Agent(config={f: "val"}, auto_load_main=False)
@@ -60,9 +66,64 @@ class TestAgentExtensions:
     async def test_add_extension_by_module(self):
         agent = Agent(config={}, auto_load_main=False)
         import os
+
         result = await agent.add_extensions(os)
         assert "os" in agent._extension_scope
         assert result == ["os"]
+
+    @pytest.mark.asyncio
+    async def test_path_extension_uses_filename_as_tool_alias(self, tmp_path):
+        path = tmp_path / "coding_agent.py"
+        path.write_text(
+            "from commamatrix import tool\n\n"
+            "@tool\n"
+            "async def search(query: str) -> str:\n"
+            "    return query\n",
+            encoding="utf-8",
+        )
+        agent = Agent(config={}, auto_load_main=False, essentials=False)
+        await agent.add_extensions(str(path))
+        await agent.start()
+        try:
+            assert agent.tool_manager.has_module("coding_agent")
+            assert agent.tool_manager.resolve("coding_agent_search") is not None
+            assert all(
+                not name.startswith("_commamatrix_path_")
+                for name in agent.extension_scope
+            )
+        finally:
+            await agent.stop()
+
+    @pytest.mark.asyncio
+    async def test_reload_package_rebuilds_all_scope_modules(self, tmp_path):
+        package = tmp_path / "reload_probe"
+        package.mkdir()
+        (package / "__init__.py").write_text(
+            "from . import tools\n",
+            encoding="utf-8",
+        )
+        (package / "tools.py").write_text(
+            "from commamatrix import tool\n\n"
+            "@tool(alias=\"reload_probe\")\n"
+            "async def ping() -> str:\n"
+            "    return \"pong\"\n",
+            encoding="utf-8",
+        )
+        agent = Agent(config={}, auto_load_main=False, essentials=False)
+        await agent.add_extensions(str(package))
+        await agent.start()
+        try:
+            assert "reload_probe" in agent.extension_scope
+            assert "reload_probe.tools" in agent.extension_scope
+            assert agent.tool_manager.resolve("reload_probe_ping") is not None
+
+            await agent.reload_extensions(str(package))
+
+            assert "reload_probe" in agent.extension_scope
+            assert "reload_probe.tools" in agent.extension_scope
+            assert agent.tool_manager.resolve("reload_probe_ping") is not None
+        finally:
+            await agent.stop()
 
     @pytest.mark.asyncio
     async def test_add_extension_no_duplicates(self):
@@ -91,6 +152,16 @@ class TestAgentExtensions:
         result = await agent.add_extensions(42, "os")
         assert result == ["os"]
         assert "os" in agent._extension_scope
+
+    @pytest.mark.asyncio
+    async def test_add_reports_invalid_path_and_keeps_scope(self, tmp_path):
+        agent = Agent(config={}, auto_load_main=False)
+        missing = tmp_path / "missing_extension.py"
+
+        with pytest.raises(RuntimeError, match="Failed to process extension"):
+            await agent.add_extensions(str(missing))
+
+        assert agent._extension_scope == []
 
     @pytest.mark.asyncio
     async def test_add_empty(self):
@@ -141,6 +212,7 @@ class TestAgentExtensions:
 
     def test_resolve_module_name_module(self):
         import os
+
         assert Agent._resolve_module_name(os) == "os"
 
     def test_resolve_module_name_invalid(self):
@@ -182,8 +254,12 @@ class TestAgentLifecycle:
         agent = Agent(config={}, auto_load_main=False)
         await agent.start()
         scope_str = ",".join(agent._extension_scope)
-        assert "sqlite" in scope_str
-        assert "fs" in scope_str
+        assert "components.instruction" in scope_str
+        assert "builtin.sqlite" in scope_str
+        assert "builtin.fs" in scope_str
+        assert "builtin.llm_http_adapter" in scope_str
+        assert "builtin.http_connector" in scope_str
+        assert "builtin.codeact" in scope_str
         await agent.stop()
 
 
@@ -196,6 +272,7 @@ class TestAgentSplitRuns:
             make_dialog_item("b", origin=origin),
         ]
         from commamatrix.components.hook import OnParsedCtx
+
         ctx = OnParsedCtx(
             agent=agent,
             connector=None,
@@ -215,6 +292,7 @@ class TestAgentSplitRuns:
             make_dialog_item("b", origin=o2),
         ]
         from commamatrix.components.hook import OnParsedCtx
+
         ctx = OnParsedCtx(
             agent=agent,
             connector=None,
@@ -229,8 +307,10 @@ class TestAgentScopeHasAttribute:
     def test_finds_attribute(self):
         agent = Agent(config={}, auto_load_main=False)
         mod = types.ModuleType("test_scope_attr")
+
         class Svc:
             __commamatrix_service__ = True
+
         mod.Svc = Svc
         sys.modules["test_scope_attr"] = mod
         agent._extension_scope.append("test_scope_attr")
@@ -246,14 +326,24 @@ class TestAgentScopeHasAttribute:
 
 class TestAgentValidateResponse:
     def test_error_stop_raises(self):
-        from commamatrix.components.llm_adapter import LLMResponse, StopReason, LLMResponseError
+        from commamatrix.components.llm_adapter import (
+            LLMResponse,
+            StopReason,
+            LLMResponseError,
+        )
+
         agent = Agent(config={}, auto_load_main=False)
         resp = LLMResponse(stop_reason=StopReason.ERROR)
         with pytest.raises(LLMResponseError):
             agent._validate_response(resp, None)
 
     def test_length_stop_raises(self):
-        from commamatrix.components.llm_adapter import LLMResponse, StopReason, LLMTruncatedError
+        from commamatrix.components.llm_adapter import (
+            LLMResponse,
+            StopReason,
+            LLMTruncatedError,
+        )
+
         agent = Agent(config={}, auto_load_main=False)
         resp = LLMResponse(stop_reason=StopReason.LENGTH)
         with pytest.raises(LLMTruncatedError):
@@ -261,6 +351,7 @@ class TestAgentValidateResponse:
 
     def test_end_turn_ok(self):
         from commamatrix.components.llm_adapter import LLMResponse, StopReason
+
         agent = Agent(config={}, auto_load_main=False)
         resp = LLMResponse(stop_reason=StopReason.END_TURN)
         agent._validate_response(resp, None)

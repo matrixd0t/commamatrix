@@ -150,6 +150,7 @@ __all__ = [
     "add_instructions",
     "INSTRUCTION_ATTRIBUTE",
     "AbstractService",
+    "Service",
     "SERVICE_ATTRIBUTE",
     "ServiceDescriptor",
 ]

@@ -7,16 +7,7 @@ The ``CodeActService`` is discovered automatically and managed by the agent's se
 """
 
 from __future__ import annotations
-
-from ...components.tool import ToolDescriptor
-
-
-def is_codeact_internal(descriptor: ToolDescriptor) -> bool:
-    """Return True if the descriptor belongs to a CodeAct control tool."""
-    return bool(descriptor.meta.get("codeact"))
-
-
 from . import hooks, tools, service
 
 
-__all__ = ['hooks', 'tools', 'service', 'is_codeact_internal']
+__all__ = ["hooks", "tools", "service"]

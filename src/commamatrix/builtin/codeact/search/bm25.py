@@ -74,3 +74,7 @@ class BM25ToolSearcher(ToolSearcher):
 
     def tools(self, alias: str) -> list[ToolDescriptor]:
         return [d for d in self._descriptors.values() if d.alias == alias] if alias else []
+
+    @property
+    def descriptors(self) -> list[ToolDescriptor]:
+        return list(self._descriptors.values())

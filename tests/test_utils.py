@@ -9,7 +9,7 @@ from enum import Enum
 
 import pytest
 
-from commamatrix.core.utils import await_if_needed, to_jsonable
+from commamatrix.utils import await_if_needed, to_jsonable
 
 
 class TestAwaitIfNeeded:
@@ -17,6 +17,7 @@ class TestAwaitIfNeeded:
     async def test_await_coroutine(self):
         async def coro():
             return 42
+
         await await_if_needed(coro())
 
     @pytest.mark.asyncio
@@ -68,8 +69,10 @@ class TestToJsonable:
 
     def test_pydantic_model(self):
         from pydantic import BaseModel
+
         class M(BaseModel):
             x: int = 1
+
         assert to_jsonable(M()) == {"x": 1}
 
     def test_dataclass(self):

@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 from typing import TYPE_CHECKING
 
 from .backend import ExecutionBackend, ExecutionResult
@@ -22,7 +21,14 @@ class SystemdBackend(ExecutionBackend):
     async def stop(self) -> None:
         pass
 
-    async def execute(self, code: str, ctx: BeforeToolCallCtx, namespace: dict[str, Any] | None = None) -> ExecutionResult:
+    def environment_description(self) -> str:
+        return (
+            "Your code runs in a service-managed isolated sandbox. "
+            "Filesystem and network access are restricted by systemd service policies. "
+            "Each execution starts with a clean namespace."
+        )
+
+    async def execute(self, code: str, ctx: BeforeToolCallCtx) -> ExecutionResult:
         raise NotImplementedError("Systemd CodeAct backend is not implemented yet")
 
     @staticmethod

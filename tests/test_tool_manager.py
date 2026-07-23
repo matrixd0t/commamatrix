@@ -27,13 +27,16 @@ class TestToolDecorator:
         @tool
         def my_fn(x: int) -> int:
             return x
+
         assert hasattr(my_fn, TOOL_ATTRIBUTE)
-        assert getattr(my_fn, TOOL_ATTRIBUTE) == {}
+        meta = getattr(my_fn, TOOL_ATTRIBUTE)
+        assert meta == {}
 
     def test_with_meta(self):
         @tool(alias="my_mod", version=2)
         def my_fn(x: int) -> int:
             return x
+
         meta = getattr(my_fn, TOOL_ATTRIBUTE)
         assert meta["alias"] == "my_mod"
         assert meta["version"] == 2
@@ -43,6 +46,7 @@ class TestToolDecorator:
         def add(a: int, b: int) -> int:
             """Add two numbers."""
             return a + b
+
         assert add(1, 2) == 3
         assert add.__name__ == "add"
 
@@ -72,6 +76,7 @@ class TestPythonToolSource:
         @tool
         def foreign(x: int) -> int:
             return x
+
         foreign.__module__ = "other_module"
 
         mod = types.ModuleType("pt_reexport")
@@ -128,6 +133,7 @@ class TestPythonToolSource:
 class TestToolManager:
     def test_public_name_with_alias(self):
         from tests.conftest import make_tool_descriptor
+
         agent = stub_agent()
         tm = ToolManager(agent=agent)
         d = make_tool_descriptor(name="search", alias="web")
@@ -135,6 +141,7 @@ class TestToolManager:
 
     def test_public_name_no_alias(self):
         from tests.conftest import make_tool_descriptor
+
         agent = stub_agent()
         tm = ToolManager(agent=agent)
         d = make_tool_descriptor(name="search", alias="")
@@ -146,6 +153,7 @@ class TestToolManager:
         @tool
         def my_fn(x: int) -> int:
             return x
+
         my_fn.__module__ = "tm_test_mod"
         mod.my_fn = my_fn
         sys.modules["tm_test_mod"] = mod
@@ -167,12 +175,31 @@ class TestToolManager:
 
     def test_ambiguous_tool_raises(self):
         from tests.conftest import make_tool_descriptor
+
         agent = stub_agent()
         tm = ToolManager(agent=agent)
         d1 = make_tool_descriptor(name="fn", alias="a", namespace="mod1")
         d2 = make_tool_descriptor(name="fn", alias="a", namespace="mod2")
-        d1 = ToolDescriptor(id="python://mod1/fn", namespace="mod1", alias="a", name="fn", doc="", schema={}, meta={}, _source_ref=d1._source_ref)
-        d2 = ToolDescriptor(id="python://mod2/fn", namespace="mod2", alias="a", name="fn", doc="", schema={}, meta={}, _source_ref=d2._source_ref)
+        d1 = ToolDescriptor(
+            id="python://mod1/fn",
+            namespace="mod1",
+            alias="a",
+            name="fn",
+            doc="",
+            schema={},
+            meta={},
+            _source_ref=d1._source_ref,
+        )
+        d2 = ToolDescriptor(
+            id="python://mod2/fn",
+            namespace="mod2",
+            alias="a",
+            name="fn",
+            doc="",
+            schema={},
+            meta={},
+            _source_ref=d2._source_ref,
+        )
         tm._descriptors = {d1.id: d1, d2.id: d2}
         tm._rebuild()
         with pytest.raises(AmbiguousToolError):
@@ -194,7 +221,9 @@ class TestToolManager:
             tm = ToolManager(agent=agent)
             tm.set_scope(["tm_call_mod"])
             tm.scan()
-            tc = ToolCall(tool_call_id="1", tool_name="tm_call_mod_double", tool_args={"n": 5})
+            tc = ToolCall(
+                tool_call_id="1", tool_name="tm_call_mod_double", tool_args={"n": 5}
+            )
             result = await tm.call(tc)
             assert result.content == 10
         finally:
@@ -215,6 +244,7 @@ class TestToolManager:
         def fn(x: int) -> int:
             """Test."""
             return x
+
         fn.__module__ = "tm_schema_mod"
         mod.fn = fn
         sys.modules["tm_schema_mod"] = mod

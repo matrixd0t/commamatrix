@@ -15,7 +15,7 @@ from .source import (
     PythonServiceSource,
     UnavailableSourceError,
 )
-from ..utils import await_if_needed
+from commamatrix.utils import await_if_needed
 from ...components.config import ConfigField
 
 if TYPE_CHECKING:
@@ -424,7 +424,7 @@ class ServiceInstanceRegistry:
     def require(self, key: type[Any]) -> Any:
         value = self._by_class.get(key)
         if value is None:
-            raise KeyError(f"AbstractService {key.__name__} not registered")
+            raise KeyError(f"Service {key.__name__} not registered")
         return value
 
     def remove_by_instance(self, instance: object) -> None:

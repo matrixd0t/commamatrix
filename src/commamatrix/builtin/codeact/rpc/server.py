@@ -13,13 +13,17 @@ from .protocol import (
     RPCResponse,
     ToolsMethod,
 )
-from .. import is_codeact_internal
 from ....components.llm_adapter import ToolCall
-from ....core.utils import to_jsonable
+from ....utils import to_jsonable
 
 if TYPE_CHECKING:
     from ....components.hook import BeforeToolCallCtx
     from ....components.tool import ToolDescriptor
+
+
+def is_codeact_internal(descriptor: ToolDescriptor) -> bool:
+    """Return True if a descriptor must stay outside the CodeAct worker."""
+    return not descriptor.meta.get("codeact", True)
 
 
 def serialize_tool_descriptor(descriptor: ToolDescriptor) -> dict[str, Any]:
@@ -32,14 +36,6 @@ def serialize_tool_descriptor(descriptor: ToolDescriptor) -> dict[str, Any]:
         "schema": descriptor.schema,
         "meta": descriptor.meta,
     }
-
-
-def serialize_tool_search_result(descriptor: ToolDescriptor) -> dict[str, Any]:
-    return serialize_tool_descriptor(descriptor)
-
-
-def serialize_tool_schema(descriptor: ToolDescriptor) -> dict[str, Any]:
-    return serialize_tool_descriptor(descriptor)
 
 
 def _make_serializable(obj: Any) -> Any:
@@ -71,7 +67,9 @@ class RPCServer:
             )
         return _serialize_response(response)
 
-    async def _dispatch(self, request_id: str, method: str, params: dict[str, Any]) -> Any:
+    async def _dispatch(
+        self, request_id: str, method: str, params: dict[str, Any]
+    ) -> Any:
         parts = method.split(".")
         if not parts or not parts[0]:
             raise RPCError(code=-32600, message="Empty method")
@@ -80,7 +78,9 @@ class RPCServer:
                 return await self._dispatch_tools(request_id, parts[1:], params)
         raise RPCError(code=-32601, message=f"Unknown namespace: {parts[0]}")
 
-    async def _dispatch_tools(self, request_id: str, path: list[str], params: dict[str, Any]) -> Any:
+    async def _dispatch_tools(
+        self, request_id: str, path: list[str], params: dict[str, Any]
+    ) -> Any:
         if not path:
             raise RPCError(code=-32600, message="Empty tools method")
         match path[0]:
@@ -90,62 +90,26 @@ class RPCServer:
                 if descriptor is None:
                     raise RPCError(code=-32602, message=f"Tool not found: {tool_id!r}")
                 if is_codeact_internal(descriptor):
-                    raise RPCError(code=-32603, message=f"Internal tool with id {tool_id!r} is not accessible from CodeAct")
+                    raise RPCError(
+                        code=-32603,
+                        message=f"Internal tool with id {tool_id!r} is not accessible from CodeAct",
+                    )
                 tool_call = ToolCall(
                     tool_call_id=params.get("tool_call_id", ""),
                     tool_name=self._ctx.run.agent.tool_manager.public_name(descriptor),
                     tool_args=params.get("tool_args", {}),
                 )
                 from ..service import CodeActService as _CAM
+
                 runtime = self._ctx.run.agent.services.require(_CAM)
                 result = await runtime.invoke_tool(self._ctx, tool_call)
                 return result
-
-            case ToolsMethod.SEARCH:
-                from ..service import CodeActService as _CAM_svc
-                runtime = self._ctx.run.agent.services.get(_CAM_svc)
-                if runtime is None:
-                    raise RPCError(code=-32603, message="CodeActService not available")
-                return [serialize_tool_search_result(d) for d in
-                        runtime.searcher.search(params["query"], limit=params.get("limit", 5))]
-
-            case ToolsMethod.SCHEMAS:
-                tm = self._ctx.run.agent.tool_manager
-                return [
-                    serialize_tool_schema(d)
-                    for d in tm.descriptors
-                    if not is_codeact_internal(d)
-                ]
 
             case ToolsMethod.RESOLVE:
                 descriptor = self._ctx.run.agent.tool_manager.resolve(params["name"])
                 if descriptor is None or is_codeact_internal(descriptor):
                     return None
                 return serialize_tool_descriptor(descriptor)
-
-            case ToolsMethod.ALIASES:
-                seen: set[str] = set()
-                result: list[str] = []
-                tm = self._ctx.run.agent.tool_manager
-                for alias in tm.modules:
-                    if alias in seen:
-                        continue
-                    tools_in_alias = tm.find_alias(alias)
-                    public_in_alias = [d for d in tools_in_alias
-                                       if not is_codeact_internal(d)]
-                    if public_in_alias:
-                        seen.add(alias)
-                        result.append(alias)
-                return result
-
-            case ToolsMethod.LIST:
-                alias = params["alias"]
-                descriptors = self._ctx.run.agent.tool_manager.find_alias(alias)
-                return [
-                    serialize_tool_descriptor(d)
-                    for d in descriptors
-                    if not is_codeact_internal(d)
-                ]
         raise RPCError(code=-32601, message=f"Unknown tools method: {path[0]}")
 
 

@@ -81,9 +81,11 @@ def _register_hook(agent, event, handler, priority=0, name=None):
 
 def _hook(agent, event, priority=0):
     """Decorator to register a hook in the agent's hook manager."""
+
     def decorator(fn):
         _register_hook(agent, event, fn, priority=priority)
         return fn
+
     return decorator
 
 
@@ -153,15 +155,19 @@ class InMemoryStorage(Storage):
         result.reverse()
         return result
 
-    async def find_item_id_by_external_id(self, external_id: str, origin: DialogOrigin) -> int | None:
+    async def find_item_id_by_external_id(
+        self, external_id: str, origin: DialogOrigin
+    ) -> int | None:
         return self._by_external.get(external_id)
 
 
 class NullFileStorage(FileStorage):
     async def save(self, data: bytes, ext: str | None = None) -> str:
         return "null"
+
     async def get(self, file_id: str) -> bytes | None:
         return None
+
     async def delete(self, file_id: str) -> bool:
         return False
 
@@ -177,10 +183,18 @@ def _make_run_ctx(agent: Agent, connector: RecordingConnector | None = None) -> 
 
 class _NullLifecycle:
     """Replaces AgentLifecycle to prevent refresh from wiping manually-registered hooks."""
-    def set_scope(self, scope): pass
-    async def refresh(self): pass
-    async def start(self): pass
-    async def stop(self): pass
+
+    def set_scope(self, scope):
+        pass
+
+    async def refresh(self):
+        pass
+
+    async def start(self):
+        pass
+
+    async def stop(self):
+        pass
 
 
 async def _setup_agent(
@@ -189,7 +203,7 @@ async def _setup_agent(
     hooks: dict[str, list] | None = None,
 ) -> tuple[Agent, RecordingConnector, InMemoryStorage]:
     """Create an agent with mock LLM, recording connector, and in-memory storage."""
-    agent = Agent(config={}, auto_load_main=False, auto_load_http=False)
+    agent = Agent(config={}, auto_load_main=False, essentials=False)
 
     connector = connector_cls(agent=agent)
     llm = MockLLMAdapter(agent, events)
@@ -199,36 +213,69 @@ async def _setup_agent(
     class _FixedLLMManager:
         def ask_llm(self, ctx, *, stream=False):
             return llm.ask_llm(ctx, stream=stream)
+
         def resolve(self):
             return []
-        def set_scope(self, scope): pass
-        async def refresh(self): pass
-        async def start(self): pass
-        async def stop(self): pass
+
+        def set_scope(self, scope):
+            pass
+
+        async def refresh(self):
+            pass
+
+        async def start(self):
+            pass
+
+        async def stop(self):
+            pass
 
     class _FixedStorageManager:
         def __getattr__(self, name):
             return getattr(storage, name)
-        def set_scope(self, scope): pass
-        async def refresh(self): pass
-        async def start(self): pass
-        async def stop(self): pass
+
+        def set_scope(self, scope):
+            pass
+
+        async def refresh(self):
+            pass
+
+        async def start(self):
+            pass
+
+        async def stop(self):
+            pass
 
     class _FixedFSManager:
         def __getattr__(self, name):
             return getattr(fs, name)
-        def set_scope(self, scope): pass
-        async def refresh(self): pass
-        async def start(self): pass
-        async def stop(self): pass
+
+        def set_scope(self, scope):
+            pass
+
+        async def refresh(self):
+            pass
+
+        async def start(self):
+            pass
+
+        async def stop(self):
+            pass
 
     class _FixedConnectorManager:
         def resolve(self):
             return [connector]
-        def set_scope(self, scope): pass
-        async def refresh(self): pass
-        async def start(self): pass
-        async def stop(self): pass
+
+        def set_scope(self, scope):
+            pass
+
+        async def refresh(self):
+            pass
+
+        async def start(self):
+            pass
+
+        async def stop(self):
+            pass
 
     agent.llm_adapter = _FixedLLMManager()
     agent.storage = _FixedStorageManager()
@@ -339,7 +386,7 @@ class TestAgentRunStreaming:
 
 def _make_multi_call_agent(events_list, connector_cls=RecordingConnector):
     """Create an agent with a multi-call LLM adapter."""
-    agent = Agent(config={}, auto_load_main=False, auto_load_http=False)
+    agent = Agent(config={}, auto_load_main=False, essentials=False)
     call_count = 0
 
     class MultiCallAdapter(LLMAdapter):
@@ -357,36 +404,69 @@ def _make_multi_call_agent(events_list, connector_cls=RecordingConnector):
     class _FixedLLMManager:
         def ask_llm(self, ctx, *, stream=False):
             return llm.ask_llm(ctx, stream=stream)
+
         def resolve(self):
             return []
-        def set_scope(self, scope): pass
-        async def refresh(self): pass
-        async def start(self): pass
-        async def stop(self): pass
+
+        def set_scope(self, scope):
+            pass
+
+        async def refresh(self):
+            pass
+
+        async def start(self):
+            pass
+
+        async def stop(self):
+            pass
 
     class _FixedStorageManager:
         def __getattr__(self, name):
             return getattr(storage, name)
-        def set_scope(self, scope): pass
-        async def refresh(self): pass
-        async def start(self): pass
-        async def stop(self): pass
+
+        def set_scope(self, scope):
+            pass
+
+        async def refresh(self):
+            pass
+
+        async def start(self):
+            pass
+
+        async def stop(self):
+            pass
 
     class _FixedFSManager:
         def __getattr__(self, name):
             return getattr(fs, name)
-        def set_scope(self, scope): pass
-        async def refresh(self): pass
-        async def start(self): pass
-        async def stop(self): pass
+
+        def set_scope(self, scope):
+            pass
+
+        async def refresh(self):
+            pass
+
+        async def start(self):
+            pass
+
+        async def stop(self):
+            pass
 
     class _FixedConnectorManager:
         def resolve(self):
             return [connector]
-        def set_scope(self, scope): pass
-        async def refresh(self): pass
-        async def start(self): pass
-        async def stop(self): pass
+
+        def set_scope(self, scope):
+            pass
+
+        async def refresh(self):
+            pass
+
+        async def start(self):
+            pass
+
+        async def stop(self):
+            pass
 
     agent.llm_adapter = _FixedLLMManager()
     agent.storage = _FixedStorageManager()
@@ -399,6 +479,35 @@ def _make_multi_call_agent(events_list, connector_cls=RecordingConnector):
 
 
 class TestAgentRunToolCalls:
+    @pytest.mark.asyncio
+    async def test_load_dialog_filters_orphan_tool_results(self):
+        agent, connector, storage = await _setup_agent([])
+        tool_call = make_dialog_item(
+            content='{"tool_call_id":"tc1","tool_name":"tool","tool_args":{}}',
+            item_type=DialogItemType.TOOL_CALL,
+            role=DialogRole.ASSISTANT,
+            item_id=1,
+        )
+        valid_result = make_dialog_item(
+            content='{"tool_call_id":"tc1","content":"ok"}',
+            item_type=DialogItemType.TOOL_CALL_RESULT,
+            role=DialogRole.TOOL,
+            item_id=2,
+            previous_item_id=1,
+        )
+        orphan_result = make_dialog_item(
+            content='{"tool_call_id":"missing","content":"stale"}',
+            item_type=DialogItemType.TOOL_CALL_RESULT,
+            role=DialogRole.TOOL,
+            item_id=3,
+            previous_item_id=2,
+        )
+        storage._items = {1: tool_call, 2: valid_result, 3: orphan_result}
+
+        dialog = await agent._load_dialog(3)
+
+        assert dialog == [tool_call, valid_result]
+
     @pytest.mark.asyncio
     async def test_single_tool_call(self):
         @tool
@@ -433,6 +542,62 @@ class TestAgentRunToolCalls:
             assert len(connector.sent) >= 3
         finally:
             del sys.modules["__test_tools__"]
+
+    @pytest.mark.asyncio
+    async def test_tool_result_follows_current_iteration_tool_call(self):
+        @tool
+        async def add(a: int, b: int) -> int:
+            return a + b
+
+        add.__module__ = "__test_chain_tools__"
+        mod = types.ModuleType("__test_chain_tools__")
+        mod.add = add
+        sys.modules["__test_chain_tools__"] = mod
+        try:
+            events = [
+                [
+                    LLMResponseToolCallBlock(
+                        tool_call_id="tc1",
+                        tool_name="__test_chain_tools___add",
+                        tool_args={"a": 1, "b": 2},
+                    ),
+                    StreamEnd(stop_reason=StopReason.TOOL_USE),
+                ],
+                [
+                    LLMResponseToolCallBlock(
+                        tool_call_id="tc2",
+                        tool_name="__test_chain_tools___add",
+                        tool_args={"a": 3, "b": 4},
+                    ),
+                    StreamEnd(stop_reason=StopReason.TOOL_USE),
+                ],
+                [
+                    LLMResponseTextBlock(content="done"),
+                    StreamEnd(stop_reason=StopReason.END_TURN),
+                ],
+            ]
+
+            agent, connector, storage = _make_multi_call_agent(events)
+            await agent.add_extensions("__test_chain_tools__")
+
+            await agent.run(_make_run_ctx(agent, connector))
+
+            calls = [
+                item
+                for item in storage._items.values()
+                if item.item_type == DialogItemType.TOOL_CALL
+            ]
+            results = [
+                item
+                for item in storage._items.values()
+                if item.item_type == DialogItemType.TOOL_CALL_RESULT
+            ]
+            assert len(calls) == 2
+            assert len(results) == 2
+            assert results[0].previous_item_id == calls[0].item_id
+            assert results[1].previous_item_id == calls[1].item_id
+        finally:
+            del sys.modules["__test_chain_tools__"]
 
     @pytest.mark.asyncio
     async def test_tool_call_with_before_hook_mutation(self):
@@ -503,7 +668,9 @@ class TestAgentRunToolCalls:
 
         assert result is not None
         # Tool result should contain abort message
-        tool_result_items = [i for i in connector.sent if i.item_type == DialogItemType.TOOL_CALL_RESULT]
+        tool_result_items = [
+            i for i in connector.sent if i.item_type == DialogItemType.TOOL_CALL_RESULT
+        ]
         assert len(tool_result_items) == 1
         assert "aborted" in tool_result_items[0].content.lower()
 
@@ -553,13 +720,16 @@ class TestAgentRunHooks:
 
         @_hook(agent, "before_llm_call", priority=10)
         async def inject_system(ctx: BeforeLlmCallCtx):
-            ctx.dialog.insert(0, DialogItem(
-                content="System instruction",
-                item_type=DialogItemType.INPUT,
-                role=DialogRole.SYSTEM,
-                origin=ctx.run.origin,
-                user=ctx.run.user,
-            ))
+            ctx.dialog.insert(
+                0,
+                DialogItem(
+                    content="System instruction",
+                    item_type=DialogItemType.INPUT,
+                    role=DialogRole.SYSTEM,
+                    origin=ctx.run.origin,
+                    user=ctx.run.user,
+                ),
+            )
 
         run = _make_run_ctx(agent, connector)
         await agent.run(run)
@@ -673,7 +843,10 @@ class TestAgentRunErrors:
 
     @pytest.mark.asyncio
     async def test_length_stop_reason_raises(self):
-        events = [LLMResponseTextBlock(content="truncated"), StreamEnd(stop_reason=StopReason.LENGTH)]
+        events = [
+            LLMResponseTextBlock(content="truncated"),
+            StreamEnd(stop_reason=StopReason.LENGTH),
+        ]
         agent, connector, storage = await _setup_agent(events)
 
         errors: list[Exception] = []
@@ -894,13 +1067,14 @@ class TestAgentStoreHistory:
     @pytest.mark.asyncio
     async def test_store_history_returns_last_id(self):
         agent, _, storage = await _setup_agent([])
+        run = _make_run_ctx(agent)
 
         items = [
             make_dialog_item("a"),
             make_dialog_item("b"),
         ]
 
-        last_id = await agent._store_history(items)
+        last_id = await agent._store_history(run, items)
         assert last_id == 2
         assert items[0].item_id == 1
         assert items[1].item_id == 2
@@ -908,19 +1082,21 @@ class TestAgentStoreHistory:
     @pytest.mark.asyncio
     async def test_store_history_none_returns_none(self):
         agent, _, storage = await _setup_agent([])
+        run = _make_run_ctx(agent)
 
-        last_id = await agent._store_history(None)
+        last_id = await agent._store_history(run, None)
         assert last_id is None
 
     @pytest.mark.asyncio
     async def test_store_history_preserves_existing_ids(self):
         agent, _, storage = await _setup_agent([])
+        run = _make_run_ctx(agent)
 
         items = [
             make_dialog_item("existing", item_id=99),
         ]
 
-        last_id = await agent._store_history(items)
+        last_id = await agent._store_history(run, items)
         assert last_id == 99
         # Should not be stored again
         assert len(storage._items) == 0

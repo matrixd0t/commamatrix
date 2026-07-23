@@ -29,7 +29,7 @@ class ApiCodec(ABC):
     endpoint: str
     can_stream: bool = False
 
-    registry: dict[str, ApiCodec | str] = {}
+    registry: dict[str, ApiCodec] = {}
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)

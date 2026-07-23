@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ....components.hook import BeforeToolCallCtx
@@ -57,10 +57,17 @@ class ExecutionBackend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def execute(self, code: str, ctx: BeforeToolCallCtx, namespace: dict[str, Any] | None = None) -> ExecutionResult:
+    async def execute(self, code: str, ctx: BeforeToolCallCtx) -> ExecutionResult:
         raise NotImplementedError
 
     @staticmethod
     def is_available() -> bool:
         """Override to report whether this backend can be used."""
         return True
+
+    @abstractmethod
+    def environment_description(self) -> str:
+        """Return a human-readable description of the execution environment.
+
+        This is used in the CodeAct mode tool description to inform the LLM about the specific runtime environment it will execute code in.
+        """

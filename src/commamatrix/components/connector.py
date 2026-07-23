@@ -99,7 +99,7 @@ class Connector(AbstractService, Generic[OrgT]):
         ...
 
     async def send_stream_chunk(self, origin: DialogOrigin, chunk: StreamDelta) -> None:
-        """Send a real-time content delta to the platform for live rendering."""
+        """Send a real-time content delta to the platform for live rendering. Do not override if not supported"""
         pass
 
     @asynccontextmanager

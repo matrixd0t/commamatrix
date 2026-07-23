@@ -207,11 +207,15 @@ class SqlStorage(Storage):
             db,
             f"""
             WITH RECURSIVE branch AS (
-                SELECT * FROM dialog_items WHERE item_id = {self._placeholder(1)}
+                SELECT dialog_items.*, 0 AS depth
+                FROM dialog_items
+                WHERE item_id = {self._placeholder(1)}
                 UNION ALL
-                SELECT d.* FROM dialog_items d JOIN branch b ON d.item_id = b.previous_item_id
+                SELECT d.*, b.depth + 1
+                FROM dialog_items d
+                JOIN branch b ON d.item_id = b.previous_item_id
             )
-            SELECT * FROM branch ORDER BY item_id
+            SELECT * FROM branch ORDER BY depth DESC
         """,
             (last_item_id,),
         )

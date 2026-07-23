@@ -15,7 +15,7 @@ from commamatrix.components.connector import CONNECTOR_ATTRIBUTE
 from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
 from commamatrix.components.hook import OnParsedCtx
 from commamatrix.builtin.http_connector.connector import HttpConnector, HttpRequestContext
-from commamatrix.builtin.http_connector.context import HttpOrigin
+from commamatrix.builtin.http_connector.connector import HttpOrigin
 from tests.conftest import stub_agent
 
 
@@ -302,7 +302,7 @@ class TestHttpConnectorRoutes:
             transport=httpx.ASGITransport(app=conn.app),
             base_url="http://test",
         ) as client:
-            resp = await client.post("/api/message", json={
+            resp = await client.post("/api/message?stream=0", json={
                 "session_id": "s1",
                 "content": "hello",
             })
@@ -344,7 +344,7 @@ class TestHttpConnectorRoutes:
             transport=httpx.ASGITransport(app=conn.app),
             base_url="http://test",
         ) as client:
-            resp = await client.post("/api/message", json={
+            resp = await client.post("/api/message?stream=0", json={
                 "session_id": "s1",
                 "content": "hello",
             })
@@ -366,7 +366,7 @@ class TestHttpConnectorRoutes:
             transport=httpx.ASGITransport(app=conn.app),
             base_url="http://test",
         ) as client:
-            resp = await client.post("/api/message", json={
+            resp = await client.post("/api/message?stream=0", json={
                 "session_id": "s1",
                 "content": "hello",
             })
@@ -383,7 +383,7 @@ class TestHttpConnectorRoutes:
             transport=httpx.ASGITransport(app=conn.app),
             base_url="http://test",
         ) as client:
-            resp = await client.post("/api/message", json={"content": "hi"})
+            resp = await client.post("/api/message?stream=0", json={"content": "hi"})
             assert resp.status_code == 200
             data = resp.json()
             assert "session_id" in data
@@ -515,8 +515,8 @@ class TestHttpConnectorRoutes:
             transport=httpx.ASGITransport(app=conn.app),
             base_url="http://test",
         ) as client:
-            t1 = asyncio.create_task(client.post("/api/message", json={"session_id": "s1", "content": "a"}))
-            t2 = asyncio.create_task(client.post("/api/message", json={"session_id": "s1", "content": "b"}))
+            t1 = asyncio.create_task(client.post("/api/message?stream=0", json={"session_id": "s1", "content": "a"}))
+            t2 = asyncio.create_task(client.post("/api/message?stream=0", json={"session_id": "s1", "content": "b"}))
 
             await asyncio.sleep(0.05)
             assert call_count == 1

@@ -15,11 +15,7 @@ class Namespace(StrEnum):
 
 class ToolsMethod(StrEnum):
     INVOKE = "invoke"
-    SEARCH = "search"
-    SCHEMAS = "schemas"
     RESOLVE = "resolve"
-    ALIASES = "aliases"
-    LIST = "list"
 
 
 @dataclass(slots=True, kw_only=True)
@@ -34,7 +30,7 @@ class RPCRequest:
 class RPCError(Exception):
     """Structured RPC error with a numeric code, message and optional data."""
 
-    __slots__ = ('code', 'message', 'data')
+    __slots__ = ("code", "message", "data")
 
     def __init__(self, code: int, message: str, data: Any = None) -> None:
         super().__init__(message)

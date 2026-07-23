@@ -12,7 +12,7 @@
 │          └── concurrent dispatch │                                │    └── read_responses │
 │                                  │                                │                       │
 │                                  │                                │  Virtual modules      │
-│                                  │                                │    └── <alias>*       │
+│                                  │                                │    └── tools.<alias>* │
 └──────────────────────────────────┘                                └───────────────────────┘
 ```
 
@@ -23,7 +23,7 @@ All method name strings are defined as `StrEnum` in `protocol.py`:
 | Enum | Members | Used in |
 |---|---|---|
 | `Namespace` | `TOOLS` | `_dispatch` top-level routing |
-| `ToolsMethod` | `INVOKE`, `SEARCH`, `SCHEMAS`, `RESOLVE`, `ALIASES`, `LIST` | `_dispatch_tools` |
+| `ToolsMethod` | `INVOKE`, `RESOLVE` | `_dispatch_tools` |
 
 Dispatch on the server uses `match/case` with enum comparison.
 
@@ -53,7 +53,7 @@ class RPCRequest:
 JSON wire format:
 
 ```json
-{"id": "a1b2c3", "method": "tools.invoke", "params": {"tool_call": {...}}}
+{"id": "a1b2c3", "method": "tools.invoke", "params": {"tool_id": "python://mod/func", "tool_args": {"x": 1}, "tool_call_id": ""}}
 ```
 
 ### RPC Response (success)
@@ -106,23 +106,27 @@ After the TCP handshake, the first message from parent to child is NOT an RPC ca
 
 ```json
 {
-  "code": "import github\nawait github.list_issues(...)",
+  "code": "import tools.github\nawait tools.github.list_issues(...)",
   "namespace": {"__name__": "__codeact__"},
   "timeout": 30.0,
+  "rpc_timeout": 10.0,
   "tool_tree": {
-    "github": {
-      "__tools__": [
-        {"id": "...", "name": "list_issues", "exported_name": "github.list_issues", "alias": "github", "doc": "...", "schema": {...}, "meta": {...}},
-        ...
-      ]
+    "tools": {
+      "github": {
+        "__tools__": [
+          {"id": "...", "name": "list_issues", "alias": "github", "doc": "...", "schema": {...}, "meta": {...}},
+          ...
+        ]
+      }
     }
   }
 }
 ```
 
-- Only **public** non-CodeAct tools (`meta.codeact` is falsy) appear in `tool_tree`.
-- CodeAct-internal tools (`codeact.execute`, `codeact.search_tools`, `codeact.list_tools`) are excluded.
-- Each tool entry includes `exported_name` — the canonical `alias.name` name used for invocation.
+- Only **public** tools appear in `tool_tree` — CodeAct-internal tools (those with `visible_in_codeact=True, visible_outside_codeact=False`) are excluded via `is_codeact_internal()`.
+- Control tools (`execute`, `search_tools`, `list_tools`, `exit_codeact`) are never exposed to the worker.
+- Tools are available both under `tools.<alias>.<name>` and, when the name is a valid identifier, as a callable `tools.<name>` module. This supports `import tools.echo as echo; await echo(...)`.
+- Tool invocation on the worker side uses the descriptor `id` for direct resolution.
 
 The child reads this asynchronously, sets up virtual modules from `tool_tree`, and begins executing `code`.
 
@@ -157,11 +161,11 @@ The parent's `SubprocessBackend` handles RPC requests **concurrently** — each 
 ```
 transport.recv() → message
   if "method" in message:
-      task = create_task(handle_one_request(message))  # non-blocking
+      task = create_task(_handle_rpc(message))  # non-blocking
       pending_tasks.add(task)
-  elif "result" in message or "error" in message:
-      await wait_for_pending_tasks()
-      return result
+  elif message.get("type") == "execution_result":
+      response_data = message
+      break
 ```
 
 This allows multiple tool calls from a single `asyncio.gather()` in the worker to execute concurrently on the parent side.
@@ -170,7 +174,7 @@ This allows multiple tool calls from a single `asyncio.gather()` in the worker t
 
 ### `tools.invoke`
 
-Execute an agent tool by its canonical `exported_name` through the full hook lifecycle.
+Execute an agent tool by its descriptor `id` through the full hook lifecycle.
 
 **Request:**
 ```json
@@ -178,62 +182,27 @@ Execute an agent tool by its canonical `exported_name` through the full hook lif
   "id": "t1",
   "method": "tools.invoke",
   "params": {
-    "tool_call": {
-      "tool_call_id": "",
-      "tool_name": "github.list_issues",
-      "tool_args": {"owner": "user", "repo": "repo"}
-    }
+    "tool_id": "python://mod/func",
+    "tool_args": {"owner": "user", "repo": "repo"},
+    "tool_call_id": ""
   }
 }
 ```
 
 **Processing:**
-1. Resolve `tool_name` via `ToolManager.resolve(exported_name)` — only matches `alias.name`
-2. Verify tool is public (not a CodeAct-internal tool)
-3. Construct `ToolCall` from params (uses `request.id` as default `tool_call_id`)
+1. Resolve `tool_id` via `ToolManager.resolve_id(id)` — direct descriptor lookup
+2. Verify tool is public (not CodeAct-internal via `is_codeact_internal()`)
+3. Construct `ToolCall` from params
 4. `CodeActService.invoke_tool()` → `Agent._run_tool_lifecycle()`
-5. Output persistence is serialized per-run via `run.tool_output_lock`
 
 **Response:**
 ```json
 {"id": "t1", "result": "Search results: ..."}
 ```
 
-### `tools.search`
-
-Semantic search over public tool descriptions only.
-
-**Request:**
-```json
-{
-  "id": "t2",
-  "method": "tools.search",
-  "params": {"query": "search web async", "limit": 5}
-}
-```
-
-**Response:**
-```json
-{"id": "t2", "result": [{"id": "...", "namespace": "...", "alias": "github", "name": "list_issues", "exported_name": "github.list_issues", "doc": "...", "schema": {...}, "meta": {...}}, ...]}
-```
-
-### `tools.schemas`
-
-Get all public tool schemas (no CodeAct-internal tools).
-
-**Request:**
-```json
-{"id": "t3", "method": "tools.schemas", "params": {}}
-```
-
-**Response:**
-```json
-{"id": "t3", "result": [{"id": "...", "namespace": "...", "alias": "github", "name": "list_issues", "exported_name": "github.list_issues", "doc": "...", "schema": {...}, "meta": {...}}, ...]}
-```
-
 ### `tools.resolve`
 
-Resolve a canonical `alias.name` to its descriptor. Returns `null` for CodeAct-internal tools.
+Resolve a canonical `alias.name` to its descriptor. Returns `null` for unknown or CodeAct-internal tools.
 
 **Request:**
 ```json
@@ -242,43 +211,15 @@ Resolve a canonical `alias.name` to its descriptor. Returns `null` for CodeAct-i
 
 **Response (found):**
 ```json
-{"id": "t4", "result": {"id": "...", "namespace": "...", "alias": "github", "name": "list_issues", "exported_name": "github.list_issues", "doc": "...", "schema": {...}, "meta": {...}}}
+{"id": "t4", "result": {"id": "...", "namespace": "...", "alias": "github", "name": "list_issues", "doc": "...", "schema": {...}, "meta": {...}}}
 ```
 
-**Response (not found):**
+**Response (not found or internal):**
 ```json
 {"id": "t4", "result": null}
 ```
 
 Resolution uses only canonical `alias.name` — no fallback to bare name, namespace, or descriptor ID.
-
-### `tools.aliases`
-
-List all available tool aliases (only those with at least one public tool).
-
-**Request:**
-```json
-{"id": "t5", "method": "tools.aliases", "params": {}}
-```
-
-**Response:**
-```json
-{"id": "t5", "result": ["github", "fs", "filesystem"]}
-```
-
-### `tools.list`
-
-List public tools within a specific alias.
-
-**Request:**
-```json
-{"id": "t6", "method": "tools.list", "params": {"alias": "github"}}
-```
-
-**Response:**
-```json
-{"id": "t6", "result": [{"id": "...", "namespace": "...", "alias": "github", "name": "list_issues", "exported_name": "github.list_issues", "doc": "...", "schema": {...}, "meta": {...}}, ...]}
-```
 
 ---
 
@@ -307,19 +248,20 @@ Key design:
 
 ### Tool Proxy Function
 
-Each tool in a virtual module (`<alias>.<func_name>`) is an `async` proxy that calls the tool by its canonical `exported_name`:
+Each tool in a virtual module (`tools.<alias>.<func_name>`) is an `async` proxy that calls the tool by its descriptor `id`:
 
 ```python
 async def proxy(*args, **kwargs):
     bound = signature.bind(*args, **kwargs)
     bound.apply_defaults()
-    return await client.request("tools.invoke", {"tool_call": {
-        "tool_call_id": "", "tool_name": exported_name,  # e.g. "github.list_issues"
+    return await client.request("tools.invoke", {
+        "tool_id": tool_id,  # descriptor.id for direct resolution
         "tool_args": dict(bound.arguments),
-    }})
+        "tool_call_id": "",
+    })
 ```
 
-Note: `exported_name` is always `alias.name` (canonical). No `tool_id` is sent — resolution is by name only.
+Note: Resolution on the server side is by `tool_id` (descriptor ID), not by name.
 
 ---
 
@@ -331,16 +273,20 @@ Note: `exported_name` is always `alias.name` (canonical). No `tool_id` is sent �
 
 ```
 tool_tree = {
-  "github": {                          → import github
-    "__tools__": [{...}],               → github.list_issues, etc. (exported_name = github.list_issues)
-    "sub": {                           → import github.sub
-      "__tools__": [{...}]
+  "tools": {
+    "github": {                        → import tools.github
+      "__tools__": [{...}],             → tools.github.list_issues, etc.
+      "sub": {                         → import tools.github.sub
+        "__tools__": [{...}]
+      }
     }
   }
 }
 ```
 
-Each tool's proxy uses `exported_name` from the descriptor, ensuring the parent receives the canonical `alias.name`.
+All tool aliases are nested under the `"tools"` key. The worker creates a root `tools` package and registers each alias as `tools.<alias>`. Code inside `execute()` imports tools as `import tools.<name> as <name>`.
+
+Each tool's proxy uses the descriptor `id` for direct RPC resolution.
 
 ### Import Hook
 
@@ -365,7 +311,6 @@ def serialize_tool_descriptor(descriptor):
         "namespace": descriptor.namespace,
         "alias": descriptor.alias,
         "name": descriptor.name,
-        "exported_name": descriptor.exported_name,
         "doc": descriptor.doc,
         "schema": descriptor.schema,
         "meta": descriptor.meta,       # not "metadata"
@@ -397,8 +342,8 @@ No runtime objects are leaked — `agent`, `Service`, and `Source` instances are
 ### Pattern A: Concurrent tool invocation
 
 ```
-Worker  →  Parent:  {"id": "y1", "method": "tools.invoke", "params": {"tool_call": {"tool_name": "github.list_issues", ...}}}
-Worker  →  Parent:  {"id": "y2", "method": "tools.invoke", "params": {"tool_call": {"tool_name": "fs.read_file", ...}}}
+Worker  →  Parent:  {"id": "y1", "method": "tools.invoke", "params": {"tool_id": "python://github/list_issues", "tool_args": {"owner": "user", "repo": "repo"}}}
+Worker  →  Parent:  {"id": "y2", "method": "tools.invoke", "params": {"tool_id": "python://fs/read_file", "tool_args": {"path": "/tmp/data.txt"}}}
                      (parent processes both concurrently)
 Parent  →  Worker:  {"id": "y2", "result": "file content"}   (second completes first)
 Parent  →  Worker:  {"id": "y1", "result": "issue list"}     (first completes second)
@@ -410,15 +355,15 @@ Responses are correlated by `id` — the `AsyncRPCClient` matches them to the co
 
 ```python
 # Worker executes:
-import github
-await github.list_issues(owner="user", repo="repo")
+import tools.github
+await tools.github.list_issues(owner="user", repo="repo")
 
-# Virtual import resolves github to a module from make_tool_module()
-# github.list_issues is a proxy() function that calls:
-client.request("tools.invoke", {"tool_call": {
-    "tool_call_id": "", "tool_name": "github.list_issues",
+# Virtual import resolves tools.github to a module from make_tool_module()
+# tools.github.list_issues is a proxy() function that calls:
+client.request("tools.invoke", {
+    "tool_call_id": "", "tool_id": "<descriptor_id>",
     "tool_args": {"owner": "user", "repo": "repo"},
-}})
+})
 ```
 
 ### Pattern C: Concurrent tool calls
@@ -426,8 +371,8 @@ client.request("tools.invoke", {"tool_call": {
 ```python
 # Worker executes — both tools run concurrently on parent:
 results = await asyncio.gather(
-    github.list_issues(owner="user", repo="repo"),
-    fs.read_file(path="/tmp/data.txt"),
+    tools.github.list_issues(owner="user", repo="repo"),
+    tools.fs.read_file(path="/tmp/data.txt"),
 )
 ```
 
@@ -472,14 +417,14 @@ The sandbox has **no** `context` module — the only way to interact with the pa
 
 ```python
 # Import any tool alias registered in tool_tree
-import github
-await github.list_issues(owner="user", repo="repo")
+import tools.github
+await tools.github.list_issues(owner="user", repo="repo")
 
-import fs
-await fs.read_file(path="/tmp/data.txt")
+import tools.fs
+await tools.fs.read_file(path="/tmp/data.txt")
 
-# All tools.* RPC methods are accessible as <alias>.<func_name>
+# All tools.* RPC methods are accessible as tools.<alias>.<func_name>
 # CodeAct-internal tools are NOT available (filtered by is_codeact_internal)
 ```
 
-CodeAct control tools (`codeact.execute`, `codeact.search_tools`, `codeact.list_tools`) are never exposed to the worker — they are only visible to the external LLM.
+CodeAct control tools (\execute\, \search_tools\, \list_tools\, \exit_codeact\) are never exposed to the worker  they have \isible_in_codeact=True, visible_outside_codeact=False\ and are filtered out by \is_codeact_internal()\. Additionally, \enable_codeact\ (with \isible_in_codeact=False\) is also filtered out, preventing the worker from calling it via virtual import.

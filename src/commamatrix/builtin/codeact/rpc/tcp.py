@@ -1,19 +1,31 @@
 # builtin/codeact/rpc/tcp.py
 
-"""Authenticated newline-delimited JSON transport over loopback TCP."""
+"""Authenticated length-prefixed JSON transport over loopback TCP."""
 
 from __future__ import annotations
 
 import asyncio
 import hmac
 import json
+import struct
 from typing import Any
 
 from .transport import Transport
 
 
+def _write_msg(writer: asyncio.StreamWriter, data: bytes) -> None:
+    header = struct.pack("!I", len(data))
+    writer.write(header + data)
+
+
+async def _read_msg(reader: asyncio.StreamReader) -> bytes:
+    header = await reader.readexactly(4)
+    length = struct.unpack("!I", header)[0]
+    return await reader.readexactly(length)
+
+
 class TcpTransport(Transport):
-    """Bidirectional NDJSON transport for local CodeAct workers."""
+    """Bidirectional length-prefixed JSON transport for local CodeAct workers."""
 
     def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         self._reader = reader
@@ -57,18 +69,16 @@ class TcpTransport(Transport):
             raise
 
     async def send(self, message: dict[str, Any]) -> None:
-        data = json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"
+        data = json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         async with self._write_lock:
             if self._writer.is_closing():
                 raise ConnectionError("TCP writer is closed")
-            self._writer.write(data)
+            _write_msg(self._writer, data)
             await self._writer.drain()
 
     async def recv(self) -> dict[str, Any]:
-        line = await self._reader.readline()
-        if not line:
-            raise ConnectionError("TCP reader closed")
-        message = json.loads(line.decode("utf-8"))
+        data = await _read_msg(self._reader)
+        message = json.loads(data.decode("utf-8"))
         if not isinstance(message, dict):
             raise ValueError("RPC message must be a JSON object")
         return message

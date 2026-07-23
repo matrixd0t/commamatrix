@@ -136,13 +136,17 @@ dependencies = [
     { name = "matrix-fn-schema" },
     { name = "pydantic" },
     { name = "python-dotenv" },
-    { name = "starlette" },
-    { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
 all = [
     { name = "asyncpg" },
+    { name = "starlette" },
+    { name = "uvicorn" },
+]
+http = [
+    { name = "starlette" },
+    { name = "uvicorn" },
 ]
 postgres = [
     { name = "asyncpg" },
@@ -150,6 +154,8 @@ postgres = [
 test = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "starlette" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -163,17 +169,18 @@ requires-dist = [
     { name = "aiosqlite" },
     { name = "asyncpg", marker = "extra == 'postgres'" },
     { name = "bm25s" },
-    { name = "commamatrix", extras = ["postgres"], marker = "extra == 'all'" },
+    { name = "commamatrix", extras = ["http"], marker = "extra == 'test'" },
+    { name = "commamatrix", extras = ["http", "postgres"], marker = "extra == 'all'" },
     { name = "httpx" },
     { name = "matrix-fn-schema" },
     { name = "pydantic" },
     { name = "pytest", marker = "extra == 'test'" },
     { name = "pytest-asyncio", marker = "extra == 'test'" },
     { name = "python-dotenv" },
-    { name = "starlette" },
-    { name = "uvicorn" },
+    { name = "starlette", marker = "extra == 'http'" },
+    { name = "uvicorn", marker = "extra == 'http'" },
 ]
-provides-extras = ["postgres", "test", "all"]
+provides-extras = ["http", "postgres", "test", "all"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "commamatrix", extras = ["test"] }]

@@ -18,6 +18,7 @@ import contextlib
 import inspect
 import io
 import json
+import struct
 import sys
 import time
 from importlib.abc import MetaPathFinder
@@ -27,7 +28,22 @@ from typing import Any, Callable
 from uuid import uuid4
 
 
+# ── Length-prefixed message helpers ─────────────────────────────────
+
+
+def _write_msg(writer: asyncio.StreamWriter, data: bytes) -> None:
+    header = struct.pack("!I", len(data))
+    writer.write(header + data)
+
+
+async def _read_msg(reader: asyncio.StreamReader) -> bytes:
+    header = await reader.readexactly(4)
+    length = struct.unpack("!I", header)[0]
+    return await reader.readexactly(length)
+
+
 # ── RPC client ───────────────────────────────────────────────────────
+
 
 class AsyncRPCClient:
     def __init__(self, reader, writer, rpc_timeout: float = 10.0):
@@ -46,7 +62,10 @@ class AsyncRPCClient:
         self._pending[request_id] = future
         payload = {"id": request_id, "method": method, "params": params or {}}
         async with self._write_lock:
-            self._writer.write(json.dumps(payload, ensure_ascii=False).encode("utf-8") + b"\n")
+            _write_msg(
+                self._writer,
+                json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            )
             await self._writer.drain()
         try:
             return await asyncio.wait_for(future, timeout=self._rpc_timeout)
@@ -58,10 +77,8 @@ class AsyncRPCClient:
     async def read_responses(self):
         try:
             while not self._closed:
-                line = await self._reader.readline()
-                if not line:
-                    break
-                response = json.loads(line.decode("utf-8"))
+                data = await _read_msg(self._reader)
+                response = json.loads(data.decode("utf-8"))
                 rid = response.get("id")
                 if rid in self._pending:
                     future = self._pending.pop(rid)
@@ -69,10 +86,16 @@ class AsyncRPCClient:
                         continue
                     if response.get("error"):
                         error = response["error"]
-                        future.set_exception(RuntimeError(f"RPC error {error['code']}: {error['message']}"))
+                        future.set_exception(
+                            RuntimeError(
+                                f"RPC error {error['code']}: {error['message']}"
+                            )
+                        )
                     else:
                         future.set_result(response.get("result"))
         except (ConnectionError, EOFError):
+            pass
+        except asyncio.IncompleteReadError:
             pass
         finally:
             self._closed = True
@@ -89,15 +112,22 @@ class AsyncRPCClient:
 
 # ── Schema / signature helpers ───────────────────────────────────────
 
+
 def _schema_type(schema):
     if not isinstance(schema, dict):
         return Any
     if "anyOf" in schema:
-        types = [_schema_type(item) for item in schema["anyOf"] if item.get("type") != "null"]
+        types = [
+            _schema_type(item) for item in schema["anyOf"] if item.get("type") != "null"
+        ]
         return types[0] if len(types) == 1 else Any
     return {
-        "string": str, "integer": int, "number": float,
-        "boolean": bool, "array": list, "object": dict,
+        "string": str,
+        "integer": int,
+        "number": float,
+        "boolean": bool,
+        "array": list,
+        "object": dict,
     }.get(schema.get("type"), Any)
 
 
@@ -113,34 +143,58 @@ def _signature(schema, metadata=None):
         name = item.get("name")
         if not isinstance(name, str) or name not in properties:
             continue
-        kind = getattr(inspect.Parameter, item.get("kind", "KEYWORD_ONLY"), inspect.Parameter.KEYWORD_ONLY)
+        kind = getattr(
+            inspect.Parameter,
+            item.get("kind", "KEYWORD_ONLY"),
+            inspect.Parameter.KEYWORD_ONLY,
+        )
         has_default = "default" in item or "default" in properties[name]
-        default = inspect.Parameter.empty if name in required and not has_default else item.get("default", properties[name].get("default", None))
-        parameter = inspect.Parameter(name, kind, default=default, annotation=_schema_type(properties[name]))
+        default = (
+            inspect.Parameter.empty
+            if name in required and not has_default
+            else item.get("default", properties[name].get("default", None))
+        )
+        parameter = inspect.Parameter(
+            name, kind, default=default, annotation=_schema_type(properties[name])
+        )
         parameters.append(parameter)
         annotations[name] = parameter.annotation
     if not parameters:
         for name, definition in properties.items():
-            default = inspect.Parameter.empty if name in required else definition.get("default", None)
-            parameter = inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY, default=default, annotation=_schema_type(definition))
+            default = (
+                inspect.Parameter.empty
+                if name in required
+                else definition.get("default", None)
+            )
+            parameter = inspect.Parameter(
+                name,
+                inspect.Parameter.KEYWORD_ONLY,
+                default=default,
+                annotation=_schema_type(definition),
+            )
             parameters.append(parameter)
             annotations[name] = parameter.annotation
     return inspect.Signature(parameters), annotations
 
 
 def _make_tool_proxy(client, descriptor):
-    signature, annotations = _signature(descriptor.get("schema", {}), descriptor.get("meta", {}))
+    signature, annotations = _signature(
+        descriptor.get("schema", {}), descriptor.get("meta", {})
+    )
     tool_id = descriptor["id"]
     proxy_name = descriptor["name"]
 
     async def proxy(*args, **kwargs):
         bound = signature.bind(*args, **kwargs)
         bound.apply_defaults()
-        return await client.request("tools.invoke", {
-            "tool_id": tool_id,
-            "tool_args": dict(bound.arguments),
-            "tool_call_id": "",
-        })
+        return await client.request(
+            "tools.invoke",
+            {
+                "tool_id": tool_id,
+                "tool_args": dict(bound.arguments),
+                "tool_call_id": "",
+            },
+        )
 
     proxy.__name__ = proxy_name
     proxy.__doc__ = descriptor.get("doc", "")
@@ -151,8 +205,12 @@ def _make_tool_proxy(client, descriptor):
 
 def _make_ambiguous_proxy(name, descriptors):
     async def proxy(*args, **kwargs):
-        candidates = [f"{d.get('id', '?')} (name={d.get('name', '?')})" for d in descriptors]
-        raise RuntimeError(f"Tool {name!r} is ambiguous — Candidates: " + "; ".join(candidates))
+        candidates = [
+            f"{d.get('id', '?')} (name={d.get('name', '?')})" for d in descriptors
+        ]
+        raise RuntimeError(
+            f"Tool {name!r} is ambiguous — Candidates: " + "; ".join(candidates)
+        )
 
     proxy.__name__ = name
     proxy.__doc__ = f"AMBIGUOUS: {name!r}"
@@ -165,8 +223,34 @@ _modules_cache: dict[str, ModuleType] = {}
 _factories: dict[str, Callable[..., Any]] = {}
 
 
+class _ToolModule(ModuleType):
+    def __init__(
+        self, fullname: str, call_proxy: Callable[..., Any] | None = None
+    ) -> None:
+        super().__init__(fullname)
+        self.__call_proxy = call_proxy
+        if call_proxy is not None:
+            self.__doc__ = call_proxy.__doc__
+            signature = getattr(call_proxy, "__signature__", None)
+            if signature is not None:
+                self.__signature__ = signature
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        if self.__call_proxy is None:
+            raise TypeError(f"Module {self.__name__!r} is not a callable tool")
+        return self.__call_proxy(*args, **kwargs)
+
+
 def make_tool_module(fullname, node, client):
-    module = ModuleType(fullname)
+    descriptors = node.get("__tools__", [])
+    if len(descriptors) == 1:
+        call_proxy = _make_tool_proxy(client, descriptors[0])
+    elif descriptors:
+        call_proxy = _make_ambiguous_proxy(fullname, descriptors)
+    else:
+        call_proxy = None
+
+    module = _ToolModule(fullname, call_proxy)
     module.__path__ = []
     module.__package__ = fullname
     _modules_cache[fullname] = module
@@ -186,7 +270,9 @@ def make_tool_module(fullname, node, client):
             continue
         child_fullname = f"{fullname}.{child_name}"
         if child_fullname not in _factories:
-            _factories[child_fullname] = lambda cn=child_fullname, nd=child_node: make_tool_module(cn, nd, client)
+            _factories[child_fullname] = lambda cn=child_fullname, nd=child_node: (
+                make_tool_module(cn, nd, client)
+            )
         setattr(module, child_name, _factories[child_fullname]())
         names.append(child_name)
     module.__all__ = names
@@ -215,8 +301,9 @@ class _Loader:
 
 # ── Entry point ──────────────────────────────────────────────────────
 
+
 async def _send_message(writer: asyncio.StreamWriter, message: dict[str, Any]) -> None:
-    writer.write(json.dumps(message, ensure_ascii=False).encode("utf-8") + b"\n")
+    _write_msg(writer, json.dumps(message, ensure_ascii=False).encode("utf-8"))
     await writer.drain()
 
 
@@ -224,16 +311,12 @@ async def main(host: str, port: int, token: str) -> None:
     reader, writer = await asyncio.open_connection(host, port)
     await _send_message(writer, {"type": "hello", "token": token})
 
-    handshake_line = await reader.readline()
-    if not handshake_line:
-        raise ConnectionError("Parent closed CodeAct TCP connection")
-    if json.loads(handshake_line.decode("utf-8")).get("type") != "hello_ok":
+    handshake_data = await _read_msg(reader)
+    if json.loads(handshake_data.decode("utf-8")).get("type") != "hello_ok":
         raise PermissionError("CodeAct TCP handshake rejected")
 
-    boot_line = await reader.readline()
-    if not boot_line:
-        raise ConnectionError("Parent closed CodeAct TCP connection")
-    payload = json.loads(boot_line.decode("utf-8"))
+    boot_data = await _read_msg(reader)
+    payload = json.loads(boot_data.decode("utf-8"))
     code = payload["code"]
     namespace = payload.get("namespace") or {"__name__": "__codeact__"}
     tool_tree = payload.get("tool_tree") or {}
@@ -242,13 +325,18 @@ async def main(host: str, port: int, token: str) -> None:
     client = AsyncRPCClient(reader, writer, rpc_timeout=rpc_timeout)
     reader_task = asyncio.create_task(client.read_responses())
 
+    _modules_cache.clear()
+    _factories.clear()
     tools_node = tool_tree.get("tools", {})
     for alias, node in tools_node.items():
-        _factories[f"tools.{alias}"] = lambda a=f"tools.{alias}", n=node: make_tool_module(a, n, client)
+        _factories[f"tools.{alias}"] = lambda a=f"tools.{alias}", n=node: (
+            make_tool_module(a, n, client)
+        )
 
     tools_mod = ModuleType("tools")
     tools_mod.__path__ = []
     tools_mod.__package__ = "tools"
+    tools_mod.__all__ = list(tools_node.keys())
     _modules_cache["tools"] = tools_mod
     _factories["tools"] = lambda: tools_mod
     sys.meta_path.insert(0, _Finder())
@@ -259,7 +347,10 @@ async def main(host: str, port: int, token: str) -> None:
     elapsed = 0.0
     try:
         start = time.monotonic()
-        with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
+        with (
+            contextlib.redirect_stdout(stdout_buf),
+            contextlib.redirect_stderr(stderr_buf),
+        ):
             compiled = compile(
                 code,
                 "<codeact>",
@@ -282,10 +373,13 @@ async def main(host: str, port: int, token: str) -> None:
     await client.close()
 
     response = {
-        "type": "execution_result", "id": "",
+        "type": "execution_result",
+        "id": "",
         "result": {
-            "stdout": stdout_buf.getvalue(), "stderr": stderr_buf.getvalue(),
-            "returncode": returncode, "elapsed": elapsed,
+            "stdout": stdout_buf.getvalue(),
+            "stderr": stderr_buf.getvalue(),
+            "returncode": returncode,
+            "elapsed": elapsed,
         },
     }
     await _send_message(writer, response)
@@ -294,6 +388,11 @@ async def main(host: str, port: int, token: str) -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 7 or sys.argv[1] != "--host" or sys.argv[3] != "--port" or sys.argv[5] != "--token":
+    if (
+        len(sys.argv) != 7
+        or sys.argv[1] != "--host"
+        or sys.argv[3] != "--port"
+        or sys.argv[5] != "--token"
+    ):
         raise SystemExit("usage: worker.py --host HOST --port PORT --token TOKEN")
     asyncio.run(main(sys.argv[2], int(sys.argv[4]), sys.argv[6]))

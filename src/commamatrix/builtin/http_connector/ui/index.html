@@ -4,9 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CommaMatrix</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#0d1117;--surface:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--user-bg:#1f2937;--assistant-bg:#161b22;--error:#f85149;--success:#3fb950;--radius:8px}
+:root{--bg:#0d1117;--surface:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--user-bg:#1f2937;--assistant-bg:#161b22;--error:#f85149;--success:#3fb950;--radius:8px;--input-max-height:33vh}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column}
 header{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;gap:12px;flex-shrink:0}
 header h1{font-size:16px;font-weight:600}
@@ -18,7 +19,8 @@ header .status{font-size:12px;color:var(--muted);margin-left:auto}
 .msg .role{font-size:11px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px}
 .msg.reasoning{background:var(--surface);border:1px dashed var(--border);align-self:flex-start;font-size:13px;color:var(--muted)}
 .msg.reasoning summary{cursor:pointer;color:var(--accent);font-size:12px}
-.msg.tool-call{background:var(--surface);border:1px solid var(--border);align-self:flex-start;font-size:13px;font-family:monospace}
+.msg.tool-call{background:rgba(255,165,0,0.08);border:1px solid rgba(255,165,0,0.4);align-self:flex-start;font-size:13px}
+.msg.tool-call summary{cursor:pointer;color:#ffa500;font-size:12px}
 .msg.tool-result{background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.3);align-self:flex-start;font-size:13px}
 .msg.tool-result summary{cursor:pointer;color:var(--success);font-size:12px}
 .msg.image{background:var(--surface);border:1px solid var(--border);align-self:flex-start;font-size:13px;color:var(--muted)}
@@ -26,15 +28,28 @@ header .status{font-size:12px;color:var(--muted);margin-left:auto}
 .msg.file .icon{color:var(--accent);margin-right:6px}
 .msg.error{background:rgba(248,81,73,0.1);border:1px solid var(--error);color:var(--error);align-self:center;font-size:13px}
 .msg .placeholder{color:var(--muted);font-style:italic;font-size:13px}
+.msg pre{margin:4px 0 0;padding:0;overflow:visible;font-size:12px;line-height:1.4;background:transparent;white-space:pre-wrap;overflow-wrap:anywhere}
+.msg code{padding:0;background:transparent;font-size:12px}
+.msg.tool-call pre,.msg.tool-result pre{max-height:none}
 #input-area{background:var(--surface);border-top:1px solid var(--border);padding:12px 16px;display:flex;gap:8px;flex-shrink:0}
-#input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:10px 14px;font-size:14px;font-family:inherit;resize:none;outline:none;min-height:42px;max-height:200px}
+#input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:10px 14px;font-size:14px;font-family:inherit;resize:none;outline:none;min-height:42px;max-height:var(--input-max-height);overflow-y:auto}
 #input:focus{border-color:var(--accent)}
 #send-btn,#cancel-btn{background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:10px 18px;font-size:14px;font-weight:500;cursor:pointer;flex-shrink:0}
 #send-btn:hover{opacity:0.9}
 #send-btn:disabled{opacity:0.4;cursor:not-allowed}
 #cancel-btn{background:var(--error);display:none}
 .typing{color:var(--muted);font-size:13px;align-self:flex-start;padding:4px 0}
-.typing span{animation:blink 1.2s infinite}
+.typing span:not(.codeact-spinner){animation:blink 1.2s infinite}
+.msg.codeact{background:rgba(168,85,247,0.1);border:1px solid rgba(168,85,247,0.4);align-self:flex-start;font-size:13px}
+.msg.codeact summary,.msg.codeact .codeact-title{cursor:pointer;color:#a855f7;font-size:12px}
+.msg.codeact pre{max-height:none}
+.codeact-spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(168,85,247,0.3);border-top-color:#a855f7;border-radius:50%;animation:codeact-spin 0.8s linear infinite;vertical-align:middle;margin-right:8px}
+@keyframes codeact-spin{to{transform:rotate(360deg)}}
+.msg.codeact{background:rgba(168,85,247,0.1);border:1px solid rgba(168,85,247,0.4);align-self:flex-start;font-size:13px}
+.msg.codeact summary,.msg.codeact .codeact-title{cursor:pointer;color:#a855f7;font-size:12px}
+.msg.codeact pre{max-height:none}
+.codeact-spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(168,85,247,0.3);border-top-color:#a855f7;border-radius:50%;animation:codeact-spin 0.8s linear infinite;vertical-align:middle;margin-right:8px}
+@keyframes codeact-spin{to{transform:rotate(360deg)}}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
 </style>
 </head>
@@ -49,6 +64,7 @@ header .status{font-size:12px;color:var(--muted);margin-left:auto}
   <button id="send-btn">Send</button>
   <button id="cancel-btn">Cancel</button>
 </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" async></script>
 <script>
 (function(){
 const messagesEl=document.getElementById('messages');
@@ -57,12 +73,14 @@ const sendBtn=document.getElementById('send-btn');
 const cancelBtn=document.getElementById('cancel-btn');
 const statusEl=document.getElementById('status');
 
-let sessionId=localStorage.getItem('cm_session_id');
-if(!sessionId){sessionId=crypto.randomUUID();localStorage.setItem('cm_session_id',sessionId)}
+let sessionId=crypto.randomUUID();
 let abortController=null;
-let lastExternalId=localStorage.getItem('cm_last_ext_id')||null;
-let streamingPreview=null;
-let streamingType=null;
+let currentReader=null;
+let cancelled=false;
+let sendGen=0;
+let lastExternalId=null;
+let streamingPreviews={};
+let typingIndicator=null;
 
 function scrollToBottom(){
   requestAnimationFrame(()=>{messagesEl.scrollTop=messagesEl.scrollHeight});
@@ -77,27 +95,202 @@ function addMessage(cls,content,role){
 }
 
 function addReasoning(content){
-  const det=document.createElement('details');det.className='msg reasoning';
+  const det=document.createElement('details');det.className='msg reasoning';det.open=true;
   const sum=document.createElement('summary');sum.textContent='Reasoning';det.appendChild(sum);
   const c=document.createElement('div');c.textContent=content;det.appendChild(c);
   messagesEl.appendChild(det);scrollToBottom();return det;
 }
 
+function scheduleCodeHighlight(codeEl){
+  if(codeEl._highlightScheduled)return;
+  codeEl._highlightScheduled=true;
+  const render=()=>{
+    if(!document.body.contains(codeEl)){
+      codeEl._highlightScheduled=false;
+      return;
+    }
+    if(typeof hljs==='undefined'){
+      setTimeout(render,50);
+      return;
+    }
+    codeEl._highlightScheduled=false;
+    delete codeEl.dataset.highlighted;
+    hljs.highlightElement(codeEl);
+  };
+  requestAnimationFrame(render);
+}
+
+function createPrettyBlock(content,lang){
+  const pre=document.createElement('pre');
+  const codeEl=document.createElement('code');
+  if(lang)codeEl.className='language-'+lang;
+  let formatted=content;
+  if(lang==='json'&&typeof content==='string'){
+    try{formatted=JSON.stringify(JSON.parse(content),null,2)}catch{}
+  }
+  codeEl.textContent=formatted;
+  pre.appendChild(codeEl);
+  scheduleCodeHighlight(codeEl);
+  return pre;
+}
+
+let codeactSpinnerEl=null;
+
+function showCodeActSpinner(){
+  if(codeactSpinnerEl)return;
+  codeactSpinnerEl=document.createElement('div');
+  codeactSpinnerEl.className='typing';
+  codeactSpinnerEl.innerHTML='<span class="codeact-spinner"></span>CodeAct session<span>.</span><span>.</span><span>.</span>';
+  messagesEl.appendChild(codeactSpinnerEl);
+  scrollToBottom();
+}
+
+function hideCodeActSpinner(){
+  if(codeactSpinnerEl){codeactSpinnerEl.remove();codeactSpinnerEl=null}
+}
+
+let codeactActiveEl=null;
+let codeactStreamArgs='';
+let codeactStreamToolId=null;
+let lastWasCodeAct=false;
+
+function addCodeActCall(args){
+  let code='';
+  if(typeof args==='string'){
+    try{const p=JSON.parse(args);code=p.code||args}catch{code=args}
+  }else{
+    code=args&&typeof args.code==='string'?args.code:JSON.stringify(args,null,2);
+  }
+  showCodeActSpinner();
+  const det=document.createElement('details');det.className='msg codeact';det.open=true;
+  const sum=document.createElement('summary');
+  sum.textContent='CodeAct session';
+  det.appendChild(sum);
+  det.appendChild(createPrettyBlock(code,'python'));
+  messagesEl.appendChild(det);
+  codeactActiveEl=det;
+  lastWasCodeAct=true;
+  scrollToBottom();
+}
+
+function decodePartialCodeArg(raw){
+  const key=raw.match(/"code"\s*:\s*"/);
+  if(!key||key.index===undefined)return raw;
+  let i=key.index+key[0].length;
+  let result='';
+  while(i<raw.length){
+    const ch=raw[i++];
+    if(ch==='"')return result;
+    if(ch!=='\\'){result+=ch;continue}
+    if(i>=raw.length)break;
+    const escaped=raw[i++];
+    if(escaped==='n')result+='\n';
+    else if(escaped==='r')result+='\r';
+    else if(escaped==='t')result+='\t';
+    else if(escaped==='b')result+='\b';
+    else if(escaped==='f')result+='\f';
+    else if(escaped==='u'){
+      const hex=raw.slice(i,i+4);
+      if(hex.length<4||!/^[0-9a-fA-F]{4}$/.test(hex))break;
+      result+=String.fromCharCode(parseInt(hex,16));
+      i+=4;
+    }else if(escaped==='"'||escaped==='\\'||escaped==='/')result+=escaped;
+    else result+=escaped;
+  }
+  return result;
+}
+
+function codeActPreviewContent(raw){
+  try{
+    const parsed=JSON.parse(raw);
+    if(parsed&&typeof parsed.code==='string')return parsed.code;
+  }catch{}
+  return decodePartialCodeArg(raw);
+}
+
+function updateCodeActPreview(data){
+  const meta=data.meta||{};
+  if(meta.tool_name!=='execute')return false;
+  const toolId=meta.tool_call_id||null;
+  if(codeactStreamToolId&&toolId&&toolId!==codeactStreamToolId){
+    codeactStreamArgs='';
+    if(!document.body.contains(codeactActiveEl))codeactActiveEl=null;
+  }
+  if(!codeactActiveEl){addCodeActCall({code:''})}
+  codeactStreamToolId=toolId;
+  codeactStreamArgs+=data.content||'';
+  const code=codeActPreviewContent(codeactStreamArgs);
+  const codeEl=codeactActiveEl&&codeactActiveEl.querySelector('pre code');
+  if(codeEl){
+    codeEl.textContent=code;
+    scheduleCodeHighlight(codeEl);
+  }
+  streamingPreviews.tool_call=codeactActiveEl;
+  scrollToBottom();
+  return true;
+}
+
+function finishCodeActSession(content){
+  hideCodeActSpinner();
+  if(codeactActiveEl){
+    const spinner=codeactActiveEl.querySelector('.codeact-spinner');
+    if(spinner)spinner.remove();
+    const sum=codeactActiveEl.querySelector('summary');
+    if(sum)sum.textContent='CodeAct session';
+    codeactActiveEl=null;
+  }
+  if(content){
+    const det=document.createElement('details');det.className='msg tool-result';det.open=true;
+    const sum2=document.createElement('summary');sum2.textContent='Result';det.appendChild(sum2);
+    det.appendChild(createPrettyBlock(content,null));
+    messagesEl.appendChild(det);scrollToBottom();
+  }
+  codeactStreamArgs='';
+  codeactStreamToolId=null;
+  lastWasCodeAct=false;
+}
+
+
 function addToolCall(name,args){
-  const div=document.createElement('div');div.className='msg tool-call';
-  div.textContent='Tool: '+name+'\n'+args;
-  messagesEl.appendChild(div);scrollToBottom();
+   if(name==='execute'){
+     addCodeActCall(args);return;
+   }
+   const argsStr=typeof args==='string'?args:JSON.stringify(args,null,2);
+   const hasArgs=typeof args==='string'?args.length>0:Object.keys(args||{}).length>0;
+   if(!hasArgs||!argsStr.includes('\n')){
+     const div=document.createElement('div');div.className='msg tool-call';
+     const label=document.createElement('div');label.textContent='Tool: '+name;div.appendChild(label);
+     if(hasArgs)div.appendChild(createPrettyBlock(argsStr,'json'));
+     messagesEl.appendChild(div);scrollToBottom();return;
+   }
+   addToolCallDetails(name,args);
+}
+
+function addToolCallDetails(name,args){
+  const argsStr=typeof args==='string'?args:JSON.stringify(args,null,2);
+  const det=document.createElement('details');det.className='msg tool-call';det.open=true;
+  const sum=document.createElement('summary');sum.textContent='Tool: '+name;det.appendChild(sum);
+  det.appendChild(createPrettyBlock(argsStr,'json'));
+  messagesEl.appendChild(det);scrollToBottom();
 }
 
 function addToolResult(content){
-  const det=document.createElement('details');det.className='msg tool-result';
+   const value=typeof content==='string'?content:JSON.stringify(content,null,2);
+   if(!value.includes('\n')){
+     const div=document.createElement('div');div.className='msg tool-result';
+     const label=document.createElement('div');label.textContent='Tool Result';div.appendChild(label);
+     div.appendChild(createPrettyBlock(value,null));
+     messagesEl.appendChild(div);scrollToBottom();return;
+   }
+   addToolResultDetails(value);
+}
+
+function addToolResultDetails(content){
+  const det=document.createElement('details');det.className='msg tool-result';det.open=true;
   const sum=document.createElement('summary');sum.textContent='Tool Result';det.appendChild(sum);
-  const c=document.createElement('div');
-  try{
-    const parsed=JSON.parse(content);
-    c.textContent=typeof parsed.result==='string'?parsed.result:JSON.stringify(parsed.result,null,2);
-  }catch{c.textContent=content}
-  det.appendChild(c);
+  let lang=null;
+  try{JSON.parse(content);lang='json'}catch{}
+  det.appendChild(createPrettyBlock(content,lang));
   messagesEl.appendChild(det);scrollToBottom();
 }
 
@@ -142,20 +335,36 @@ function addError(text){addMessage('error',text)}
 function setProcessing(on){
   sendBtn.disabled=on;cancelBtn.style.display=on?'block':'none';
   statusEl.textContent=on?'Processing...':'Ready';
+  if(on){showTyping()}else{hideTyping()}
+}
+
+function showTyping(){
+  if(typingIndicator)return;
+  typingIndicator=document.createElement('div');
+  typingIndicator.className='typing';
+  typingIndicator.innerHTML='Thinking<span>.</span><span>.</span><span>.</span>';
+  messagesEl.appendChild(typingIndicator);
+  scrollToBottom();
+}
+
+function hideTyping(){
+  if(typingIndicator){typingIndicator.remove();typingIndicator=null}
 }
 
 function renderItem(item){
-  if(streamingPreview&&streamingType===item.item_type){
-    streamingPreview.remove();
-    streamingPreview=null;streamingType=null;
-  }
+  hideTyping();
+  const existing=streamingPreviews[item.item_type];
+  if(existing){existing.remove();delete streamingPreviews[item.item_type]}
   switch(item.item_type){
     case 'reasoning':   addReasoning(item.content); break;
     case 'tool_call':
-      try{const tc=JSON.parse(item.content);addToolCall(tc.tool_name||'unknown',tc.tool_args||'{}')}
-      catch{addToolCall('tool',item.content)}
+      try{const tc=JSON.parse(item.content);addToolCall(tc.tool_name||'unknown',tc.tool_args||{})}
+      catch(e){addToolCall('tool',item.content)}
       break;
-    case 'tool_call_result': addToolResult(item.content); break;
+    case 'tool_call_result':
+       if(lastWasCodeAct){try{const r=JSON.parse(item.content);finishCodeActSession(r.content)}catch(e){finishCodeActSession(item.content)}}
+       else{try{const r=JSON.parse(item.content);addToolResult(r.content)}catch(e){addToolResult(item.content)}}
+       break;
     case 'image_output': addImageOutput(item.content); break;
     case 'file_output':  addFileOutput(item.content); break;
     case 'image_input':  addPlaceholder('Image Input: '+item.content); break;
@@ -165,28 +374,54 @@ function renderItem(item){
 }
 
 function handleStreamChunk(data){
+  hideTyping();
   const chunkType=data.item_type||'output';
-  if(!streamingPreview||streamingType!==chunkType){
-    if(streamingPreview){streamingPreview.remove()}
+  if(chunkType==='tool_call'&&updateCodeActPreview(data))return;
+  let prev=streamingPreviews[chunkType];
+  if(!prev){
     if(chunkType==='reasoning'){
-      streamingPreview=addReasoning('');
+      prev=addReasoning('');
+    }else if(chunkType==='tool_call'){
+      prev=document.createElement('details');
+      prev.className='msg tool-call';
+      prev.open=true;
+      const sum=document.createElement('summary');
+      sum.textContent='Tool: ...';
+      prev.appendChild(sum);
+      const c=document.createElement('div');
+      c.textContent='';
+      prev.appendChild(c);
+      messagesEl.appendChild(prev);
+      scrollToBottom();
     }else{
-      streamingPreview=addMessage('assistant','','Assistant');
+      prev=addMessage('assistant','','Assistant');
     }
-    streamingType=chunkType;
+    streamingPreviews[chunkType]=prev;
   }
-  const contentEl=streamingPreview.querySelector('div:last-child')||streamingPreview;
+  const contentEl=prev.querySelector('div:last-child')||prev;
   contentEl.textContent+=data.content;
   scrollToBottom();
 }
 
+function getMaxInputHeight(){
+  const root=document.documentElement;
+  const val=getComputedStyle(root).getPropertyValue('--input-max-height').trim();
+  if(val.endsWith('vh')){return window.innerHeight*parseFloat(val)/100}
+  return window.innerHeight/3;
+}
+
 async function send(){
   const text=inputEl.value.trim();if(!text)return;
+  const gen=++sendGen;
   inputEl.value='';inputEl.style.height='auto';
   addMessage('user',text,'You');
   setProcessing(true);
   abortController=new AbortController();
-  streamingPreview=null;streamingType=null;
+  currentReader=null;
+  cancelled=false;
+  streamingPreviews={};
+  codeactStreamArgs='';
+  codeactStreamToolId=null;
 
   try{
     const resp=await fetch('/api/message',{
@@ -204,41 +439,52 @@ async function send(){
       await handleJSON(resp);
     }
   }catch(e){
-    if(e.name==='AbortError'){addError('Cancelled')}
-    else{addError('Network error: '+e.message)}
+    if(!cancelled){
+      if(e.name==='AbortError'){addError('Cancelled')}
+      else{addError('Network error: '+e.message)}
+    }
   }finally{
-    abortController=null;setProcessing(false);
-    localStorage.setItem('cm_last_ext_id',lastExternalId||'');
+    if(gen===sendGen){abortController=null;currentReader=null;setProcessing(false)}
   }
 }
 
 async function handleSSE(resp){
   const reader=resp.body.getReader();
+  currentReader=reader;
   const decoder=new TextDecoder();
   let buffer='';
 
-  while(true){
-    const{value,done}=await reader.read();
-    if(done)break;
-    buffer+=decoder.decode(value,{stream:true});
-    const lines=buffer.split('\n');
-    buffer=lines.pop();
+  try{
+    while(!cancelled){
+      const{value,done}=await reader.read();
+      if(done)break;
+      buffer+=decoder.decode(value,{stream:true});
+      const lines=buffer.split('\n');
+      buffer=lines.pop();
 
-    for(const line of lines){
-      if(!line.startsWith('data: '))continue;
-      const payload=line.slice(6);
-      try{
-        const data=JSON.parse(payload);
-        if(data.type==='done')continue;
-        if(data.type==='stream_chunk'){handleStreamChunk(data);continue}
-        renderItem(data);
-        if(data.external_id){lastExternalId=data.external_id}
-        if(data.session_id&&!sessionId){sessionId=data.session_id;localStorage.setItem('cm_session_id',sessionId)}
-      }catch{}
+      for(const line of lines){
+        if(!line.startsWith('data: '))continue;
+        const payload=line.slice(6);
+        try{
+          const data=JSON.parse(payload);
+          if(data.type==='done'||cancelled)continue;
+          if(data.type==='error'){addError(data.error||'Server error');continue}
+          if(data.type==='stream_chunk'){
+            handleStreamChunk(data);continue
+          }
+          renderItem(data);
+          if(data.external_id){lastExternalId=data.external_id}
+          if(data.session_id&&!sessionId){sessionId=data.session_id}
+        }catch{}
+      }
     }
+  }catch(e){
+    if(!cancelled)throw e;
+  }finally{
+    if(currentReader===reader){currentReader=null}
   }
 
-  if(buffer.startsWith('data: ')){
+  if(!cancelled&&buffer.startsWith('data: ')){
     try{
       const data=JSON.parse(buffer.slice(6));
       if(data.type!=='done'){
@@ -252,17 +498,34 @@ async function handleSSE(resp){
 async function handleJSON(resp){
   if(!resp.ok){const e=await resp.json().catch(()=>({error:'HTTP '+resp.status}));addError(e.error||'Error');return}
   const data=await resp.json();
-  sessionId=data.session_id;localStorage.setItem('cm_session_id',sessionId);
+  hideTyping();
+  if(!sessionId){sessionId=data.session_id}
   if(data.items){for(const item of data.items){renderItem(item)}}
   if(data.last_external_id){lastExternalId=data.last_external_id}
 }
 
-function cancel(){if(abortController)abortController.abort()}
+function cancel(){
+  if(cancelled)return;
+  cancelled=true;
+  addError('Cancelled');
+  if(currentReader){currentReader.cancel();currentReader=null}
+  if(abortController){abortController.abort();abortController=null}
+  setProcessing(false);
+}
+
+function adjustInputHeight(){
+  inputEl.style.height='auto';
+  const maxH=getMaxInputHeight();
+  inputEl.style.height=Math.min(inputEl.scrollHeight,maxH)+'px';
+}
 
 sendBtn.addEventListener('click',send);
 cancelBtn.addEventListener('click',cancel);
-inputEl.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}});
-inputEl.addEventListener('input',()=>{inputEl.style.height='auto';inputEl.style.height=Math.min(inputEl.scrollHeight,200)+'px'});
+inputEl.addEventListener('keydown',function(e){
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}
+});
+inputEl.addEventListener('input',adjustInputHeight);
+window.addEventListener('resize',adjustInputHeight);
 })();
 </script>
 </body>

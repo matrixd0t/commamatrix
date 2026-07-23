@@ -25,9 +25,11 @@ def _detect_backend() -> type[ExecutionBackend]:
     candidates: list[type[ExecutionBackend]] = []
     if sys.platform == "linux":
         from .executor.systemd import SystemdBackend
+
         candidates.append(SystemdBackend)
     if shutil.which("docker"):
         from .executor.docker import DockerBackend
+
         candidates.append(DockerBackend)
     for cls in candidates:
         if cls.is_available():
@@ -65,6 +67,18 @@ max_output_bytes = ConfigField[int](
     default=1_000_000,
     description="Maximum bytes of stdout/stderr captured per execution",
 )
+max_search_results = ConfigField[int](
+    name="codeact.max_search_results",
+    default=5,
+    description="Maximum number of tools shown in search_tools results",
+)
+max_list_tools = ConfigField[int](
+    name="codeact.max_list_tools",
+    default=50,
+    description="Maximum number of tools shown in list_tools output",
+)
+
+CODEACT_NESTED_TOOL_KEY = "codeact_nested_tool"
 
 
 class CodeActService(Service):
@@ -105,7 +119,7 @@ class CodeActService(Service):
             self.searcher.rebuild_index(fingerprint, tools)
 
     async def execute(self, code: str, ctx: BeforeToolCallCtx) -> ExecutionResult:
-        return await self.backend.execute(code, ctx, namespace={'__name__': '__codeact__'})
+        return await self.backend.execute(code, ctx)
 
     async def invoke_tool(self, ctx: BeforeToolCallCtx, tool_call: ToolCall) -> Any:
         """Invoke a nested tool through the agent's unified tool lifecycle.
@@ -114,5 +128,10 @@ class CodeActService(Service):
         BEFORE_TOOL_CALL / AFTER_TOOL_CALL hooks and tool execution.
         Returns the raw Python result (not serialized).
         """
-        _, result = await ctx.run.agent._run_tool_lifecycle(ctx.run, tool_call)
+        _, result = await ctx.run.agent._run_tool_lifecycle(
+            ctx.run,
+            tool_call,
+            persist_result=False,
+            tool_meta={CODEACT_NESTED_TOOL_KEY: True},
+        )
         return result.content

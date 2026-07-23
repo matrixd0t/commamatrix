@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 from typing import TYPE_CHECKING
 
 from .backend import ExecutionBackend, ExecutionResult
@@ -22,7 +21,10 @@ class DockerBackend(ExecutionBackend):
     async def stop(self) -> None:
         pass
 
-    async def execute(self, code: str, ctx: BeforeToolCallCtx, namespace: dict[str, Any] | None = None) -> ExecutionResult:
+    def environment_description(self) -> str:
+        return "Your code runs in an isolated Docker container with restricted filesystem and network access."
+
+    async def execute(self, code: str, ctx: BeforeToolCallCtx) -> ExecutionResult:
         raise NotImplementedError("Docker CodeAct backend is not implemented yet")
 
     @staticmethod

@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 
 from ..classes.manager import Manager, ServiceInstanceRegistry
-from ..utils import await_if_needed
+from commamatrix.utils import await_if_needed
 
 
 class AgentLifecycle:

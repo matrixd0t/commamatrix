@@ -41,6 +41,23 @@ class ResponsesCodec(ApiCodec):
     def _tool_result_content(content: Any) -> str:
         return content if isinstance(content, str) else dumps(content, ensure_ascii=False)
 
+    @staticmethod
+    def _extract_reasoning_text(item: dict[str, Any]) -> str:
+        summary = item.get("summary", ())
+        text = "\n".join(
+            part.get("text", "")
+            for part in summary
+            if isinstance(part, dict) and part.get("type") == "summary_text"
+        )
+        if not text:
+            content_parts = item.get("content", ())
+            text = "\n".join(
+                part.get("text", "")
+                for part in content_parts
+                if isinstance(part, dict) and part.get("type") == "reasoning_text"
+            )
+        return text
+
     async def build_request(self, *, model: str, ctx: BeforeLlmCallCtx) -> dict[str, Any]:
         input_items: list[dict[str, Any]] = []
 
@@ -184,6 +201,7 @@ class ResponsesCodec(ApiCodec):
         acc: dict[str, Any],
     ) -> StreamDelta | LLMResponseBlock | None:
         etype = data.get("type", event_type)
+        print(f"[responses codec] event type={etype} keys={list(data.keys())}")
 
         if etype == "response.created":
             response_obj = data.get("response", {})
@@ -197,29 +215,70 @@ class ResponsesCodec(ApiCodec):
             acc["text_buf"] += text
             return StreamDelta(content=text, delta_type="text")
 
+        if etype == "response.content_part.delta":
+            text = data.get("delta", "")
+            acc.setdefault("text_buf", "")
+            acc["text_buf"] += text
+            return StreamDelta(content=text, delta_type="text")
+
+        if etype == "response.reasoning.delta":
+            text = data.get("delta", "")
+            acc.setdefault("reasoning_buf", "")
+            acc["reasoning_buf"] += text
+            return StreamDelta(content=text, delta_type="reasoning")
+
+        if etype == "response.reasoning_text.delta":
+            text = data.get("delta", "")
+            acc.setdefault("reasoning_buf", "")
+            acc["reasoning_buf"] += text
+            return StreamDelta(content=text, delta_type="reasoning")
+
         if etype == "response.reasoning_summary_text.delta":
             text = data.get("delta", "")
             acc.setdefault("reasoning_buf", "")
             acc["reasoning_buf"] += text
             return StreamDelta(content=text, delta_type="reasoning")
 
+        if etype == "response.output_item.added":
+            item = data.get("item", {})
+            if item.get("type") == "function_call":
+                item_id = item.get("id", "")
+                tc_acc = acc.setdefault("tool_calls", {})
+                entry = tc_acc.setdefault(item_id, {"args_buf": ""})
+                entry.update({
+                    "id": item_id,
+                    "call_id": item.get("call_id", ""),
+                    "name": item.get("name", ""),
+                })
+            return None
+
         if etype == "response.function_call_arguments.delta":
             item_id = data.get("item_id", "")
             tc_acc = acc.setdefault("tool_calls", {})
-            entry = tc_acc.get(item_id)
-            if entry is None:
-                entry = {"args_buf": ""}
-                tc_acc[item_id] = entry
-            entry["args_buf"] += data.get("delta", "")
-            return None
+            entry = tc_acc.setdefault(item_id, {"args_buf": "", "id": item_id})
+            delta = data.get("delta", "")
+            entry["args_buf"] += delta
+            return StreamDelta(
+                content=delta,
+                delta_type="tool_call",
+                meta={
+                    "tool_call_id": entry.get("call_id", item_id),
+                    "tool_name": entry.get("name", ""),
+                },
+            )
 
         if etype == "response.output_item.done":
             item = data.get("item", {})
             item_type = item.get("type")
             if item_type == "function_call":
                 item_id = item.get("id", "")
-                tc_acc = acc.get("tool_calls", {})
-                entry = tc_acc.get(item_id, {})
+                tc_acc = acc.setdefault("tool_calls", {})
+                entry = tc_acc.setdefault(item_id, {})
+                entry.update({
+                    "id": item_id,
+                    "call_id": item.get("call_id", entry.get("call_id", "")),
+                    "name": item.get("name", entry.get("name", "")),
+                })
                 args_buf = entry.get("args_buf", item.get("arguments", "{}"))
                 try:
                     tool_args = loads(args_buf) if isinstance(args_buf, str) else args_buf
@@ -234,7 +293,21 @@ class ResponsesCodec(ApiCodec):
             if item_type == "message":
                 acc.setdefault("completed_message_ids", []).append(item.get("id", ""))
             if item_type == "reasoning":
+                reasoning_text = self._extract_reasoning_text(item)
+                if not reasoning_text:
+                    reasoning_text = acc.get("reasoning_buf", "")
+                if reasoning_text:
+                    acc["yielded_reasoning"] = True
+                    return LLMResponseReasoningBlock(
+                        content=reasoning_text,
+                        meta=wire_meta("responses.output_item", item),
+                    )
                 acc.setdefault("completed_reasoning_ids", []).append(item.get("id", ""))
+            return None
+
+        if etype == "response.done":
+            response_obj = data.get("response", {})
+            acc["response"] = response_obj
             return None
 
         if etype == "response.completed":
@@ -247,23 +320,14 @@ class ResponsesCodec(ApiCodec):
     def flush_stream(self, acc: dict[str, Any]) -> tuple[list[LLMResponseBlock], StreamEnd]:
         blocks: list[LLMResponseBlock] = []
         response_obj = acc.get("response", {})
+        yielded_reasoning = acc.get("yielded_reasoning", False)
+        print(f"[responses flush] yielded_reasoning={yielded_reasoning} output_items={len(response_obj.get('output', []))}")
 
         for output_item in response_obj.get("output", ()):
             item_type = output_item.get("type")
-            if item_type == "reasoning":
-                summary = output_item.get("summary", ())
-                summary_text = "\n".join(
-                    part.get("text", "")
-                    for part in summary
-                    if isinstance(part, dict) and part.get("type") == "summary_text"
-                )
-                if not summary_text:
-                    content_parts = output_item.get("content", ())
-                    summary_text = "\n".join(
-                        part.get("text", "")
-                        for part in content_parts
-                        if isinstance(part, dict) and part.get("type") == "reasoning_text"
-                    )
+            print(f"[responses flush] item type={item_type}")
+            if item_type == "reasoning" and not yielded_reasoning:
+                summary_text = self._extract_reasoning_text(output_item)
                 if summary_text:
                     blocks.append(LLMResponseReasoningBlock(
                         content=summary_text,

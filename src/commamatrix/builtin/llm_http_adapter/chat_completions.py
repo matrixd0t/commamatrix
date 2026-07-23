@@ -30,7 +30,13 @@ class ChatCompletionsCodec(ApiCodec):
     @staticmethod
     def serialize_tools(ctx: BeforeLlmCallCtx) -> list[dict[str, Any]]:
         tm = ctx.run.agent.tool_manager
-        return [{"type": "function", "function": {**t.schema, "name": tm.public_name(t)}} for t in ctx.tools]
+        result = []
+        for tool in ctx.tools:
+            function = dict(tool.schema)
+            function.pop("type", None)
+            function["name"] = tm.public_name(tool)
+            result.append({"type": "function", "function": function})
+        return result
 
     @staticmethod
     def _llm_meta(item: Any) -> dict[str, Any]:
@@ -242,12 +248,7 @@ class ChatCompletionsCodec(ApiCodec):
         body["stream_options"] = {"include_usage": True}
         return body
 
-    def parse_stream_event(
-        self,
-        event_type: str | None,
-        data: dict[str, Any],
-        acc: dict[str, Any],
-    ) -> StreamDelta | LLMResponseBlock | None:
+    def parse_stream_event(self, event_type: str | None, data: dict[str, Any], acc: dict[str, Any]) -> StreamDelta | LLMResponseBlock | None:
         choices = data.get("choices")
         usage = data.get("usage")
         response_id = data.get("id")
@@ -309,9 +310,22 @@ class ChatCompletionsCodec(ApiCodec):
                 fn = tc.get("function", {})
                 if fn.get("name"):
                     entry["name"] = fn["name"]
-                if fn.get("arguments"):
-                    entry["args_buf"] += fn["arguments"]
-            return None
+                arguments = fn.get("arguments", "")
+                if arguments:
+                    entry["args_buf"] += arguments
+            tc = tool_calls[-1]
+            idx = tc.get("index", 0)
+            entry = tc_acc[idx]
+            fn = tc.get("function", {})
+            return StreamDelta(
+                content=fn.get("arguments", ""),
+                delta_type="tool_call",
+                meta={
+                    "tool_call_id": entry["id"],
+                    "tool_name": entry["name"],
+                    "tool_call_index": idx,
+                },
+            )
 
         if finish_reason:
             stop_reason = StopReason.END_TURN

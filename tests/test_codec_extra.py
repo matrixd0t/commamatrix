@@ -20,7 +20,9 @@ from commamatrix.core.classes.manager import ServiceInstanceRegistry
 from commamatrix.builtin.llm_http_adapter.codec import wire_meta
 from commamatrix.builtin.llm_http_adapter.chat_completions import ChatCompletionsCodec
 from commamatrix.builtin.llm_http_adapter.responses import ResponsesCodec
-from commamatrix.builtin.llm_http_adapter.anthropic_messages import AnthropicMessagesCodec
+from commamatrix.builtin.llm_http_adapter.anthropic_messages import (
+    AnthropicMessagesCodec,
+)
 from tests.conftest import StubOrigin, stub_origin, make_tool_descriptor
 
 
@@ -31,6 +33,7 @@ class FakeAgent:
     def __init__(self):
         self.services = ServiceInstanceRegistry()
         from commamatrix.components.config import Config
+
         self.config = Config()
         self.tool_manager = ToolManager(agent=self)
 
@@ -47,11 +50,21 @@ def _make_ctx(tools=None):
 class TestWireMeta:
     def test_basic_structure(self):
         result = wire_meta("test.kind", {"key": "value"})
-        assert result == {"llm": {"wire": {"kind": "test.kind", "value": {"key": "value"}}}}
+        assert result == {
+            "llm": {"wire": {"kind": "test.kind", "value": {"key": "value"}}}
+        }
 
     def test_with_extra_kwargs(self):
         result = wire_meta("test.kind", "val", field="reasoning_content")
-        assert result == {"llm": {"wire": {"kind": "test.kind", "value": "val", "field": "reasoning_content"}}}
+        assert result == {
+            "llm": {
+                "wire": {
+                    "kind": "test.kind",
+                    "value": "val",
+                    "field": "reasoning_content",
+                }
+            }
+        }
 
 
 # ── ChatCompletionsCodec.serialize_tools ─────────────────────────────────────
@@ -60,16 +73,26 @@ class TestWireMeta:
 class TestChatCompletionsSerializeTools:
     def test_serialize_single_tool(self):
         codec = ChatCompletionsCodec()
-        tool_desc = make_tool_descriptor(name="search", alias="web", doc="Search", schema={
-            "type": "function",
-            "description": "Search the web",
-            "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
-        })
+        tool_desc = make_tool_descriptor(
+            name="search",
+            alias="web",
+            doc="Search",
+            schema={
+                "type": "function",
+                "description": "Search the web",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            },
+        )
         ctx = _make_ctx(tools=[tool_desc])
         result = codec.serialize_tools(ctx)
 
         assert len(result) == 1
         assert result[0]["type"] == "function"
+        assert "type" not in result[0]["function"]
         assert result[0]["function"]["name"] == "web_search"
         assert result[0]["function"]["description"] == "Search the web"
 
@@ -91,11 +114,19 @@ class TestChatCompletionsSerializeTools:
 class TestResponsesSerializeTools:
     def test_serialize_single_tool(self):
         codec = ResponsesCodec()
-        tool_desc = make_tool_descriptor(name="calc", alias="math", doc="Calculate", schema={
-            "type": "function",
-            "description": "Calculate",
-            "parameters": {"type": "object", "properties": {"expr": {"type": "string"}}},
-        })
+        tool_desc = make_tool_descriptor(
+            name="calc",
+            alias="math",
+            doc="Calculate",
+            schema={
+                "type": "function",
+                "description": "Calculate",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"expr": {"type": "string"}},
+                },
+            },
+        )
         ctx = _make_ctx(tools=[tool_desc])
         result = codec.serialize_tools(ctx)
 
@@ -110,25 +141,41 @@ class TestResponsesSerializeTools:
 class TestAnthropicSerializeTools:
     def test_serialize_single_tool(self):
         codec = AnthropicMessagesCodec()
-        tool_desc = make_tool_descriptor(name="search", alias="web", doc="Search", schema={
-            "type": "function",
-            "description": "Search",
-            "parameters": {"type": "object", "properties": {"q": {"type": "string"}}},
-        })
+        tool_desc = make_tool_descriptor(
+            name="search",
+            alias="web",
+            doc="Search",
+            schema={
+                "type": "function",
+                "description": "Search",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"q": {"type": "string"}},
+                },
+            },
+        )
         ctx = _make_ctx(tools=[tool_desc])
         result = codec.serialize_tools(ctx)
 
         assert len(result) == 1
         assert result[0]["name"] == "web_search"
         assert result[0]["description"] == "Search"
-        assert result[0]["input_schema"] == {"type": "object", "properties": {"q": {"type": "string"}}}
+        assert result[0]["input_schema"] == {
+            "type": "object",
+            "properties": {"q": {"type": "string"}},
+        }
 
     def test_serialize_no_description(self):
         codec = AnthropicMessagesCodec()
-        tool_desc = make_tool_descriptor(name="fn", alias="mod", doc="", schema={
-            "type": "function",
-            "parameters": {"type": "object", "properties": {}},
-        })
+        tool_desc = make_tool_descriptor(
+            name="fn",
+            alias="mod",
+            doc="",
+            schema={
+                "type": "function",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        )
         ctx = _make_ctx(tools=[tool_desc])
         result = codec.serialize_tools(ctx)
 
@@ -257,7 +304,9 @@ class TestAnthropicFlushStream:
         }
         blocks, end = codec.flush_stream(acc)
 
-        reasoning_blocks = [b for b in blocks if isinstance(b, LLMResponseReasoningBlock)]
+        reasoning_blocks = [
+            b for b in blocks if isinstance(b, LLMResponseReasoningBlock)
+        ]
         assert len(reasoning_blocks) == 1
         assert reasoning_blocks[0].content == "Let me reason..."
 
@@ -294,7 +343,10 @@ class TestResponsesFlushStream:
             "response": {
                 "status": "completed",
                 "output": [
-                    {"type": "message", "content": [{"type": "output_text", "text": "Hello"}]},
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "Hello"}],
+                    },
                 ],
                 "usage": {"input_tokens": 10, "output_tokens": 5},
             },
@@ -312,8 +364,14 @@ class TestResponsesFlushStream:
             "response": {
                 "status": "completed",
                 "output": [
-                    {"type": "reasoning", "summary": [{"type": "summary_text", "text": "I think..."}]},
-                    {"type": "message", "content": [{"type": "output_text", "text": "Answer"}]},
+                    {
+                        "type": "reasoning",
+                        "summary": [{"type": "summary_text", "text": "I think..."}],
+                    },
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "Answer"}],
+                    },
                 ],
                 "usage": {"input_tokens": 10, "output_tokens": 5},
             },
@@ -321,7 +379,9 @@ class TestResponsesFlushStream:
         }
         blocks, end = codec.flush_stream(acc)
 
-        reasoning_blocks = [b for b in blocks if isinstance(b, LLMResponseReasoningBlock)]
+        reasoning_blocks = [
+            b for b in blocks if isinstance(b, LLMResponseReasoningBlock)
+        ]
         text_blocks = [b for b in blocks if isinstance(b, LLMResponseTextBlock)]
         assert len(reasoning_blocks) == 1
         assert reasoning_blocks[0].content == "I think..."
@@ -337,7 +397,10 @@ class TestResponsesFlushStream:
             "response": {
                 "status": "completed",
                 "output": [
-                    {"type": "message", "content": [{"type": "output_text", "text": "Answer"}]},
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "Answer"}],
+                    },
                 ],
                 "usage": {"input_tokens": 10, "output_tokens": 5},
             },
@@ -363,6 +426,7 @@ class TestResponsesFlushStream:
 class TestLLMResponseFileBlock:
     def test_content_str(self):
         from commamatrix.components.llm_adapter import LLMResponseFileBlock
+
         block = LLMResponseFileBlock(ref="file_123", ext=".pdf")
         content = block.content_str()
         assert "file_123" in content
@@ -370,11 +434,13 @@ class TestLLMResponseFileBlock:
 
     def test_item_type(self):
         from commamatrix.components.llm_adapter import LLMResponseFileBlock
+
         block = LLMResponseFileBlock(ref="file_123", ext=".pdf")
         assert block.item_type() == DialogItemType.FILE_OUTPUT
 
     def test_to_dialog_item(self):
         from commamatrix.components.llm_adapter import LLMResponseFileBlock
+
         block = LLMResponseFileBlock(ref="file_123", ext=".pdf", meta={"key": "val"})
         item = block.to_dialog_item(
             role=DialogRole.ASSISTANT,
@@ -391,6 +457,7 @@ class TestLLMResponseFileBlock:
 class TestLLMResponseImageBlock:
     def test_content_str(self):
         from commamatrix.components.llm_adapter import LLMResponseImageBlock
+
         block = LLMResponseImageBlock(ref="img_123", ext=".png")
         content = block.content_str()
         assert "img_123" in content
@@ -398,6 +465,7 @@ class TestLLMResponseImageBlock:
 
     def test_item_type(self):
         from commamatrix.components.llm_adapter import LLMResponseImageBlock
+
         block = LLMResponseImageBlock(ref="img_123", ext=".png")
         assert block.item_type() == DialogItemType.IMAGE_OUTPUT
 
@@ -408,6 +476,7 @@ class TestLLMResponseImageBlock:
 class TestToolCallResult:
     def test_aborted_factory(self):
         from commamatrix.components.llm_adapter import ToolCallResult
+
         result = ToolCallResult.aborted("tc1", "not allowed")
         assert result.tool_call_id == "tc1"
         assert result.abort is True
@@ -415,6 +484,7 @@ class TestToolCallResult:
 
     def test_dump_json(self):
         from commamatrix.components.llm_adapter import ToolCallResult
+
         result = ToolCallResult(tool_call_id="tc1", content=42)
         json_str = result.dump_json()
         assert '"tool_call_id": "tc1"' in json_str

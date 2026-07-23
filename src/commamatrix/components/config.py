@@ -41,8 +41,8 @@ class ConfigField(Generic[T]):
     def default(self) -> T | None:
         if self._default is _MISSING:
             return None
-        if callable(self._default):
-            return self._default()  # type: ignore[return-value]
+        if callable(self._default) and not isinstance(self._default, type):
+            return self._default()
         return self._default  # type: ignore[return-value]
 
     @property

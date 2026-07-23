@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections.abc import AsyncIterator
+from pprint import pp
 from typing import Any, TYPE_CHECKING
 from urllib.parse import urlparse
 
 import httpx
-from httpx import AsyncClient, HTTPError
+from httpx import AsyncClient, HTTPError, HTTPStatusError
 
 from ...components.config import ConfigField
 from ...components.hook import BeforeLlmCallCtx
@@ -56,12 +58,33 @@ api_protocol = ConfigField[str](
     description="Default API protocol (see ApiProtocol enum for builtin values)",
 )
 
+stream_read_timeout = ConfigField[float](
+    name="llm_stream_read_timeout",
+    default=60.0,
+    description="Streaming read timeout in seconds",
+)
+
+request_timeout = ConfigField[float](
+    name="llm_request_timeout",
+    default=300.0,
+    description="Non-streaming request timeout in seconds",
+)
+
 
 class LLMHTTPAdapter(LLMAdapter):
     codec_registry = ApiCodec.registry
 
     def __init__(self, agent: Agent) -> None:
         super().__init__(agent)
+        self._client: AsyncClient | None = None
+
+    async def start(self) -> None:
+        self._client = AsyncClient()
+
+    async def stop(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
 
     @staticmethod
     def _join_url(base: str, endpoint: str) -> str:
@@ -124,32 +147,60 @@ class LLMHTTPAdapter(LLMAdapter):
 
         if actual_stream:
             body = codec.enable_streaming(body)
+            from pprint import pp
+            pp(body)
             try:
-                async with AsyncClient(headers=headers, timeout=self._stream_timeout()) as client:
-                    async with client.stream("POST", url, json=body) as resp:
-                        resp.raise_for_status()
-                        acc: dict[str, Any] = {}
-                        async for etype, data in self._iter_sse_events(resp):
-                            result = codec.parse_stream_event(etype, data, acc)
-                            if result is not None:
-                                yield result
-                        blocks, end = codec.flush_stream(acc)
-                        for block in blocks:
-                            yield block
-                        yield end
+                print(f"[LLM] Connecting stream: POST {url[:100]}...", file=sys.stderr)
+                async with self._client.stream("POST", url, json=body, headers=headers, timeout=self._stream_timeout) as resp:
+                    if resp.status_code >= 400:
+                        err_body = (await resp.aread()).decode(errors="replace")
+                        print(f"[LLM] ERROR: stream failed ({resp.status_code}): {err_body[:500]}", file=sys.stderr)
+                        raise LLMResponseError(f"LLM HTTP stream failed ({resp.status_code}): {err_body}")
+                    print(f"[LLM] Stream connected ({resp.status_code}), reading events...", file=sys.stderr)
+                    acc: dict[str, Any] = {}
+                    event_count = 0
+                    async for etype, data in self._iter_sse_events(resp):
+                        event_count += 1
+                        data_type = data.get("type", etype)
+                        if data_type and "reason" in data_type.lower():
+                            print(f"[ask_llm RAW] event #{event_count} type={data_type} delta={str(data.get('delta',''))[:200]}")
+                        result = codec.parse_stream_event(etype, data, acc)
+                        if result is not None:
+                            if isinstance(result, StreamDelta):
+                                print(f"[ask_llm] StreamDelta delta_type={result.delta_type} content_len={len(result.content)}")
+                            else:
+                                print(f"[ask_llm] LLMResponseBlock type={type(result).__name__} len={len(result.content_str())}")
+                            yield result
+                    print(f"[ask_llm] SSE ended ({event_count} events), acc keys={list(acc.keys())} reasoning_buf={len(acc.get('reasoning_buf',''))} text_buf={len(acc.get('text_buf',''))}")
+                    blocks, end = codec.flush_stream(acc)
+                    print(f"[ask_llm] flush_stream -> {len(blocks)} blocks, stop={end.stop_reason}")
+                    for block in blocks:
+                        print(f"[ask_llm] yield block {type(block).__name__} len={len(block.content_str())}")
+                        yield block
+                    yield end
+            except LLMResponseError:
+                raise
             except HTTPError as exc:
-                err_body = exc.response.text if exc.response else "no response"
-                raise LLMResponseError(f"LLM HTTP stream failed ({exc.response.status_code}): {err_body}") from exc
+                print(f"[LLM] ERROR: stream HTTP error: {exc}", file=sys.stderr)
+                raise LLMResponseError(f"LLM HTTP stream failed: {exc}") from exc
+            except Exception as exc:
+                print(f"[LLM] ERROR: unexpected stream error: {type(exc).__name__}: {exc}", file=sys.stderr)
+                raise
         else:
+            print(f"[LLM] Non-streaming request: POST {url[:100]}...", file=sys.stderr)
             try:
-                async with AsyncClient(headers=headers, timeout=120) as client:
-                    response = await client.post(url, json=body)
-                    response.raise_for_status()
-                    payload = response.json()
-            except HTTPError as exc:
+                response = await self._client.post(url, json=body, headers=headers, timeout=self._request_timeout)
+                response.raise_for_status()
+                payload = response.json()
+            except HTTPStatusError as exc:
                 err_body = exc.response.text if exc.response else "no response"
+                print(f"[LLM] ERROR: request failed ({exc.response.status_code}): {err_body[:500]}", file=sys.stderr)
                 raise LLMResponseError(f"LLM HTTP request failed ({exc.response.status_code}): {err_body}") from exc
+            except HTTPError as exc:
+                print(f"[LLM] ERROR: request HTTP error: {exc}", file=sys.stderr)
+                raise LLMResponseError(f"LLM HTTP request failed: {exc}") from exc
             except ValueError as exc:
+                print(f"[LLM] ERROR: invalid JSON response: {exc}", file=sys.stderr)
                 raise LLMResponseError("LLM returned invalid JSON") from exc
 
             llm_response = codec.parse_response(payload)
@@ -174,9 +225,9 @@ class LLMHTTPAdapter(LLMAdapter):
                     if data_str == "[DONE]":
                         return
                     try:
-                        yield (event_type, json.loads(data_str))
+                        yield event_type, json.loads(data_str)
                     except json.JSONDecodeError:
-                        pass
+                        print(f"[LLM] WARNING: failed to parse SSE JSON: {data_str[:200]}", file=sys.stderr)
                     data_lines = []
                 event_type = None
                 continue
@@ -190,10 +241,19 @@ class LLMHTTPAdapter(LLMAdapter):
             data_str = "\n".join(data_lines)
             if data_str != "[DONE]":
                 try:
-                    yield (event_type, json.loads(data_str))
+                    yield event_type, json.loads(data_str)
                 except json.JSONDecodeError:
-                    pass
+                    print(f"[LLM] WARNING: trailing SSE JSON parse error: {data_str[:200]}", file=sys.stderr)
 
-    @staticmethod
-    def _stream_timeout() -> httpx.Timeout:
-        return httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0)
+    @property
+    def _stream_timeout(self) -> httpx.Timeout:
+        return httpx.Timeout(
+            connect=10.0,
+            read=self.config.get(stream_read_timeout),
+            write=10.0,
+            pool=10.0,
+        )
+
+    @property
+    def _request_timeout(self) -> float:
+        return self.config.get(request_timeout)

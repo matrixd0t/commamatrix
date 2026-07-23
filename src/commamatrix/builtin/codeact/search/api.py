@@ -44,3 +44,8 @@ class ToolSearcher(ABC):
     @abstractmethod
     def tools(self, alias: str) -> list[ToolDescriptor]:
         raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def descriptors(self) -> list[ToolDescriptor]:
+        raise NotImplementedError

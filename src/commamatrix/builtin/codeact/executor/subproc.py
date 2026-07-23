@@ -5,13 +5,15 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import platform
 import secrets
 import sys
 from pathlib import Path
 from typing import Any
 
 from .backend import ExecutionBackend, ExecutionResult
-from .. import is_codeact_internal
+from ..rpc.server import is_codeact_internal
 from ..rpc.server import RPCServer
 from ..rpc.tcp import TcpServer, TcpTransport
 from ....components.hook import BeforeToolCallCtx
@@ -22,7 +24,13 @@ _WORKER_PATH = str(Path(__file__).parent / "worker.py")
 class SubprocessBackend(ExecutionBackend):
     """Run code in a separate process without security isolation."""
 
-    def __init__(self, execution_timeout: float = 30.0, shutdown_timeout: float = 5.0, max_output_bytes: int = 1_000_000, rpc_timeout: float = 10.0) -> None:
+    def __init__(
+        self,
+        execution_timeout: float = 30.0,
+        shutdown_timeout: float = 5.0,
+        max_output_bytes: int = 1_000_000,
+        rpc_timeout: float = 10.0,
+    ) -> None:
         self._execution_timeout = execution_timeout
         self._shutdown_timeout = shutdown_timeout
         self._max_output_bytes = max_output_bytes
@@ -34,14 +42,25 @@ class SubprocessBackend(ExecutionBackend):
     async def stop(self) -> None:
         pass
 
-    async def execute(self, code: str, ctx: BeforeToolCallCtx, namespace: dict[str, Any] | None = None) -> ExecutionResult:
+    def environment_description(self) -> str:
+        v = sys.version_info
+        return (
+            f"Platform: {platform.system()} {platform.release()} | "
+            f"Python {v.major}.{v.minor}.{v.micro} | "
+            f"CWD: {os.getcwd()}\n"
+            "Full filesystem and network access — no security isolation. "
+            "All standard library modules are available. "
+            "Each execution starts with a clean namespace; no state persists between runs."
+        )
+
+    async def execute(self, code: str, ctx: BeforeToolCallCtx) -> ExecutionResult:
         server = RPCServer(ctx)
         tm = ctx.run.agent.tool_manager
         public_descriptors = [d for d in tm.descriptors if not is_codeact_internal(d)]
         tool_tree = tm.build_tool_tree(public_descriptors)
         payload = {
             "code": code,
-            "namespace": namespace or {"__name__": "__codeact__"},
+            "namespace": {"__name__": "__codeact__"},
             "timeout": self._execution_timeout,
             "rpc_timeout": self._rpc_timeout,
             "tool_tree": tool_tree,
@@ -76,7 +95,9 @@ class SubprocessBackend(ExecutionBackend):
                 stderr=asyncio.subprocess.PIPE,
             )
             assert proc.stderr is not None
-            stderr_reader = asyncio.create_task(self._read_stderr(proc.stderr, stderr_buffer))
+            stderr_reader = asyncio.create_task(
+                self._read_stderr(proc.stderr, stderr_buffer)
+            )
 
             async with asyncio.timeout(self._execution_timeout):
                 assert tcp_server is not None
@@ -90,7 +111,9 @@ class SubprocessBackend(ExecutionBackend):
                         response_data = message
                         break
                     if "method" in message:
-                        task = asyncio.create_task(self._handle_rpc(server, transport, message))
+                        task = asyncio.create_task(
+                            self._handle_rpc(server, transport, message)
+                        )
                         rpc_tasks.append(task)
                         continue
                     stderr_buffer.append(f"Unknown worker message: {message!r}")
@@ -119,10 +142,14 @@ class SubprocessBackend(ExecutionBackend):
                 returncode=124,
                 duration_ms=self._execution_timeout * 1000,
             )
-        elif response_data is not None and isinstance(response_data.get("result"), dict):
+        elif response_data is not None and isinstance(
+            response_data.get("result"), dict
+        ):
             worker_result = response_data["result"]
             worker_stderr = worker_result.get("stderr", "")
-            combined_stderr = "\n".join(part for part in (stderr_text, worker_stderr) if part)
+            combined_stderr = "\n".join(
+                part for part in (stderr_text, worker_stderr) if part
+            )
             result = ExecutionResult(
                 stdout=self._truncate(worker_result.get("stdout", "")),
                 stderr=self._truncate(combined_stderr),
@@ -141,7 +168,9 @@ class SubprocessBackend(ExecutionBackend):
             raise other_error
         return result
 
-    async def _handle_rpc(self, server: RPCServer, transport: TcpTransport, message: dict[str, Any]) -> None:
+    async def _handle_rpc(
+        self, server: RPCServer, transport: TcpTransport, message: dict[str, Any]
+    ) -> None:
         try:
             async with asyncio.timeout(self._rpc_timeout):
                 rpc_response = await server.handle(message)
@@ -155,7 +184,9 @@ class SubprocessBackend(ExecutionBackend):
         except (ConnectionError, OSError):
             pass
 
-    async def _read_stderr(self, stderr: asyncio.StreamReader, buffer: list[str]) -> None:
+    async def _read_stderr(
+        self, stderr: asyncio.StreamReader, buffer: list[str]
+    ) -> None:
         try:
             while True:
                 line = await stderr.readline()
@@ -173,16 +204,18 @@ class SubprocessBackend(ExecutionBackend):
     def _truncate(self, text: str) -> str:
         encoded = text.encode("utf-8")
         if len(encoded) > self._max_output_bytes:
-            truncated = encoded[:self._max_output_bytes].decode("utf-8", errors="ignore")
+            truncated = encoded[: self._max_output_bytes].decode(
+                "utf-8", errors="ignore"
+            )
             return truncated + "\n...(output truncated)"
         return text
 
     async def _cleanup(
-            self,
-            proc: asyncio.subprocess.Process | None,
-            transport: TcpTransport | None,
-            stderr_reader: asyncio.Task | None,
-            rpc_tasks: list[asyncio.Task],
+        self,
+        proc: asyncio.subprocess.Process | None,
+        transport: TcpTransport | None,
+        stderr_reader: asyncio.Task | None,
+        rpc_tasks: list[asyncio.Task],
     ) -> None:
         for task in rpc_tasks:
             if not task.done():

@@ -9,24 +9,44 @@ from types import SimpleNamespace
 
 import pytest
 
-from commamatrix.builtin.codeact import is_codeact_internal
-from commamatrix.builtin.codeact.hooks import CODEACT_ENABLED_KEY, mark_codeact_enabled, expose_codeact_tools
+from commamatrix.builtin.codeact.hooks import (
+    CODEACT_ENABLED_KEY,
+    codeact_enabled,
+    expose_codeact_tools,
+)
 from commamatrix.builtin.codeact.search.bm25 import BM25ToolSearcher
-from commamatrix.builtin.codeact.rpc.server import RPCServer, serialize_tool_descriptor
+from commamatrix.builtin.codeact.service import CODEACT_NESTED_TOOL_KEY
+from commamatrix.builtin.codeact.tools import enable_codeact
+from commamatrix.builtin.codeact.rpc.server import (
+    RPCServer,
+    is_codeact_internal,
+    serialize_tool_descriptor,
+)
 from commamatrix.builtin.codeact.rpc.protocol import RPCError
+from commamatrix.components.hook import BeforeLlmCallCtx, BeforeToolCallCtx
+from commamatrix.components.llm_adapter import ToolCall
 from commamatrix.components.tool import ToolDescriptor, PythonToolSource
 from commamatrix.core.classes.manager import ServiceInstanceRegistry
 
-def _make_desc(name: str, alias: str = "test", codeact: bool = False) -> ToolDescriptor:
+
+def _make_desc(
+    name: str,
+    alias: str = "test",
+    codeact: bool = False,
+    namespace: str = "test",
+) -> ToolDescriptor:
     src = PythonToolSource()
     return ToolDescriptor(
-        id=f"python://test/{name}",
-        namespace="test",
+        id=f"python://{namespace}/{name}",
+        namespace=namespace,
         alias=alias,
         name=name,
         doc=f"Tool {name}",
-        schema={"type": "function", "parameters": {"type": "object", "properties": {}, "required": []}},
-        meta={"codeact": True} if codeact else {},
+        schema={
+            "type": "function",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+        meta={"codeact": False} if codeact else {} if codeact else {},
         _source_ref=weakref.ref(src),
     )
 
@@ -40,6 +60,11 @@ class TestIsCodeactInternal:
         d = _make_desc("search")
         assert is_codeact_internal(d) is False
 
+    def test_tool_opted_out_of_codeact(self):
+        d = _make_desc("private")
+        d.meta["codeact"] = False
+        assert is_codeact_internal(d) is True
+
 
 class TestBM25ToolSearcher:
     def test_empty_search(self):
@@ -49,16 +74,30 @@ class TestBM25ToolSearcher:
     def test_rebuild_and_search(self):
         src = PythonToolSource()
         d1 = ToolDescriptor(
-            id="python://math/calculator", namespace="math", alias="math",
-            name="calculator", doc="Evaluate a mathematical expression and return the result.",
-            schema={"type": "function", "parameters": {"type": "object", "properties": {}, "required": []}},
-            meta={}, _source_ref=weakref.ref(src),
+            id="python://math/calculator",
+            namespace="math",
+            alias="math",
+            name="calculator",
+            doc="Evaluate a mathematical expression and return the result.",
+            schema={
+                "type": "function",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+            meta={},
+            _source_ref=weakref.ref(src),
         )
         d2 = ToolDescriptor(
-            id="python://web/web_search", namespace="web", alias="web",
-            name="web_search", doc="Search the web for information about a query.",
-            schema={"type": "function", "parameters": {"type": "object", "properties": {}, "required": []}},
-            meta={}, _source_ref=weakref.ref(src),
+            id="python://web/web_search",
+            namespace="web",
+            alias="web",
+            name="web_search",
+            doc="Search the web for information about a query.",
+            schema={
+                "type": "function",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+            meta={},
+            _source_ref=weakref.ref(src),
         )
         searcher = BM25ToolSearcher()
         searcher.rebuild_index("fp1", [d1, d2])
@@ -98,21 +137,93 @@ class TestBM25ToolSearcher:
         assert len(searcher.tools("mod2")) == 1
         assert len(searcher.tools("nonexistent")) == 0
 
+    def test_descriptors_property(self):
+        searcher = BM25ToolSearcher()
+        d1 = _make_desc("a", alias="mod1")
+        d2 = _make_desc("b", alias="mod2")
+        searcher.rebuild_index("fp", [d1, d2])
+        result = searcher.descriptors
+        assert len(result) == 2
+        assert {d.name for d in result} == {"a", "b"}
 
-class TestMarkCodeactEnabled:
-    def test_sets_flag_when_service_missing(self):
-        agent = SimpleNamespace(services=ServiceInstanceRegistry())
-        run = SimpleNamespace(agent=agent, state={})
-        ctx = SimpleNamespace(run=run)
-        mark_codeact_enabled(ctx)
-        assert ctx.run.state[CODEACT_ENABLED_KEY] is True
+    def test_descriptors_property_empty(self):
+        searcher = BM25ToolSearcher()
+        assert searcher.descriptors == []
 
-    def test_does_not_override_existing(self):
-        agent = SimpleNamespace(services=ServiceInstanceRegistry())
-        run = SimpleNamespace(agent=agent, state={CODEACT_ENABLED_KEY: False})
-        ctx = SimpleNamespace(run=run)
-        mark_codeact_enabled(ctx)
-        assert ctx.run.state[CODEACT_ENABLED_KEY] is False
+
+@pytest.mark.asyncio
+async def test_codeact_index_is_ready_when_mode_is_enabled():
+    descriptor = _make_desc("weather")
+    searcher = BM25ToolSearcher()
+
+    def get_config(field):
+        return True if field is codeact_enabled else field.default
+
+    runtime = SimpleNamespace(
+        config=SimpleNamespace(get=get_config),
+        searcher=searcher,
+        backend=SimpleNamespace(environment_description=lambda: "test environment"),
+        rebuild_index=lambda tools, run: searcher.rebuild_index("fp", tools),
+    )
+    services = SimpleNamespace(
+        get=lambda service_cls: runtime,
+        require=lambda service_cls: runtime,
+    )
+    agent = SimpleNamespace(
+        services=services,
+        tool_manager=SimpleNamespace(descriptors=[descriptor], fingerprint="fp"),
+    )
+    run = SimpleNamespace(agent=agent, chain_state={})
+    before_llm = BeforeLlmCallCtx(run=run, dialog=[], tools=[descriptor])
+
+    await expose_codeact_tools(before_llm)
+    result = await enable_codeact(
+        BeforeToolCallCtx(run=run, tool_call=SimpleNamespace())
+    )
+
+    assert "No tools available." not in result
+    assert "weather" in result
+
+
+@pytest.mark.asyncio
+async def test_codeact_exposes_only_control_tools():
+    regular = _make_desc("weather")
+    controls = []
+    for name in (
+        "execute",
+        "search_tools",
+        "list_tools",
+        "enable_codeact",
+        "exit_codeact",
+    ):
+        control = _make_desc(name, namespace="commamatrix.builtin.codeact.tools")
+        control.meta.update({"codeact": False})
+        controls.append(control)
+
+    searcher = BM25ToolSearcher()
+    runtime = SimpleNamespace(
+        config=SimpleNamespace(get=lambda field: field.default),
+        searcher=searcher,
+        rebuild_index=lambda tools, run: searcher.rebuild_index("fp", tools),
+    )
+    agent = SimpleNamespace(
+        services=SimpleNamespace(get=lambda service_cls: runtime),
+        tool_manager=SimpleNamespace(
+            descriptors=[regular, *controls], fingerprint="fp"
+        ),
+    )
+    run = SimpleNamespace(agent=agent, chain_state={CODEACT_ENABLED_KEY: True})
+    ctx = BeforeLlmCallCtx(run=run, dialog=[], tools=[regular, *controls])
+
+    await expose_codeact_tools(ctx)
+
+    assert {descriptor.name for descriptor in ctx.tools} == {
+        "execute",
+        "search_tools",
+        "list_tools",
+        "enable_codeact",
+        "exit_codeact",
+    }
 
 
 class TestSerializeToolDescriptor:

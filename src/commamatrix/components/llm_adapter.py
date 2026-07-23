@@ -12,9 +12,9 @@ from collections.abc import AsyncIterator
 from typing import Any, TYPE_CHECKING
 from httpx import AsyncClient, HTTPError
 
-from ..core.utils import to_jsonable
+from ..utils import to_jsonable
 from ..core.classes.service import AbstractService
-from ..core.classes.manager import ServiceInstanceManager, ServiceInstanceRegistry
+from ..core.classes.manager import ServiceInstanceManager
 from ..core.classes.source import PythonServiceSource
 from .dialog import DialogItem, DialogItemType, DialogRole, DialogOrigin
 

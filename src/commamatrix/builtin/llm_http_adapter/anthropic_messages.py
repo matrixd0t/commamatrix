@@ -197,6 +197,14 @@ class AnthropicMessagesCodec(ApiCodec):
                 acc["current_block"]["id"] = block.get("id", "")
                 acc["current_block"]["name"] = block.get("name", "")
                 acc["current_block"]["args_buf"] = ""
+                return StreamDelta(
+                    content="",
+                    delta_type="tool_call",
+                    meta={
+                        "tool_call_id": block.get("id", ""),
+                        "tool_name": block.get("name", ""),
+                    },
+                )
             return None
 
         if msg_type == "content_block_delta":
@@ -217,8 +225,18 @@ class AnthropicMessagesCodec(ApiCodec):
             if delta_type == "input_json_delta":
                 current = acc.get("current_block")
                 if current:
+                    partial_json = delta.get("partial_json", "")
                     current.setdefault("args_buf", "")
-                    current["args_buf"] += delta.get("partial_json", "")
+                    current["args_buf"] += partial_json
+                    return StreamDelta(
+                        content=partial_json,
+                        delta_type="tool_call",
+                        meta={
+                            "tool_call_id": current.get("id", ""),
+                            "tool_name": current.get("name", ""),
+                        },
+                    )
+                return None
             return None
 
         if msg_type == "content_block_stop":
