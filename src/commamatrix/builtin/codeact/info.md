@@ -124,7 +124,7 @@ After the TCP handshake, the first message from parent to child is NOT an RPC ca
 ```
 
 - Only **public** tools appear in `tool_tree` — CodeAct-internal tools (those with `visible_in_codeact=True, visible_outside_codeact=False`) are excluded via `is_codeact_internal()`.
-- Control tools (`execute`, `search_tools`, `list_tools`, `exit_codeact`) are never exposed to the worker.
+- Control tools (`execute`, `search_tools`, `list_tools`) are never exposed to the worker.
 - Tools are available both under `tools.<alias>.<name>` and, when the name is a valid identifier, as a callable `tools.<name>` module. This supports `import tools.echo as echo; await echo(...)`.
 - Tool invocation on the worker side uses the descriptor `id` for direct resolution.
 

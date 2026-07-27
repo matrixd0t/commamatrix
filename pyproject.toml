@@ -10,15 +10,17 @@ requires-python = ">=3.12"
 dependencies = [
     "pydantic",
     "bm25s",
-    "matrix-fn-schema",
+    "matrix-fn-schema>=0.1.5",
     "aiosqlite",
     "aiofiles",
     "httpx",
     "python-dotenv",
+    "trafilatura>=2.1.0",
+    "ddgs>=9.14.4",
 ]
 
 [project.optional-dependencies]
-http = ["starlette", "uvicorn"]
+http = ["starlette", "uvicorn", "bcrypt", "PyJWT"]
 postgres = ["asyncpg"]
 test = ["pytest", "pytest-asyncio", "commamatrix[http]"]
 all = ["commamatrix[http,postgres]"]

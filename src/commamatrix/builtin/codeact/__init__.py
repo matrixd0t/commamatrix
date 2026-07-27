@@ -7,7 +7,7 @@ The ``CodeActService`` is discovered automatically and managed by the agent's se
 """
 
 from __future__ import annotations
-from . import hooks, tools, service
+from . import hooks, tools, instructions, service
 
 
-__all__ = ["hooks", "tools", "service"]
+__all__ = ["hooks", "tools", "instructions", "service"]

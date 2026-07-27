@@ -205,7 +205,7 @@ async def add_instructions(ctx: BeforeLlmCallCtx) -> None:
     if not parts:
         return
     system_item = DialogItem(
-        content="\n\n".join(parts),
+        content="\n\n".join([p.strip(' \n') for p in parts]),
         item_type=DialogItemType.INPUT,
         role=DialogRole.SYSTEM,
         origin=ctx.run.origin,

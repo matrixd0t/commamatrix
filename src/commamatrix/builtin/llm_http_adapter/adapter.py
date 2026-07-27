@@ -6,7 +6,6 @@ import json
 import os
 import sys
 from collections.abc import AsyncIterator
-from pprint import pp
 from typing import Any, TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -149,6 +148,7 @@ class LLMHTTPAdapter(LLMAdapter):
             body = codec.enable_streaming(body)
             from pprint import pp
             pp(body)
+            headers["Accept"] = "text/event-stream"
             try:
                 print(f"[LLM] Connecting stream: POST {url[:100]}...", file=sys.stderr)
                 async with self._client.stream("POST", url, json=body, headers=headers, timeout=self._stream_timeout) as resp:

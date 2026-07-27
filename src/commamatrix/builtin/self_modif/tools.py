@@ -8,11 +8,13 @@ import os
 import platform
 import sys
 from pathlib import Path
+from typing import Literal
 
 import aiofiles
 
 from ...components.config import ConfigField
 from ...components.hook import BeforeRunCtx, BeforeToolCallCtx, before_run
+from ...components.instruction import InstructionCtx, instruction
 from ...components.tool import tool
 
 _GUIDE_PATH = str(Path(__file__).parent / "guide.md")
@@ -34,60 +36,46 @@ def ensure_plugins_directory(_ctx: BeforeRunCtx) -> None:
     _ensure_plugins_directory()
 
 
-@tool(alias="self_modif")
-async def add_extension(module_or_path: str, *, ctx: BeforeToolCallCtx) -> str:
-    """Activate an import name or filesystem path as an agent extension."""
-    if not module_or_path:
-        return "Error: an extension module or path is required."
-    try:
-        handled = await ctx.run.agent.add_extensions(module_or_path)
-    except Exception as exc:
-        return f"Failed to add extension '{module_or_path}': {exc}"
-    if not handled:
-        return f"Failed to add extension '{module_or_path}'."
-    return f"Extension is active: {handled[0]}"
+@instruction
+def reusable_behavior(ctx: InstructionCtx) -> str:
+    """Explain how to persist reusable behavior as an extension."""
+    return '''
+# Self-modification: when and why
+If some behavior should be reused in future runs, persist it with self-modification instead of using it only in the current task.
+- For a permanent response rule, workflow rule, or piece of context, write an @instruction that returns the text to include in the system prompt.
+- For a reusable action or capability, write a @tool.
+- Use manage_extension after changing the current agent's add-ons. Do not persist one-off task details.
+'''
 
 
 @tool(alias="self_modif")
-async def remove_extension(module_or_path: str, *, ctx: BeforeToolCallCtx) -> str:
-    """Deactivate an extension by import name or filesystem path."""
+async def manage_extension(module_or_path: str, action: Literal["add", "remove", "reload"], *, ctx: BeforeToolCallCtx) -> str:
+    """Add, remove, or reload an extension by import name or filesystem path."""
     if not module_or_path:
         return "Error: an extension module or path is required."
+    method = {
+        "add": ctx.run.agent.add_extensions,
+        "remove": ctx.run.agent.remove_extensions,
+        "reload": ctx.run.agent.reload_extensions,
+    }[action]
     try:
-        handled = await ctx.run.agent.remove_extensions(module_or_path)
+        handled = await method(module_or_path)
     except Exception as exc:
-        return f"Failed to remove extension '{module_or_path}': {exc}"
+        return f"Failed to {action} extension '{module_or_path}': {exc}"
     if not handled:
-        return f"Extension '{module_or_path}' is not active."
-    return f"Extension removed: {handled[0]}"
-
-
-@tool(alias="self_modif")
-async def reload_extension(module_or_path: str, *, ctx: BeforeToolCallCtx) -> str:
-    """Reload an extension by import name or filesystem path after editing it."""
-    if not module_or_path:
-        return "Error: an extension module or path is required."
-    try:
-        handled = await ctx.run.agent.reload_extensions(module_or_path)
-    except Exception as exc:
-        return f"Failed to reload extension '{module_or_path}': {exc}"
-    if not handled:
-        return f"Failed to reload extension '{module_or_path}'."
-    return f"Extension reloaded: {handled[0]}"
+        return f"Failed to {action} extension '{module_or_path}'."
+    verb = {"add": "active", "remove": "removed", "reload": "reloaded"}[action]
+    return f"Extension {verb}: {handled[0]}\n"
 
 
 @tool(alias="self_modif")
 async def list_extensions(*, ctx: BeforeToolCallCtx) -> str:
     """List the extension roots currently active for this agent."""
     scope = ctx.run.agent.extension_scope
-    roots = [
-        name
-        for name in scope
-        if not any(name != other and name.startswith(other + ".") for other in scope)
-    ]
+    roots = [name for name in scope if not any(name != other and name.startswith(other + ".") for other in scope)]
     if not roots:
         return "No active extensions."
-    return "Active extensions:\n" + "\n".join(f"- {name}" for name in roots)
+    return "Active extension modules:\n" + "\n".join(f"- {name}" for name in roots)
 
 
 @tool(alias="self_modif")

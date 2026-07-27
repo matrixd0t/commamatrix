@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import secrets
 import uuid
 from contextlib import suppress
 from contextvars import ContextVar
@@ -23,6 +25,7 @@ from ...components.connector import Connector
 from ...components.dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
 from ...components.hook import OnParsedCtx
 from ...components.llm_adapter import StreamDelta
+from .auth import AuthError, Authorizer
 
 if TYPE_CHECKING:
     from ...core.agent import Agent
@@ -34,13 +37,53 @@ http_port = ConfigField[int](
 )
 http_host = ConfigField[str](
     name="http_host",
-    default="127.0.0.1",
-    description="Local HTTP server host for HTTP connector",
+    default="0.0.0.0",
+    description="HTTP server bind host; use 127.0.0.1 to restrict it to this machine",
 )
 http_ui_path = ConfigField[str](
     name="http_ui_path",
     default=str(Path(__file__).parent / "ui" / "index.html"),
     description="Path to the HTTP connector UI HTML file",
+)
+http_auth_app_name = ConfigField[str](
+    name="http_auth_app_name",
+    default="commamatrix",
+    description="Application name used to isolate HTTP users",
+)
+_http_jwt_secret_cache: str | None = None
+
+
+def _resolve_jwt_secret() -> str:
+    global _http_jwt_secret_cache
+    if _http_jwt_secret_cache is not None:
+        return _http_jwt_secret_cache
+
+    env_secret = os.environ.get("JWT_SECRET")
+    if env_secret:
+        _http_jwt_secret_cache = env_secret
+        return env_secret
+
+    secret_path = Path(".jwt_secret")
+    if secret_path.exists():
+        _http_jwt_secret_cache = secret_path.read_text().strip()
+        if _http_jwt_secret_cache:
+            return _http_jwt_secret_cache
+
+    secret = secrets.token_urlsafe(32)
+    secret_path.write_text(secret)
+    _http_jwt_secret_cache = secret
+    return secret
+
+
+http_auth_jwt_secret = ConfigField[str](
+    name="http_auth_jwt_secret",
+    default=_resolve_jwt_secret,
+    description="Secret used to sign HTTP authentication tokens",
+)
+http_auth_token_ttl_seconds = ConfigField[int](
+    name="http_auth_token_ttl_seconds",
+    default=24 * 60 * 60,
+    description="HTTP authentication token lifetime in seconds",
 )
 
 
@@ -62,9 +105,7 @@ class HttpRequestContext:
     closed: bool = False
 
 
-_http_request_context: ContextVar[HttpRequestContext | None] = ContextVar(
-    "commamatrix_http_request_context", default=None
-)
+_http_request_context: ContextVar[HttpRequestContext | None] = ContextVar("commamatrix_http_request_context", default=None)
 
 
 class HttpConnector(Connector[HttpOrigin]):
@@ -75,6 +116,12 @@ class HttpConnector(Connector[HttpOrigin]):
         self._port = self.config.get(http_port)
         self._host = self.config.get(http_host)
         self._ui_path = Path(self.config.get(http_ui_path))
+        self.authorizer = Authorizer(
+            agent=agent,
+            app_name=self.config.get(http_auth_app_name),
+            jwt_secret=self.config.get(http_auth_jwt_secret),
+            token_ttl_seconds=self.config.get(http_auth_token_ttl_seconds),
+        )
         self._server: uvicorn.Server | None = None
         self._bound_port: int | None = None
         self._session_locks: dict[str, asyncio.Lock] = {}
@@ -95,12 +142,13 @@ class HttpConnector(Connector[HttpOrigin]):
     def app(self) -> Starlette:
         if self._app is None:
             self._app = self._build_app()
+        assert self._app is not None
         return self._app
 
     def _build_app(self) -> Starlette:
         connector = self
 
-        async def index(request: Request) -> Response:
+        async def index(_request: Request) -> Response:
             if self._ui_path.exists():
                 async with aiofiles.open(self._ui_path, encoding="utf-8") as f:
                     return HTMLResponse(await f.read())
@@ -109,16 +157,68 @@ class HttpConnector(Connector[HttpOrigin]):
                 status_code=404,
             )
 
-        async def health(request: Request) -> Response:
+        async def login(request: Request) -> Response:
+            try:
+                body = await request.json()
+                token = await self.authorizer.login(body.get("username", ""), body.get("password", ""))
+            except AuthError as exc:
+                return JSONResponse({"detail": str(exc)}, status_code=401)
+            except Exception:
+                return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+            return JSONResponse({"access_token": token, "token_type": "bearer", "expires_in": self.authorizer.token_ttl_seconds})
+
+        async def register(request: Request) -> Response:
+            try:
+                body = await request.json()
+                user = await self.authorizer.register_with_invite(body.get("token", ""), body.get("username", ""), body.get("password", ""))
+            except AuthError as exc:
+                return JSONResponse({"detail": str(exc)}, status_code=400)
+            except Exception:
+                return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+            return JSONResponse({"id": user.id, "username": user.username}, status_code=201)
+
+        async def invite_page(request: Request) -> Response:
+            return await index(request)
+
+        async def health(_request: Request) -> Response:
             return JSONResponse({"status": "ok"})
 
+        @self.authorizer.requires_auth
+        async def me(request: Request) -> Response:
+            user = request.state.user
+            return JSONResponse({"id": user.id, "username": user.username, "app": user.app_name, "is_admin": user.is_admin})
+
+        @self.authorizer.requires_auth
+        async def change_password(request: Request) -> Response:
+            try:
+                body = await request.json()
+                await self.authorizer.change_password(request.state.user, body.get("old_password", ""), body.get("new_password", ""))
+            except AuthError as exc:
+                return JSONResponse({"detail": str(exc)}, status_code=400)
+            except Exception:
+                return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+            return JSONResponse({"status": "ok"})
+
+        @self.authorizer.requires_admin
+        async def create_invite(request: Request) -> Response:
+            token = await self.authorizer.create_invite()
+            url = str(request.base_url).rstrip("/") + "/invite?token=" + token
+            return JSONResponse({"url": url})
+
+        @self.authorizer.requires_auth
         async def message(request: Request) -> Response:
             return await connector._handle_message(request)
 
         return Starlette(
             routes=[
                 Route("/", index, methods=["GET"]),
+                Route("/invite", invite_page, methods=["GET"]),
                 Route("/health", health, methods=["GET"]),
+                Route("/api/login", login, methods=["POST"]),
+                Route("/api/register", register, methods=["POST"]),
+                Route("/api/me", me, methods=["GET"]),
+                Route("/api/password", change_password, methods=["POST"]),
+                Route("/api/invite", create_invite, methods=["POST"]),
                 Route("/api/message", message, methods=["POST"]),
             ]
         )
@@ -127,6 +227,7 @@ class HttpConnector(Connector[HttpOrigin]):
         if self._server is not None and self._server.started:
             return
 
+        await self.authorizer.init_db()
         config = uvicorn.Config(
             app=self.app,
             host=self._host,
@@ -134,11 +235,12 @@ class HttpConnector(Connector[HttpOrigin]):
             log_level="warning",
         )
         self._server = uvicorn.Server(config)
-        self._listener_task = asyncio.create_task(self._server.serve())
+        listener_task = asyncio.create_task(self._server.serve())
+        self._listener_task = listener_task
 
         while not self._server.started:
             if self._server.should_exit:
-                await asyncio.gather(self._listener_task, return_exceptions=True)
+                await asyncio.gather(listener_task, return_exceptions=True)
                 raise RuntimeError(
                     f"HTTP server failed to start on {self._host}:{self._port}"
                 )
@@ -157,6 +259,7 @@ class HttpConnector(Connector[HttpOrigin]):
         if server is not None:
             server.should_exit = True
 
+        await self.authorizer.stop()
         task = self._listener_task
         self._listener_task = None
 
@@ -195,7 +298,8 @@ class HttpConnector(Connector[HttpOrigin]):
             previous_external_id=data.get("previous_external_id"),
         )
 
-    def _next_external_id(self, session_id: str) -> str:
+    @staticmethod
+    def _next_external_id(session_id: str) -> str:
         return f"http:{session_id}:{uuid.uuid4().hex}"
 
     def _context_for_origin(self, origin: HttpOrigin) -> HttpRequestContext | None:
@@ -302,7 +406,7 @@ class HttpConnector(Connector[HttpOrigin]):
             )
 
         session_id = body.get("session_id") or uuid.uuid4().hex
-        username = body.get("username") or "web"
+        username = request.state.user.username
         previous_external_id = body.get("previous_external_id")
 
         streaming = request.query_params.get("stream", "1") != "0"

@@ -38,6 +38,25 @@ header .status{font-size:12px;color:var(--muted);margin-left:auto}
 #send-btn:hover{opacity:0.9}
 #send-btn:disabled{opacity:0.4;cursor:not-allowed}
 #cancel-btn{background:var(--error);display:none}
+.header-actions{display:flex;align-items:center;gap:6px}
+.header-actions button{background:transparent;color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;font-size:12px;cursor:pointer}
+.header-actions button:hover{border-color:var(--accent);color:var(--accent)}
+.auth-overlay{position:fixed;inset:0;background:rgba(13,17,23,.72);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}
+.auth-overlay.hidden{display:none}
+.auth-card{width:min(100%,390px);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;box-shadow:0 18px 60px rgba(0,0,0,.45)}
+.auth-card h2{font-size:20px;margin-bottom:8px}
+.auth-card p{color:var(--muted);font-size:13px;line-height:1.45;margin-bottom:18px}
+.auth-card form{display:flex;flex-direction:column;gap:10px}
+.auth-card label{font-size:12px;color:var(--muted)}
+.auth-card input{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:10px 12px;font:inherit;outline:none}
+.auth-card input:focus{border-color:var(--accent)}
+.auth-card button{background:var(--accent);color:#fff;border:0;border-radius:var(--radius);padding:10px 14px;font:inherit;cursor:pointer;margin-top:6px}
+.auth-card button.secondary{background:transparent;border:1px solid var(--border);color:var(--text)}
+.auth-error{color:var(--error);font-size:13px;min-height:18px}
+.auth-success{color:var(--success);font-size:13px;line-height:1.45;word-break:break-all}
+#app-shell{height:100vh;display:flex;flex-direction:column}
+body.auth-locked #app-shell{filter:blur(6px);pointer-events:none;user-select:none}
+@media(max-width:600px){header{padding:8px 10px;flex-wrap:wrap}.header-actions{width:100%;justify-content:flex-end}.header-actions .status{margin-left:auto}}
 .typing{color:var(--muted);font-size:13px;align-self:flex-start;padding:4px 0}
 .typing span:not(.codeact-spinner){animation:blink 1.2s infinite}
 .msg.codeact{background:rgba(168,85,247,0.1);border:1px solid rgba(168,85,247,0.4);align-self:flex-start;font-size:13px}
@@ -53,16 +72,66 @@ header .status{font-size:12px;color:var(--muted);margin-left:auto}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
 </style>
 </head>
-<body>
+<body class="auth-locked">
+<div id="app-shell">
 <header>
   <h1>CommaMatrix</h1>
-  <span class="status" id="status">Ready</span>
+  <span class="status" id="status">Sign in required</span>
+  <div class="header-actions">
+    <span class="status" id="user-label"></span>
+    <button id="password-btn" type="button" hidden>Change password</button>
+    <button id="invite-btn" type="button" hidden>Add user</button>
+    <button id="logout-btn" type="button" hidden>Log out</button>
+  </div>
 </header>
 <div id="messages"></div>
 <div id="input-area">
   <textarea id="input" rows="1" placeholder="Type a message..." autofocus></textarea>
   <button id="send-btn">Send</button>
   <button id="cancel-btn">Cancel</button>
+</div>
+</div>
+<div class="auth-overlay hidden" id="auth-overlay" style="display:none">
+  <div class="auth-card">
+    <h2 id="auth-title">Sign in</h2>
+    <p id="auth-description">Use your CommaMatrix account to connect to this agent.</p>
+    <form id="auth-form">
+      <label for="auth-username">Username</label>
+      <input id="auth-username" autocomplete="username" required>
+      <label for="auth-password">Password</label>
+      <input id="auth-password" type="password" autocomplete="current-password" required>
+      <label id="auth-confirm-label" for="auth-confirm" hidden>Confirm password</label>
+      <input id="auth-confirm" type="password" autocomplete="new-password" hidden>
+      <div class="auth-error" id="auth-error"></div>
+      <button id="auth-submit" type="submit">Sign in</button>
+    </form>
+  </div>
+</div>
+<div class="auth-overlay hidden" id="password-overlay">
+  <div class="auth-card">
+    <h2>Change password</h2>
+    <p>Set a new password for the current account.</p>
+    <form id="password-form">
+      <label for="old-password">Current password</label>
+      <input id="old-password" type="password" autocomplete="current-password" required>
+      <label for="new-password">New password</label>
+      <input id="new-password" type="password" autocomplete="new-password" required>
+      <label for="new-password-confirm">Confirm new password</label>
+      <input id="new-password-confirm" type="password" autocomplete="new-password" required>
+      <div class="auth-error" id="password-error"></div>
+      <button type="submit">Change password</button>
+      <button class="secondary" id="password-cancel" type="button">Cancel</button>
+    </form>
+  </div>
+</div>
+<div class="auth-overlay hidden" id="invite-overlay">
+  <div class="auth-card">
+    <h2>New user invitation</h2>
+    <p>Give this one-time link to the person who should register.</p>
+    <div class="auth-success" id="invite-url"></div>
+    <button id="invite-copy" type="button">Copy link</button>
+    <button class="secondary" id="invite-close" type="button">Close</button>
+  </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" async></script>
 <script>
@@ -72,6 +141,29 @@ const inputEl=document.getElementById('input');
 const sendBtn=document.getElementById('send-btn');
 const cancelBtn=document.getElementById('cancel-btn');
 const statusEl=document.getElementById('status');
+const userLabel=document.getElementById('user-label');
+const passwordBtn=document.getElementById('password-btn');
+const inviteBtn=document.getElementById('invite-btn');
+const logoutBtn=document.getElementById('logout-btn');
+const authOverlay=document.getElementById('auth-overlay');
+const authTitle=document.getElementById('auth-title');
+const authDescription=document.getElementById('auth-description');
+const authForm=document.getElementById('auth-form');
+const authUsername=document.getElementById('auth-username');
+const authPassword=document.getElementById('auth-password');
+const authConfirmLabel=document.getElementById('auth-confirm-label');
+const authConfirm=document.getElementById('auth-confirm');
+const authSubmit=document.getElementById('auth-submit');
+const authError=document.getElementById('auth-error');
+const passwordOverlay=document.getElementById('password-overlay');
+const passwordForm=document.getElementById('password-form');
+const passwordError=document.getElementById('password-error');
+const inviteOverlay=document.getElementById('invite-overlay');
+const inviteUrl=document.getElementById('invite-url');
+let inviteToken=new URLSearchParams(location.search).get('token');
+let authToken=localStorage.getItem('commamatrix_auth_token');
+let currentUser=null;
+let authMode=inviteToken?'register':'login';
 
 let sessionId=crypto.randomUUID();
 let abortController=null;
@@ -81,6 +173,66 @@ let sendGen=0;
 let lastExternalId=null;
 let streamingPreviews={};
 let typingIndicator=null;
+
+function setAuthLocked(locked){
+  document.body.classList.toggle('auth-locked',locked);
+  if(locked){
+    authOverlay.classList.remove('hidden');
+    authOverlay.style.display='';
+  }else{
+    authOverlay.classList.add('hidden');
+    authOverlay.style.display='none';
+  }
+}
+
+function setAuthMode(mode){
+  authMode=mode;
+  const register=mode==='register';
+  authTitle.textContent=register?'Create account':'Sign in';
+  authDescription.textContent=register?'Use the one-time invitation to create an account.':'Use your CommaMatrix account to connect to this agent.';
+  authConfirmLabel.hidden=!register;
+  authConfirm.hidden=!register;
+  authConfirm.required=register;
+  authPassword.autocomplete=register?'new-password':'current-password';
+  authSubmit.textContent=register?'Register':'Sign in';
+  authError.textContent='';
+}
+
+function authHeaders(){return authToken?{Authorization:'Bearer '+authToken}:{};}
+
+async function authFetch(url,options={}){
+  const headers={...authHeaders(),...(options.headers||{})};
+  return fetch(url,{...options,headers});
+}
+
+function showAuth(message=''){
+  setAuthMode(inviteToken?'register':'login');
+  authError.textContent=message;
+  setAuthLocked(true);
+  authUsername.focus();
+}
+
+function clearAuth(){
+  authToken=null;currentUser=null;
+  localStorage.removeItem('commamatrix_auth_token');
+  messagesEl.replaceChildren();
+  sessionId=crypto.randomUUID();lastExternalId=null;
+  passwordBtn.hidden=true;inviteBtn.hidden=true;logoutBtn.hidden=true;userLabel.textContent='';statusEl.textContent='Sign in required';
+}
+
+function applyUser(user){
+  currentUser=user;userLabel.textContent=user.username;passwordBtn.hidden=false;inviteBtn.hidden=!user.is_admin;logoutBtn.hidden=false;statusEl.textContent='Ready';setAuthLocked(false);
+}
+
+async function loadCurrentUser(){
+  if(!authToken){showAuth();return false}
+  const response=await authFetch('/api/me');
+  if(!response.ok){clearAuth();showAuth();return false}
+  applyUser(await response.json());
+  return true;
+}
+
+function logout(){clearAuth();showAuth();}
 
 function scrollToBottom(){
   requestAnimationFrame(()=>{messagesEl.scrollTop=messagesEl.scrollHeight});
@@ -411,6 +563,7 @@ function getMaxInputHeight(){
 }
 
 async function send(){
+  if(!authToken){showAuth();return}
   const text=inputEl.value.trim();if(!text)return;
   const gen=++sendGen;
   inputEl.value='';inputEl.style.height='auto';
@@ -426,8 +579,8 @@ async function send(){
   try{
     const resp=await fetch('/api/message',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({session_id:sessionId,content:text,username:'web',previous_external_id:lastExternalId}),
+      headers:{'Content-Type':'application/json',...authHeaders()},
+      body:JSON.stringify({session_id:sessionId,content:text,previous_external_id:lastExternalId}),
       signal:abortController.signal
     });
 
@@ -496,7 +649,8 @@ async function handleSSE(resp){
 }
 
 async function handleJSON(resp){
-  if(!resp.ok){const e=await resp.json().catch(()=>({error:'HTTP '+resp.status}));addError(e.error||'Error');return}
+  if(resp.status===401){clearAuth();showAuth('Your session has expired. Sign in again.');return}
+  if(!resp.ok){const e=await resp.json().catch(()=>({error:'HTTP '+resp.status}));addError(e.error||e.detail||'Error');return}
   const data=await resp.json();
   hideTyping();
   if(!sessionId){sessionId=data.session_id}
@@ -518,6 +672,69 @@ function adjustInputHeight(){
   const maxH=getMaxInputHeight();
   inputEl.style.height=Math.min(inputEl.scrollHeight,maxH)+'px';
 }
+
+authForm.addEventListener('submit',async function(e){
+  e.preventDefault();
+  const username=authUsername.value.trim();
+  const password=authPassword.value;
+  authError.textContent='';
+  if(authMode==='register'&&password!==authConfirm.value){authError.textContent='Passwords do not match';return}
+  authSubmit.disabled=true;
+  try{
+    if(authMode==='register'){
+      const response=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:inviteToken,username,password})});
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok){authError.textContent=data.detail||'Registration failed';return}
+      history.replaceState({},'',location.pathname);
+      inviteToken=null;
+      authMode='login';
+      setAuthMode('login');
+      authUsername.value=username;
+      authPassword.value='';
+      authError.textContent='Account created. Sign in with your new password.';
+      return;
+    }
+    const response=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok){authError.textContent=data.detail||'Sign in failed';return}
+    authToken=data.access_token;
+    localStorage.setItem('commamatrix_auth_token',authToken);
+    await loadCurrentUser();
+    authForm.reset();
+  }catch(error){authError.textContent='Network error: '+error.message}
+  finally{authSubmit.disabled=false}
+});
+
+passwordBtn.addEventListener('click',function(){passwordError.textContent='';passwordForm.reset();passwordOverlay.classList.remove('hidden')});
+document.getElementById('password-cancel').addEventListener('click',function(){passwordOverlay.classList.add('hidden')});
+passwordForm.addEventListener('submit',async function(e){
+  e.preventDefault();
+  passwordError.textContent='';
+  const next=document.getElementById('new-password').value;
+  if(next!==document.getElementById('new-password-confirm').value){passwordError.textContent='Passwords do not match';return}
+  try{
+    const response=await authFetch('/api/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({old_password:document.getElementById('old-password').value,new_password:next})});
+    const data=await response.json().catch(()=>({}));
+    if(response.status===401){logout();return}
+    if(!response.ok){passwordError.textContent=data.detail||'Password change failed';return}
+    passwordOverlay.classList.add('hidden');
+  }catch(error){passwordError.textContent='Network error: '+error.message}
+});
+
+inviteBtn.addEventListener('click',async function(){
+  const response=await authFetch('/api/invite',{method:'POST'});
+  const data=await response.json().catch(()=>({}));
+  if(response.status===401){logout();return}
+  if(!response.ok){addError(data.detail||'Could not create invitation');return}
+  inviteUrl.textContent=data.url;
+  inviteOverlay.classList.remove('hidden');
+});
+document.getElementById('invite-copy').addEventListener('click',async function(){await navigator.clipboard.writeText(inviteUrl.textContent);this.textContent='Copied';setTimeout(()=>{this.textContent='Copy link'},1200)});
+document.getElementById('invite-close').addEventListener('click',function(){inviteOverlay.classList.add('hidden')});
+logoutBtn.addEventListener('click',logout);
+
+setAuthMode(authMode);
+if(inviteToken){clearAuth();showAuth()}else{loadCurrentUser()}
 
 sendBtn.addEventListener('click',send);
 cancelBtn.addEventListener('click',cancel);

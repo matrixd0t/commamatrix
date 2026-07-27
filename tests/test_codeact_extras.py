@@ -10,23 +10,18 @@ from types import SimpleNamespace
 import pytest
 
 from commamatrix.builtin.codeact.hooks import (
-    CODEACT_ENABLED_KEY,
     codeact_enabled,
     expose_codeact_tools,
 )
 from commamatrix.builtin.codeact.search.bm25 import BM25ToolSearcher
-from commamatrix.builtin.codeact.service import CODEACT_NESTED_TOOL_KEY
-from commamatrix.builtin.codeact.tools import enable_codeact
 from commamatrix.builtin.codeact.rpc.server import (
     RPCServer,
     is_codeact_internal,
     serialize_tool_descriptor,
 )
 from commamatrix.builtin.codeact.rpc.protocol import RPCError
-from commamatrix.components.hook import BeforeLlmCallCtx, BeforeToolCallCtx
-from commamatrix.components.llm_adapter import ToolCall
+from commamatrix.components.hook import BeforeLlmCallCtx
 from commamatrix.components.tool import ToolDescriptor, PythonToolSource
-from commamatrix.core.classes.manager import ServiceInstanceRegistry
 
 
 def _make_desc(
@@ -152,7 +147,7 @@ class TestBM25ToolSearcher:
 
 
 @pytest.mark.asyncio
-async def test_codeact_index_is_ready_when_mode_is_enabled():
+async def test_codeact_hook_builds_index():
     descriptor = _make_desc("weather")
     searcher = BM25ToolSearcher()
 
@@ -177,12 +172,9 @@ async def test_codeact_index_is_ready_when_mode_is_enabled():
     before_llm = BeforeLlmCallCtx(run=run, dialog=[], tools=[descriptor])
 
     await expose_codeact_tools(before_llm)
-    result = await enable_codeact(
-        BeforeToolCallCtx(run=run, tool_call=SimpleNamespace())
-    )
 
-    assert "No tools available." not in result
-    assert "weather" in result
+    assert len(searcher.descriptors) == 1
+    assert searcher.descriptors[0].name == "weather"
 
 
 @pytest.mark.asyncio
@@ -193,8 +185,6 @@ async def test_codeact_exposes_only_control_tools():
         "execute",
         "search_tools",
         "list_tools",
-        "enable_codeact",
-        "exit_codeact",
     ):
         control = _make_desc(name, namespace="commamatrix.builtin.codeact.tools")
         control.meta.update({"codeact": False})
@@ -212,7 +202,7 @@ async def test_codeact_exposes_only_control_tools():
             descriptors=[regular, *controls], fingerprint="fp"
         ),
     )
-    run = SimpleNamespace(agent=agent, chain_state={CODEACT_ENABLED_KEY: True})
+    run = SimpleNamespace(agent=agent, chain_state={})
     ctx = BeforeLlmCallCtx(run=run, dialog=[], tools=[regular, *controls])
 
     await expose_codeact_tools(ctx)
@@ -221,8 +211,6 @@ async def test_codeact_exposes_only_control_tools():
         "execute",
         "search_tools",
         "list_tools",
-        "enable_codeact",
-        "exit_codeact",
     }
 
 

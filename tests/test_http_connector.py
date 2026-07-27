@@ -8,6 +8,7 @@ import asyncio
 import sys
 import types
 
+import aiosqlite
 import httpx
 import pytest
 
@@ -19,9 +20,32 @@ from commamatrix.builtin.http_connector.connector import HttpOrigin
 from tests.conftest import stub_agent
 
 
+class _AuthStorage:
+    def __init__(self) -> None:
+        self._db: aiosqlite.Connection | None = None
+
+    async def execute(self, query: str, params: tuple = ()) -> list[dict]:
+        if self._db is None:
+            self._db = await aiosqlite.connect(":memory:")
+            self._db.row_factory = aiosqlite.Row
+        cursor = await self._db.execute(query, params)
+        rows = await cursor.fetchall()
+        await self._db.commit()
+        return [dict(row) for row in rows]
+
+
+async def _auth_headers(conn: HttpConnector) -> dict[str, str]:
+    await conn.authorizer.init_db()
+    await conn.authorizer.register("test-user", "test-password")
+    token = await conn.authorizer.login("test-user", "test-password")
+    return {"Authorization": f"Bearer {token}"}
+
+
 def _make_connector(agent=None) -> HttpConnector:
     if agent is None:
         agent = stub_agent()
+    if not hasattr(agent, "storage"):
+        agent.storage = _AuthStorage()
     return HttpConnector(agent=agent)
 
 
@@ -226,12 +250,23 @@ class TestHttpConnectorRoutes:
             assert "text/html" in resp.headers["content-type"]
 
     @pytest.mark.asyncio
+    async def test_message_requires_authentication(self):
+        conn = _make_connector()
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=conn.app),
+            base_url="http://test",
+        ) as client:
+            resp = await client.post("/api/message", json={"content": "hello"})
+            assert resp.status_code == 401
+
+    @pytest.mark.asyncio
     async def test_message_invalid_json(self):
         conn = _make_connector()
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=conn.app),
             base_url="http://test",
         ) as client:
+            client.headers.update(await _auth_headers(conn))
             resp = await client.post(
                 "/api/message",
                 content="not json",
@@ -246,6 +281,7 @@ class TestHttpConnectorRoutes:
             transport=httpx.ASGITransport(app=conn.app),
             base_url="http://test",
         ) as client:
+            client.headers.update(await _auth_headers(conn))
             resp = await client.post("/api/message", json={"session_id": "s1"})
             assert resp.status_code == 400
             assert "content" in resp.json()["error"].lower()
@@ -257,6 +293,7 @@ class TestHttpConnectorRoutes:
             transport=httpx.ASGITransport(app=conn.app),
             base_url="http://test",
         ) as client:
+            client.headers.update(await _auth_headers(conn))
             resp = await client.post("/api/message", json={"content": "  "})
             assert resp.status_code == 400
 
@@ -267,6 +304,7 @@ class TestHttpConnectorRoutes:
             transport=httpx.ASGITransport(app=conn.app),
             base_url="http://test",
         ) as client:
+            client.headers.update(await _auth_headers(conn))
             resp = await client.post("/api/message", content='"string"', headers={"content-type": "application/json"})
             assert resp.status_code == 400
 
@@ -302,6 +340,7 @@ class TestHttpConnectorRoutes:
             transport=httpx.ASGITransport(app=conn.app),
             base_url="http://test",
         ) as client:
+            client.headers.update(await _auth_headers(conn))
             resp = await client.post("/api/message?stream=0", json={
                 "session_id": "s1",
                 "content": "hello",
@@ -344,6 +383,7 @@ class TestHttpConnectorRoutes:
             transport=httpx.ASGITransport(app=conn.app),
             base_url="http://test",
         ) as client:
+            client.headers.update(await _auth_headers(conn))
             resp = await client.post("/api/message?stream=0", json={
                 "session_id": "s1",
                 "content": "hello",
@@ -366,6 +406,7 @@ class TestHttpConnectorRoutes:
             transport=httpx.ASGITransport(app=conn.app),
             base_url="http://test",
         ) as client:
+            client.headers.update(await _auth_headers(conn))
             resp = await client.post("/api/message?stream=0", json={
                 "session_id": "s1",
                 "content": "hello",
@@ -383,6 +424,7 @@ class TestHttpConnectorRoutes:
             transport=httpx.ASGITransport(app=conn.app),
             base_url="http://test",
         ) as client:
+            client.headers.update(await _auth_headers(conn))
             resp = await client.post("/api/message?stream=0", json={"content": "hi"})
             assert resp.status_code == 200
             data = resp.json()
@@ -419,6 +461,7 @@ class TestHttpConnectorRoutes:
             transport=httpx.ASGITransport(app=conn.app),
             base_url="http://test",
         ) as client:
+            client.headers.update(await _auth_headers(conn))
             resp = await client.post("/api/message", json={
                 "session_id": "s1",
                 "content": "hello",
@@ -464,6 +507,7 @@ class TestHttpConnectorRoutes:
             transport=httpx.ASGITransport(app=conn.app),
             base_url="http://test",
         ) as client:
+            client.headers.update(await _auth_headers(conn))
             t1 = asyncio.create_task(client.post("/api/message", json={"session_id": "s1", "content": "a"}))
             t2 = asyncio.create_task(client.post("/api/message", json={"session_id": "s2", "content": "b"}))
 
@@ -515,6 +559,7 @@ class TestHttpConnectorRoutes:
             transport=httpx.ASGITransport(app=conn.app),
             base_url="http://test",
         ) as client:
+            client.headers.update(await _auth_headers(conn))
             t1 = asyncio.create_task(client.post("/api/message?stream=0", json={"session_id": "s1", "content": "a"}))
             t2 = asyncio.create_task(client.post("/api/message?stream=0", json={"session_id": "s1", "content": "b"}))
 
@@ -571,6 +616,7 @@ class TestHttpConnectorLifecycle:
     @pytest.mark.asyncio
     async def test_base_url_property(self):
         conn = _make_connector()
+        conn._host = "127.0.0.1"
         conn._port = 0
         await conn.start()
         assert f":{conn.bound_port}" in conn.base_url
@@ -580,6 +626,7 @@ class TestHttpConnectorLifecycle:
     @pytest.mark.asyncio
     async def test_server_listens_on_loopback(self):
         conn = _make_connector()
+        conn._host = "127.0.0.1"
         conn._port = 0
         await conn.start()
 

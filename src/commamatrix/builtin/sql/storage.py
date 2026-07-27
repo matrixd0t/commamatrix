@@ -20,9 +20,7 @@ from ...components.storage import Storage
 if TYPE_CHECKING:
     from ...core.agent import Agent
 
-BaseColumns = set(DialogItem.model_fields.keys()) - {"origin"} | set(
-    DialogOrigin.model_fields.keys()
-)
+BaseColumns = set(DialogItem.model_fields.keys()) - {"origin"} | set(DialogOrigin.model_fields.keys())
 
 
 def python_type_to_sql(t: type) -> str:
@@ -123,7 +121,7 @@ class SqlStorage(Storage):
         await self._execute(
             db,
             f"""
-            CREATE TABLE IF NOT EXISTS dialog_items (
+            CREATE TABLE IF NOT EXISTS commamatrix_dialog (
                 {columns_sql}
             )
         """,
@@ -147,17 +145,12 @@ class SqlStorage(Storage):
                 continue
             sql_type = python_type_to_sql(field_info.annotation)
             try:
-                await self._execute(
-                    db,
-                    f"ALTER TABLE dialog_items ADD COLUMN {self._quote_ident(name)} {sql_type}",
-                )
+                await self._execute(db, f"ALTER TABLE commamatrix_dialog ADD COLUMN {self._quote_ident(name)} {sql_type}")
                 await self._commit(db)
             except Exception as exc:
                 self._known_columns = await self._columns(db)
                 if name not in self._known_columns:
-                    raise RuntimeError(
-                        f"Failed to migrate dialog_items.{name}"
-                    ) from exc
+                    raise RuntimeError(f"Failed to migrate commamatrix_dialog.{name}") from exc
             self._known_columns.add(name)
 
     @staticmethod
@@ -194,7 +187,7 @@ class SqlStorage(Storage):
 
         return await self._insert(
             db,
-            f"INSERT INTO dialog_items ({quoted_cols}) VALUES ({placeholders}){self._insert_returning_suffix()}",
+            f"INSERT INTO commamatrix_dialog ({quoted_cols}) VALUES ({placeholders}){self._insert_returning_suffix()}",
             tuple(values),
         )
 
@@ -207,12 +200,12 @@ class SqlStorage(Storage):
             db,
             f"""
             WITH RECURSIVE branch AS (
-                SELECT dialog_items.*, 0 AS depth
-                FROM dialog_items
+                SELECT commamatrix_dialog.*, 0 AS depth
+                FROM commamatrix_dialog
                 WHERE item_id = {self._placeholder(1)}
                 UNION ALL
                 SELECT d.*, b.depth + 1
-                FROM dialog_items d
+                FROM commamatrix_dialog d
                 JOIN branch b ON d.item_id = b.previous_item_id
             )
             SELECT * FROM branch ORDER BY depth DESC
@@ -241,9 +234,7 @@ class SqlStorage(Storage):
             )
         return result
 
-    async def find_item_id_by_external_id(
-        self, external_id: str, origin: DialogOrigin
-    ) -> int | None:
+    async def find_item_id_by_external_id(self, external_id: str, origin: DialogOrigin) -> int | None:
         db = await self._get_db()
         await self._migrate_columns(type(origin))
         origin_row = self._origin_to_row(origin)
@@ -253,7 +244,7 @@ class SqlStorage(Storage):
         values = [external_id] + list(origin_row.values())
         rows = await self._fetchall(
             db,
-            f"SELECT item_id FROM dialog_items WHERE {' AND '.join(conditions)}",
+            f"SELECT item_id FROM commamatrix_dialog WHERE {' AND '.join(conditions)}",
             tuple(values),
         )
         return rows[0]["item_id"] if rows else None

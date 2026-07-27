@@ -26,12 +26,15 @@ async def setup(agent: Agent) -> None:
         prefix + ".builtin.llm_http_adapter",
         prefix + ".builtin.codeact",
         prefix + ".builtin.self_modif",
+        prefix + ".builtin.web_utils",
     ]
     try:
+        import bcrypt  # noqa: F401
+        import jwt  # noqa: F401
         import starlette  # noqa: F401
         import uvicorn  # noqa: F401
 
         to_add.append(prefix + ".builtin.http_connector")
     except ImportError:
-        print("Warning: starlette and/or uvicorn not installed. HTTP connector and Web UI are disabled. Install with: pip install commamatrix[http]")
+        print("Warning: HTTP dependencies are not installed. HTTP connector and Web UI are disabled. Install with: pip install commamatrix[http]")
     await agent.add_extensions(*to_add)

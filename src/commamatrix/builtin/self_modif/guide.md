@@ -6,7 +6,9 @@ an agent that can modify its own runtime.
 ## Public API
 
 The public component API, `Agent`, and `CyclicConstraintError` are re-exported
-from the package root. For a quick extension, this is supported:
+from the package root. `Agent(auto_load_plugins=True)` automatically activates
+existing files and package directories in `<CWD>/commamatrix_plugins` at
+startup; pass `auto_load_plugins=False` to opt out. For a quick extension, this is supported:
 
 ```python
 from commamatrix import *
@@ -36,18 +38,30 @@ reserves `<CWD>/commamatrix_plugins` for this purpose and creates it from the
 `before_run` hook supplied by `self_modif` before the first agent run. Do not
 spend a tool call creating this directory.
 
+When a new `Agent` starts, `auto_load_plugins=True` (the default) automatically
+activates every direct `.py` file and every direct package directory in
+`<CWD>/commamatrix_plugins`. A package should import its contribution modules
+from `__init__.py`; nested implementation files are not imported just because
+they exist. Disable this behavior with `Agent(auto_load_plugins=False)` when
+the host must activate extensions explicitly. Files created during the current
+run still need `manage_extension(action="add")`; automatic discovery applies when an agent
+starts.
+
 ```text
 <CWD>/
     commamatrix_plugins/
         response_style.py
+        weather/
+            __init__.py
+            tools.py
 ```
 
 Prefer the smallest implementation that solves the task:
 
-1. Create one `.py` file in `commamatrix_plugins`.
+1. Create one `.py` file in `commamatrix_plugins`, or a package for a genuinely larger extension.
 2. Put discoverable functions and classes at module level.
 3. Check imports and required third-party packages.
-4. Activate it with `add_extension(module_or_path="commamatrix_plugins/response_style.py")`.
+4. Use `manage_extension(action="add", module_or_path="commamatrix_plugins/response_style.py")` when the current agent must use a newly created file immediately.
 5. Test the new capability. Reload it after editing and remove it when no longer needed.
 
 `module_or_path` accepts either an import name or a relative/absolute Python
@@ -131,6 +145,47 @@ them in `stop()`.
 - Integrate a messaging platform: add a `Connector`.
 - Replace persistence or the LLM provider: implement the corresponding provider.
 
+### Persist Reusable Behavior
+
+If a behavior is useful beyond the current task, add it to the agent instead of
+relying on the model to remember it. This is a deliberate self-improvement
+choice, not something to do for every one-off detail:
+
+- A reusable response rule, workflow rule, or always-needed piece of context belongs in an `@instruction`. It returns text that is added to the system prompt before future LLM calls.
+- A reusable action, integration, or capability belongs in an `@tool`. The agent can call it when the capability is needed.
+- Store the implementation in `commamatrix_plugins`, then activate or reload it for the current agent. With `auto_load_plugins=True`, it is also loaded automatically by newly created agents.
+- Do not persist a temporary fact or a rule that only applies to the current request.
+
+Example of a persistent instruction:
+
+```python
+# commamatrix_plugins/agent_rules.py
+from commamatrix import InstructionCtx, instruction
+
+
+@instruction
+def concise_answers(_ctx: InstructionCtx) -> str:
+    return "Prefer direct answers with only the detail needed for the task."
+```
+
+Example of a persistent tool:
+
+```python
+# commamatrix_plugins/project_tools.py
+from commamatrix import tool
+
+
+@tool(alias="project")
+async def current_status() -> str:
+    """Return the current project status."""
+    return "..."
+```
+
+For the current run, use the `self_modif` tools to create the file and then
+call `manage_extension`. The `self_modif` module itself also
+provides this guidance as an instruction, so the option is available without
+reading the guide manually.
+
 For example, a response style does not need a package, service, configuration
 layer, or LLM parameter hook unless those features are explicitly required:
 
@@ -200,16 +255,43 @@ specialized tool may intentionally return bytes or another value for its
 consumer. For a normal LLM-facing tool, prefer a concise string, number,
 boolean, list, dict, or another value with an unambiguous serialization.
 
-### Tool Names and Metadata
+### Tool Names, Aliases, and CodeAct Imports
 
-The public tool name is computed as follows:
+`alias` is the tool group's **import name** in the CodeAct worker. It is the
+part that appears after `tools.`. The extension module name and the tool alias
+are different things and must not be confused:
 
-- `@tool` uses the module's last component as the alias.
-- `@tool(alias="weather")` exposes `weather_current` for a function named `current`.
-- `@tool(alias="")` exposes the bare function name, such as `current`.
+```text
+commamatrix_plugins/filesystem_tools.py  ->  Python module: commamatrix_plugins.filesystem_tools
+@tool(alias="fs")                      ->  CodeAct import: import tools.fs as fs
+```
 
-Choose a stable, unique alias. Two active tools with the same public name are
-ambiguous. The alias must be a valid Python identifier.
+The activation result such as `Extension is active:
+commamatrix_plugins.filesystem_tools` reports only the Python module. It does
+not tell you what to write after `tools.`. Read the `@tool(alias="...")` in the
+source or use `list_tools` / `search_tools` to find the alias.
+
+Use the alias exactly in CodeAct:
+
+```python
+import tools.fs as fs
+
+content = await fs.read_file(path="README.md")
+```
+
+Do not derive the import from the extension filename when an explicit alias is
+present. In particular, do not replace `fs` with `filesystem_tools` merely
+because the file is named `filesystem_tools.py`.
+
+The public tool names and imports are computed as follows:
+
+- `@tool` uses the module's last component as the alias, so a tool in `filesystem_tools.py` defaults to `tools.filesystem_tools`.
+- `@tool(alias="weather")` exposes `weather_current` for a function named `current` and imports as `tools.weather`.
+- `@tool(alias="")` exposes the bare function name, such as `current`; it is not imported through a grouped `tools.<alias>` module.
+
+For self-written tools, always choose an explicit stable alias that describes
+the group and use that alias as the CodeAct import name. Two active tools with
+the same public name are ambiguous. The alias must be a valid Python identifier.
 
 Tool metadata is an arbitrary declarative dictionary. A `before_llm_call` hook
 can inspect `ToolDescriptor.meta` and filter or annotate `ctx.tools` according
@@ -539,6 +621,6 @@ When adding an integration:
 4. Define `ConfigField` values only when configuration is actually needed.
 5. Put external clients and persistent resources in a `Service` only when needed.
 6. Verify imports and dependencies.
-7. Activate the extension with the runtime `add_extension` tool.
+7. Activate the extension with the runtime `manage_extension` tool.
 8. Test it with a harmless input.
 9. Reload it after code changes and remove it when no longer needed.

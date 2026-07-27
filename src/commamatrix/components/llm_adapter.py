@@ -10,7 +10,7 @@ from json import dumps, loads
 from mimetypes import guess_type
 from collections.abc import AsyncIterator
 from typing import Any, TYPE_CHECKING
-from httpx import AsyncClient, HTTPError
+from httpx import HTTPError
 
 from ..utils import to_jsonable
 from ..core.classes.service import AbstractService
@@ -231,16 +231,6 @@ class LLMAdapterManager(ServiceInstanceManager[LLMAdapter]):
         return self._active.ask_llm(ctx, stream=stream)
 
 
-_retreiver_headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    "Accept": "*/*",
-    "Accept-Language": "en-US;q=0.8,en;q=0.7",
-    "Accept-Encoding": "gzip",
-    "Connection": "keep-alive",
-}
-_retreiver = AsyncClient(headers=_retreiver_headers, follow_redirects=True, timeout=120)
-
-
 def ext_to_mime(ext: str) -> str:
     mime_type, _ = guess_type(f"file.{ext}")
     if not mime_type and ext == "webp":
@@ -267,7 +257,7 @@ async def resolve_file_uri(storage: FileStorage | None, item: DialogItem) -> str
             return ""
         if ref.startswith("http"):
             try:
-                rq = await _retreiver.head(ref)
+                rq = await storage.agent.http_client.head(ref, follow_redirects=True, timeout=30)
                 rq.raise_for_status()
                 return ref
             except HTTPError:

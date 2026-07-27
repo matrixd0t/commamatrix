@@ -37,6 +37,7 @@ from .llm_adapter import (
     LLMTruncatedError,
 )
 from .config import ConfigField, Config
+from ..core.agent.agent import DEFAULT_HTTP_HEADERS, http_default_headers, http_timeout
 from .tool import tool, ToolSource, ToolDescriptor, DEFAULT_TOOL_SEARCH_AMOUNT
 from .hook import (
     Hook,
@@ -111,6 +112,9 @@ __all__ = [
     "LLMTruncatedError",
     "ConfigField",
     "Config",
+    "DEFAULT_HTTP_HEADERS",
+    "http_default_headers",
+    "http_timeout",
     "active_storage",
     "active_file_storage",
     "tool",

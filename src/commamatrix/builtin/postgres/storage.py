@@ -39,7 +39,7 @@ class PostgresStorage(SqlStorage):
     async def _columns(self, db: asyncpg.Connection) -> set[str]:
         rows = await db.fetch(
             "SELECT column_name FROM information_schema.columns WHERE table_name = $1",
-            "dialog_items",
+            "commamatrix_dialog",
         )
         return {row["column_name"] for row in rows}
 

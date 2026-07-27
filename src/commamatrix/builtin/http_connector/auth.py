@@ -1,0 +1,258 @@
+# builtin/http_connector/auth.py
+
+from __future__ import annotations
+
+import asyncio
+import secrets
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from functools import wraps
+from typing import TYPE_CHECKING
+
+import bcrypt
+import jwt
+
+if TYPE_CHECKING:
+    from ...core.agent import Agent
+
+
+@dataclass(frozen=True, slots=True)
+class AuthUser:
+    id: int
+    username: str
+    app_name: str
+    is_admin: bool
+
+
+class AuthError(Exception):
+    """Authentication and authorization failure."""
+
+
+class Authorizer:
+    def __init__(self, agent: Agent, app_name: str, jwt_secret: str, token_ttl_seconds: int) -> None:
+        if not jwt_secret:
+            raise ValueError("JWT secret must not be empty")
+        if token_ttl_seconds <= 0:
+            raise ValueError("JWT token TTL must be positive")
+        self.agent = agent
+        self.app_name = app_name
+        self.jwt_secret = jwt_secret
+        self.jwt_algorithm = "HS256"
+        self.token_ttl_seconds = token_ttl_seconds
+        self._initialized = False
+        self._init_lock = asyncio.Lock()
+        self._invites: set[str] = set()
+
+    async def init_db(self) -> None:
+        async with self._init_lock:
+            if self._initialized:
+                return
+            await self.agent.storage.execute(
+                """
+                CREATE TABLE IF NOT EXISTS commamatrix_users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    app_name TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    is_admin INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(app_name, username)
+                )
+                """
+            )
+            admins = await self.agent.storage.execute(
+                "SELECT id FROM commamatrix_users WHERE app_name = ? AND is_admin = 1 LIMIT 1",
+                (self.app_name,),
+            )
+            if not admins:
+                password = secrets.token_urlsafe(18)
+                password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+                existing_admin = await self.agent.storage.execute(
+                    "SELECT id FROM commamatrix_users WHERE app_name = ? AND username = ? LIMIT 1",
+                    (self.app_name, "admin"),
+                )
+                if existing_admin:
+                    await self.agent.storage.execute(
+                        "UPDATE commamatrix_users SET password_hash = ?, is_admin = 1 WHERE id = ? AND app_name = ?",
+                        (password_hash, existing_admin[0]["id"], self.app_name),
+                    )
+                else:
+                    await self._insert_user("admin", password, is_admin=True)
+                print("Admin account created. Save this password; you won't be able to see it again: " + password)
+            self._initialized = True
+
+    async def _insert_user(self, username: str, password: str, is_admin: bool = False) -> AuthUser:
+        password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+        try:
+            await self.agent.storage.execute(
+                "INSERT INTO commamatrix_users (app_name, username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)",
+                (self.app_name, username, password_hash, int(is_admin), datetime.now(timezone.utc).isoformat()),
+            )
+        except Exception as exc:
+            if "unique" in str(exc).lower() or "constraint" in str(exc).lower():
+                raise AuthError("Username already taken for this app") from exc
+            raise
+        rows = await self.agent.storage.execute(
+            "SELECT id, is_admin FROM commamatrix_users WHERE app_name = ? AND username = ?",
+            (self.app_name, username),
+        )
+        row = rows[0]
+        return AuthUser(id=int(row["id"]), username=username, app_name=self.app_name, is_admin=bool(row["is_admin"]))
+
+    @staticmethod
+    def _check_credentials(username: str, password: str) -> None:
+        if not isinstance(username, str) or not username.strip():
+            raise AuthError("Username is required")
+        if not isinstance(password, str) or not password:
+            raise AuthError("Password is required")
+        if len(password.encode()) > 72:
+            raise AuthError("Password is too long")
+
+    async def register(self, username: str, password: str) -> AuthUser:
+        await self.init_db()
+        username = username.strip() if isinstance(username, str) else username
+        self._check_credentials(username, password)
+        return await self._insert_user(username, password)
+
+    async def create_invite(self) -> str:
+        await self.init_db()
+        token = secrets.token_urlsafe(32)
+        self._invites.add(token)
+        return token
+
+    async def register_with_invite(self, token: str, username: str, password: str) -> AuthUser:
+        await self.init_db()
+        if not isinstance(token, str) or token not in self._invites:
+            raise AuthError("Invalid or expired invitation")
+        self._invites.remove(token)
+        return await self.register(username, password)
+
+    async def login(self, username: str, password: str) -> str:
+        await self.init_db()
+        if not isinstance(username, str) or not isinstance(password, str):
+            raise AuthError("Invalid username or password")
+        rows = await self.agent.storage.execute(
+            "SELECT id, password_hash FROM commamatrix_users WHERE app_name = ? AND username = ?",
+            (self.app_name, username),
+        )
+        if not rows:
+            raise AuthError("Invalid username or password")
+        row = rows[0]
+        try:
+            valid = bcrypt.checkpw(password.encode(), row["password_hash"].encode())
+        except (ValueError, TypeError):
+            valid = False
+        if not valid:
+            raise AuthError("Invalid username or password")
+        return self._issue_token(int(row["id"]), username)
+
+    def _issue_token(self, user_id: int, username: str) -> str:
+        now = datetime.now(timezone.utc)
+        return jwt.encode(
+            {
+                "sub": str(user_id),
+                "username": username,
+                "app": self.app_name,
+                "iat": now,
+                "exp": now + timedelta(seconds=self.token_ttl_seconds),
+            },
+            self.jwt_secret,
+            algorithm=self.jwt_algorithm,
+        )
+
+    def _decode_token(self, token: str) -> dict:
+        try:
+            payload = jwt.decode(token, self.jwt_secret, algorithms=[self.jwt_algorithm])
+        except jwt.ExpiredSignatureError as exc:
+            raise AuthError("Token expired") from exc
+        except jwt.PyJWTError as exc:
+            raise AuthError("Invalid token") from exc
+        if payload.get("app") != self.app_name:
+            raise AuthError("Token is not valid for this app")
+        return payload
+
+    async def authenticate(self, token: str) -> AuthUser:
+        await self.init_db()
+        payload = self._decode_token(token)
+        try:
+            user_id = int(payload["sub"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise AuthError("Invalid token") from exc
+        rows = await self.agent.storage.execute(
+            "SELECT id, username, is_admin FROM commamatrix_users WHERE id = ? AND app_name = ?",
+            (user_id, self.app_name),
+        )
+        if not rows:
+            raise AuthError("User no longer exists")
+        row = rows[0]
+        return AuthUser(id=int(row["id"]), username=row["username"], app_name=self.app_name, is_admin=bool(row["is_admin"]))
+
+    async def change_password(self, user: AuthUser, old_password: str, new_password: str) -> None:
+        await self.init_db()
+        self._check_credentials(user.username, old_password)
+        self._check_credentials(user.username, new_password)
+        rows = await self.agent.storage.execute(
+            "SELECT password_hash FROM commamatrix_users WHERE id = ? AND app_name = ?",
+            (user.id, self.app_name),
+        )
+        if not rows:
+            raise AuthError("User no longer exists")
+        try:
+            valid = bcrypt.checkpw(old_password.encode(), rows[0]["password_hash"].encode())
+        except (ValueError, TypeError):
+            valid = False
+        if not valid:
+            raise AuthError("Invalid current password")
+        password_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
+        await self.agent.storage.execute(
+            "UPDATE commamatrix_users SET password_hash = ? WHERE id = ? AND app_name = ?",
+            (password_hash, user.id, self.app_name),
+        )
+
+    @staticmethod
+    def extract_bearer_token(header: str | None) -> str:
+        if not header or not header.startswith("Bearer "):
+            raise AuthError("Missing or malformed Authorization header")
+        token = header.removeprefix("Bearer ").strip()
+        if not token:
+            raise AuthError("Missing or malformed Authorization header")
+        return token
+
+    async def _authenticate_request(self, request):
+        from starlette.responses import JSONResponse
+
+        try:
+            token = self.extract_bearer_token(request.headers.get("Authorization"))
+            request.state.user = await self.authenticate(token)
+        except AuthError as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=401)
+        except Exception:
+            return JSONResponse({"detail": "Authentication service unavailable"}, status_code=503)
+        return None
+
+    def requires_auth(self, endpoint):
+        @wraps(endpoint)
+        async def wrapper(request, *args, **kwargs):
+            response = await self._authenticate_request(request)
+            if response is not None:
+                return response
+            return await endpoint(request, *args, **kwargs)
+
+        return wrapper
+
+    def requires_admin(self, endpoint):
+        @wraps(endpoint)
+        async def wrapper(request, *args, **kwargs):
+            from starlette.responses import JSONResponse
+
+            response = await self._authenticate_request(request)
+            if response is not None:
+                return response
+            if not request.state.user.is_admin:
+                return JSONResponse({"detail": "Administrator access required"}, status_code=403)
+            return await endpoint(request, *args, **kwargs)
+
+        return wrapper
+
+    async def stop(self) -> None:
+        self._invites.clear()

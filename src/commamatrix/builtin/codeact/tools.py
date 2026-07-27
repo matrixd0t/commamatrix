@@ -1,11 +1,9 @@
 # builtin/codeact/tools.py
 
-"""LLM-visible CodeAct tools: execute code, search and list available tools, toggle mode."""
+"""LLM-visible CodeAct tools: execute code, search and list available tools."""
 
 from __future__ import annotations
 from .service import CodeActService, max_search_results, max_list_tools
-from .rpc.server import is_codeact_internal
-from .hooks import CODEACT_ENABLED_KEY
 from ...components.hook import BeforeToolCallCtx
 from ...components.tool import ToolDescriptor, tool
 
@@ -79,42 +77,3 @@ async def list_tools(ctx: BeforeToolCallCtx, alias: str | None = None, limit: in
     return result
 
 
-@tool(alias="", codeact=False, always_visible=True)
-async def enable_codeact(ctx: BeforeToolCallCtx) -> str:
-    """Enable CodeAct — write Python code instead of individual tool calls.
-
-    Recommended when the task requires multiple tool invocations, parallel calls, or complex logic between steps.
-    Take advantage of tool parallelization and chaining capabilities.
-    CodeAct gives you the execute() tool which runs Python code on backend; inside it tools are available as async functions: 'import tools.<name> as <name>'.
-    All tools are async functions, top-level await is allowed.
-    """
-    if ctx.run.chain_state.get(CODEACT_ENABLED_KEY):
-        return "CodeAct is already active"
-    ctx.run.chain_state[CODEACT_ENABLED_KEY] = True
-    codeact: CodeActService = ctx.run.agent.services.require(CodeActService)
-    all_tools = ctx.run.agent.tool_manager.descriptors
-    index_tools = [t for t in all_tools if not is_codeact_internal(t)]
-    codeact.rebuild_index(index_tools, ctx.run)
-    tools_listing = await list_tools(ctx=ctx)
-    lines = [
-        "CodeAct enabled.",
-        "",
-        codeact.backend.environment_description(),
-        "",
-        "Inside execute(), import tools by name: import tools.<name> as <name>.",
-        "Use search_tools(query) to find tools by description.",
-        "Take advantage of tool parallelization and chaining capabilities.",
-        "",
-        "Available tools:",
-        tools_listing,
-    ]
-    return "\n".join(lines)
-
-
-@tool(alias="", codeact=False, always_visible=True)
-async def exit_codeact(ctx: BeforeToolCallCtx) -> str:
-    """Disable CodeAct. All registered tools become directly visible again."""
-    if not ctx.run.chain_state.get(CODEACT_ENABLED_KEY):
-        return "CodeAct mode is not active."
-    ctx.run.chain_state[CODEACT_ENABLED_KEY] = False
-    return "CodeAct mode disabled. All tools will be visible again."
