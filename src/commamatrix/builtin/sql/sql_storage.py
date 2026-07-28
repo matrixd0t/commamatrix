@@ -1,4 +1,4 @@
-# builtin/sql/storage.py
+# builtin/sql/sql_storage.py
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from ...components.storage import Storage
 
 if TYPE_CHECKING:
     from ...core.agent import Agent
+    from pydantic import BaseModel
 
 BaseColumns = set(DialogItem.model_fields.keys()) - {"origin"} | set(DialogOrigin.model_fields.keys())
 
@@ -135,9 +136,7 @@ class SqlStorage(Storage):
         for origin_cls in ORIGIN_REGISTRY.values():
             await self._migrate_columns(origin_cls)
 
-    async def _migrate_columns(
-        self, model_cls: type, skip: set[str] | None = None
-    ) -> None:
+    async def _migrate_columns(self, model_cls: type[BaseModel], skip: set[str] | None = None) -> None:
         skip = skip or set()
         db = self._db
         for name, field_info in model_cls.model_fields.items():
@@ -248,6 +247,49 @@ class SqlStorage(Storage):
             tuple(values),
         )
         return rows[0]["item_id"] if rows else None
+
+    async def get_history(self, *, origin_type: type[DialogOrigin] | None = None, origin_fields: dict[str, Any] | None = None) -> list[DialogItem]:
+        """Return persisted items filtered by origin fields."""
+        db = await self._get_db()
+        await self._migrate_columns(DialogOrigin)
+        if origin_type is not None:
+            await self._migrate_columns(origin_type)
+        conditions: list[str] = []
+        params: list[Any] = []
+        if origin_type is not None:
+            conditions.append(f"origin_type = {self._placeholder(len(params) + 1)}")
+            params.append(origin_type.model_fields["origin_type"].default)
+            for name, value in (origin_fields or {}).items():
+                if name not in origin_type.model_fields:
+                    raise ValueError(f"Unknown origin field: {name}")
+                conditions.append(f"{self._quote_ident(name)} = {self._placeholder(len(params) + 1)}")
+                params.append(value)
+        elif origin_fields:
+            raise ValueError("origin_values requires origin_type")
+
+        where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+        rows = await self._fetchall(
+            db,
+            f"SELECT * FROM commamatrix_dialog{where} ORDER BY item_id ASC",
+            tuple(params),
+        )
+        result: list[DialogItem] = []
+        for row in rows:
+            origin_cls = self._find_origin_class(row)
+            origin = self._row_to_origin(row, origin_cls)
+            result.append(DialogItem(
+                item_id=row["item_id"],
+                content=row["content"],
+                item_type=DialogItemType(row["item_type"]),
+                user=row["user"],
+                role=DialogRole(row["role"]),
+                origin=origin,
+                previous_item_id=row["previous_item_id"],
+                external_id=row["external_id"],
+                created_at=row["created_at"],
+                meta=json.loads(row["meta"]) if row["meta"] else {},
+            ))
+        return result
 
     async def execute(self, query: str, params: tuple = ()) -> list[dict[str, Any]]:
         db = await self._get_db()

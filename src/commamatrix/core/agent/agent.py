@@ -15,6 +15,8 @@ import types
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
+from traceback import format_exc
+from uuid import uuid4
 
 from dotenv import load_dotenv
 from httpx import AsyncClient
@@ -25,6 +27,7 @@ from ...components.dialog import DialogItem, DialogItemType, DialogRole
 from ...components.hook import (
     AfterLlmCallCtx,
     AfterRunCtx,
+    AfterSendCtx,
     AfterToolCallCtx,
     BeforeLlmCallCtx,
     BeforeRunCtx,
@@ -259,27 +262,29 @@ class Agent:
             if parsed is not None:
                 break
         if parsed is None:
+            print("[Agent DEBUG] handle no connector parsed the event", file=sys.stderr)
             return []
 
+        print(f"[Agent DEBUG] handle parsed items={len(parsed.dialog_items)} previous_external_id={parsed.previous_external_id!r} ids={[item.item_id for item in parsed.dialog_items]}", file=sys.stderr)
         await self._resolve_previous_item(parsed)
         await self.hook_manager.fire(HookEventType.ON_PARSED, parsed)
 
         tasks: list[asyncio.Task] = []
         for run, history in self._split_runs(parsed):
+            print(f"[Agent DEBUG] submit run origin={run.origin} user={run.user!r} history_ids={[item.item_id for item in history]}", file=sys.stderr)
             task = await self.runner.submit(
                 self.runner.make_key(run.origin, run.user),
                 self.run(run, history=history),
             )
             tasks.append(task)
+        print(f"[Agent DEBUG] handle submitted tasks={len(tasks)}", file=sys.stderr)
         return tasks
 
     @asynccontextmanager
     async def _typing(self, run: RunCtx):
-        """Wrap the run in connector.typing() if a connector is attached."""
-        if run.connector:
-            async with run.connector.typing(run.origin):
-                yield
-        else:
+        """Wrap the run in typing for its current origin."""
+        connector = self.connector_manager.resolve_for_origin(run.origin)
+        async with connector.typing(run.origin):
             yield
 
     async def _restore_chain_state(self, run: RunCtx, last_item_id: int | None) -> None:
@@ -293,9 +298,7 @@ class Agent:
                 run.chain_state.update(chain)
                 return
 
-    async def run(
-        self, run: RunCtx, history: list[DialogItem] | None = None
-    ) -> AfterLlmCallCtx | None:
+    async def run(self, run: RunCtx, history: list[DialogItem] | None = None) -> AfterLlmCallCtx | None:
         """Run: LLM call -> tools -> send until no calls remain."""
         await self._ensure_started()
         error: Exception | None = None
@@ -318,15 +321,19 @@ class Agent:
 
                     await self.hook_manager.fire(HookEventType.BEFORE_LLM_CALL, before_llm_ctx)
 
-                    stream = (run.connector.supports_streaming if run.connector else False)
+                    connector = self.connector_manager.resolve_for_origin(run.origin)
+                    stream = connector.supports_streaming
                     blocks: list[LLMResponseBlock] = []
                     tool_calls: list[LLMResponseToolCallBlock] = []
                     llm_response: LLMResponse | None = None
+                    stream_ids: dict[str, str] = {}
 
                     async for event in self.llm_adapter.ask_llm(before_llm_ctx, stream=stream):
                         if isinstance(event, StreamDelta):
-                            if run.connector:
-                                await run.connector.send_stream_chunk(run.origin, event)
+                            stream_id = stream_ids.setdefault(event.delta_type, f"stream:{uuid4().hex}")
+                            event.meta["stream_id"] = stream_id
+                            event.meta["previous_item_id"] = last_item_id
+                            await connector.send_stream_chunk(run.origin, event)
                         elif isinstance(event, LLMResponseBlock):
                             blocks.append(event)
                         elif isinstance(event, StreamEnd):
@@ -341,7 +348,7 @@ class Agent:
                         raise LLMResponseError("Adapter yielded no StreamEnd event")
 
                     # A tool call starts execution only after the complete assistant turn is delivered.
-                    # Keep tool calls at the end of that turn so text/reasoning cannot appear between a  call and its result in the conversation timeline.
+                    # Keep tool calls at the end of that turn so text/reasoning cannot appear between a call and its result in the conversation timeline.
                     ordered_blocks = sorted(blocks, key=lambda _block: isinstance(_block, LLMResponseToolCallBlock))
                     llm_response.content = ordered_blocks
                     for event in ordered_blocks:
@@ -396,9 +403,9 @@ class Agent:
                     if plugin_targets:
                         await self.add_extensions(*plugin_targets)
                 if not self._scope_has_attribute(STORAGE_ATTRIBUTE):
-                    await self.add_extensions(prefix + ".builtin.sqlite")
+                    await self.add_extensions(prefix + ".builtin.sql.sqlite_storage")
                 if not self._scope_has_attribute(FILE_STORAGE_ATTRIBUTE):
-                    await self.add_extensions(prefix + ".builtin.fs")
+                    await self.add_extensions(prefix + ".builtin.simple_fs")
                 if self._essentials:
                     from ...essentials import setup as _setup_essentials
 
@@ -427,9 +434,14 @@ class Agent:
             for item in history:
                 if item.item_id is None:
                     item.meta.setdefault("chain", {}).update(run.chain_state)
+                    print(f"[Agent DEBUG] save input item_type={item.item_type.value} previous_item_id={item.previous_item_id} external_id={item.external_id!r} origin={item.origin}", file=sys.stderr)
                     last_item_id = await self.storage.save_event(item)
+                    print(f"[Agent DEBUG] saved input item_id={last_item_id}", file=sys.stderr)
                     if last_item_id is not None:
                         item.item_id = last_item_id
+                        connector = self.connector_manager.resolve_for_origin(item.origin)
+                        print(f"[Agent DEBUG] publish input item_id={item.item_id} connector={type(connector).__name__}", file=sys.stderr)
+                        await connector.publish_item(item.origin, item)
                 else:
                     last_item_id = item.item_id
         return last_item_id
@@ -441,6 +453,7 @@ class Agent:
                 parsed.previous_external_id,
                 parsed.dialog_items[0].origin,
             )
+            print(f"[Agent DEBUG] resolve previous external_id={parsed.previous_external_id!r} -> item_id={replied_item_id}", file=sys.stderr)
             if replied_item_id is not None:
                 parsed.dialog_items[0].previous_item_id = replied_item_id
 
@@ -530,19 +543,23 @@ class Agent:
         before_send_ctx = BeforeSendCtx(run=run, dialog_item=dialog_item)
         await self.hook_manager.fire(HookEventType.BEFORE_SEND, before_send_ctx)
 
-        if run.connector:
-            external_id = await run.connector.send(run.origin, dialog_item)
-            dialog_item.external_id = external_id or None
+        connector = self.connector_manager.resolve_for_origin(run.origin)
+        print(f"[Agent DEBUG] send item_type={dialog_item.item_type.value} previous_item_id={dialog_item.previous_item_id} connector={type(connector).__name__}", file=sys.stderr)
+        external_id = await connector.send(run.origin, dialog_item)
+        dialog_item.external_id = external_id or None
+        print(f"[Agent DEBUG] sent external_id={dialog_item.external_id!r}", file=sys.stderr)
 
         saved_id = await self.storage.save_event(dialog_item)
+        print(f"[Agent DEBUG] saved output item_id={saved_id} external_id={dialog_item.external_id!r}", file=sys.stderr)
         if saved_id is not None:
             dialog_item.item_id = saved_id
-            return saved_id
-        return last_item_id
+            await connector.publish_item(dialog_item.origin, dialog_item)
+        await self.hook_manager.fire(HookEventType.AFTER_SEND, AfterSendCtx(run=run, dialog_item=dialog_item, external_id=dialog_item.external_id))
+        return saved_id if saved_id is not None else last_item_id
 
     async def _handle_error(self, run: RunCtx, error: Exception) -> None:
         """Fire on_error hook; re-raise unless suppressed."""
-        print(f"[Agent] ERROR in run {run.origin}: {type(error).__name__}: {error}", file=sys.stderr)
+        print(f"[Agent] ERROR in run {run.origin}: {type(error).__name__}: {error}\n{format_exc()}", file=sys.stderr)
         ctx = OnErrorCtx(run=run, error=error)
         await self.hook_manager.fire(HookEventType.ON_ERROR, ctx)
         if not ctx.suppress:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import types
 import weakref
+from datetime import tzinfo
 from abc import abstractmethod
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -98,8 +99,20 @@ class Connector(AbstractService, Generic[OrgT]):
         """Render an item and return its external ID, or an empty string."""
         ...
 
+    async def publish_item(self, origin: DialogOrigin, item: DialogItem) -> None:
+        """Publish a persisted item to passive subscribers when supported."""
+        return None
+
+    async def get_user_timezone(self, origin: DialogOrigin) -> tzinfo | None:
+        """Return a user's timezone when the platform can provide one."""
+        return None
+
+    async def get_user_info(self, user: int | str) -> dict[str, Any] | None:
+        """Return basic user information when the platform supports lookup."""
+        return None
+
     async def send_stream_chunk(self, origin: DialogOrigin, chunk: StreamDelta) -> None:
-        """Send a real-time content delta to the platform for live rendering. Do not override if not supported"""
+        """Send a real-time content delta to the platform for live rendering."""
         pass
 
     @asynccontextmanager
@@ -149,6 +162,12 @@ class ConnectorManager(ServiceInstanceManager[Connector]):
 
     def resolve(self) -> list[Connector]:
         return self.instances
+
+    def resolve_for_origin(self, origin: DialogOrigin) -> Connector:
+        matches = [connector for connector in self.instances if isinstance(origin, connector.origin_types)]
+        if len(matches) != 1:
+            raise LookupError(f"Expected one connector for {type(origin).__name__}, found {len(matches)}")
+        return matches[0]
 
     def _create_instance(self, descriptor: ConnectorDescriptor) -> Connector:
         return descriptor.connector_cls(agent=self.agent)

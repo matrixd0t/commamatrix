@@ -79,9 +79,7 @@ class ExtensionRuntime:
             except Exception as exc:
                 self._scope = original_scope
                 target = module_name or f"<{type(entry).__name__}>"
-                raise ExtensionRuntimeError(
-                    f"Failed to process extension {target}: {exc}"
-                ) from exc
+                raise ExtensionRuntimeError(f"Failed to process extension {target}: {exc}") from exc
 
         return handled
 

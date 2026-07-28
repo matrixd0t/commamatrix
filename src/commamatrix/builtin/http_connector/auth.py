@@ -187,6 +187,25 @@ class Authorizer:
         row = rows[0]
         return AuthUser(id=int(row["id"]), username=row["username"], app_name=self.app_name, is_admin=bool(row["is_admin"]))
 
+    async def find_user(self, user: int | str) -> AuthUser | None:
+        await self.init_db()
+        if isinstance(user, bool) or not isinstance(user, (int, str)):
+            raise ValueError("User must be an integer ID or username")
+        if isinstance(user, int):
+            rows = await self.agent.storage.execute(
+                "SELECT id, username, is_admin FROM commamatrix_users WHERE id = ? AND app_name = ?",
+                (user, self.app_name),
+            )
+        else:
+            rows = await self.agent.storage.execute(
+                "SELECT id, username, is_admin FROM commamatrix_users WHERE username = ? AND app_name = ?",
+                (user, self.app_name),
+            )
+        if not rows:
+            return None
+        row = rows[0]
+        return AuthUser(id=int(row["id"]), username=row["username"], app_name=self.app_name, is_admin=bool(row["is_admin"]))
+
     async def change_password(self, user: AuthUser, old_password: str, new_password: str) -> None:
         await self.init_db()
         self._check_credentials(user.username, old_password)

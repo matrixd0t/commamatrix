@@ -146,36 +146,30 @@ class LLMHTTPAdapter(LLMAdapter):
 
         if actual_stream:
             body = codec.enable_streaming(body)
-            from pprint import pp
-            pp(body)
+            # from pprint import pp
+            # pp(body)
             headers["Accept"] = "text/event-stream"
             try:
-                print(f"[LLM] Connecting stream: POST {url[:100]}...", file=sys.stderr)
+                # print(f"[LLM] Connecting stream: POST {url[:100]}...", file=sys.stderr)
                 async with self._client.stream("POST", url, json=body, headers=headers, timeout=self._stream_timeout) as resp:
                     if resp.status_code >= 400:
                         err_body = (await resp.aread()).decode(errors="replace")
                         print(f"[LLM] ERROR: stream failed ({resp.status_code}): {err_body[:500]}", file=sys.stderr)
                         raise LLMResponseError(f"LLM HTTP stream failed ({resp.status_code}): {err_body}")
-                    print(f"[LLM] Stream connected ({resp.status_code}), reading events...", file=sys.stderr)
+                    # print(f"[LLM] Stream connected ({resp.status_code}), reading events...", file=sys.stderr)
                     acc: dict[str, Any] = {}
                     event_count = 0
                     async for etype, data in self._iter_sse_events(resp):
                         event_count += 1
-                        data_type = data.get("type", etype)
-                        if data_type and "reason" in data_type.lower():
-                            print(f"[ask_llm RAW] event #{event_count} type={data_type} delta={str(data.get('delta',''))[:200]}")
                         result = codec.parse_stream_event(etype, data, acc)
                         if result is not None:
-                            if isinstance(result, StreamDelta):
-                                print(f"[ask_llm] StreamDelta delta_type={result.delta_type} content_len={len(result.content)}")
-                            else:
-                                print(f"[ask_llm] LLMResponseBlock type={type(result).__name__} len={len(result.content_str())}")
+                            # print(f"[ask_llm] {type(result).__name__}")
                             yield result
-                    print(f"[ask_llm] SSE ended ({event_count} events), acc keys={list(acc.keys())} reasoning_buf={len(acc.get('reasoning_buf',''))} text_buf={len(acc.get('text_buf',''))}")
+                    # print(f"[ask_llm] SSE ended ({event_count} events), acc keys={list(acc.keys())} reasoning_buf={len(acc.get('reasoning_buf',''))} text_buf={len(acc.get('text_buf',''))}")
                     blocks, end = codec.flush_stream(acc)
-                    print(f"[ask_llm] flush_stream -> {len(blocks)} blocks, stop={end.stop_reason}")
+                    # print(f"[ask_llm] flush_stream -> {len(blocks)} blocks, stop={end.stop_reason}")
                     for block in blocks:
-                        print(f"[ask_llm] yield block {type(block).__name__} len={len(block.content_str())}")
+                        # print(f"[ask_llm] yield block {type(block).__name__} len={len(block.content_str())}")
                         yield block
                     yield end
             except LLMResponseError:

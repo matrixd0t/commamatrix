@@ -238,8 +238,8 @@ def ext_to_mime(ext: str) -> str:
     return mime_type or "application/octet-stream"
 
 
-async def resolve_file_uri(storage: FileStorage | None, item: DialogItem) -> str:
-    if storage is None:
+async def resolve_file_uri(file_storage: FileStorage | None, item: DialogItem) -> str:
+    if file_storage is None:
         raise RuntimeError("FileStorage is required for image/file items")
     item_map = {
         DialogItemType.FILE_INPUT: "file",
@@ -257,12 +257,12 @@ async def resolve_file_uri(storage: FileStorage | None, item: DialogItem) -> str
             return ""
         if ref.startswith("http"):
             try:
-                rq = await storage.agent.http_client.head(ref, follow_redirects=True, timeout=30)
+                rq = await file_storage.agent.http_client.head(ref, follow_redirects=True, timeout=30)
                 rq.raise_for_status()
                 return ref
             except HTTPError:
                 return ""
-        raw_bytes = await storage.get(ref)
+        raw_bytes = await file_storage.get(ref)
         if not raw_bytes:
             return ""
         mime = ext_to_mime(ext) if ext else "application/octet-stream"

@@ -201,7 +201,7 @@ class ResponsesCodec(ApiCodec):
         acc: dict[str, Any],
     ) -> StreamDelta | LLMResponseBlock | None:
         etype = data.get("type", event_type)
-        print(f"[responses codec] event type={etype} keys={list(data.keys())}")
+        # print(f"[responses codec] event type={etype} keys={list(data.keys())}")
 
         if etype == "response.created":
             response_obj = data.get("response", {})
@@ -321,11 +321,11 @@ class ResponsesCodec(ApiCodec):
         blocks: list[LLMResponseBlock] = []
         response_obj = acc.get("response", {})
         yielded_reasoning = acc.get("yielded_reasoning", False)
-        print(f"[responses flush] yielded_reasoning={yielded_reasoning} output_items={len(response_obj.get('output', []))}")
+        # print(f"[responses flush] yielded_reasoning={yielded_reasoning} output_items={len(response_obj.get('output', []))}")
 
         for output_item in response_obj.get("output", ()):
             item_type = output_item.get("type")
-            print(f"[responses flush] item type={item_type}")
+            # print(f"[responses flush] item type={item_type}")
             if item_type == "reasoning" and not yielded_reasoning:
                 summary_text = self._extract_reasoning_text(output_item)
                 if summary_text:

@@ -1,30 +1,28 @@
 # tests/test_http_connector.py
 
-"""Tests for HttpConnector, HttpOrigin, and HTTP routes."""
+"""Tests for the authenticated HTTP connector and event transport."""
 
 from __future__ import annotations
 
 import asyncio
-import sys
-import types
+from typing import Any
 
 import aiosqlite
 import httpx
 import pytest
 
-from commamatrix.components.connector import CONNECTOR_ATTRIBUTE
+from commamatrix.builtin.http_connector.connector import HttpConnector, HttpOrigin
 from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
-from commamatrix.components.hook import OnParsedCtx
-from commamatrix.builtin.http_connector.connector import HttpConnector, HttpRequestContext
-from commamatrix.builtin.http_connector.connector import HttpOrigin
 from tests.conftest import stub_agent
 
 
 class _AuthStorage:
+    """Provide the SQL methods required by Authorizer."""
+
     def __init__(self) -> None:
         self._db: aiosqlite.Connection | None = None
 
-    async def execute(self, query: str, params: tuple = ()) -> list[dict]:
+    async def execute(self, query: str, params: tuple = ()) -> list[dict[str, Any]]:
         if self._db is None:
             self._db = await aiosqlite.connect(":memory:")
             self._db.row_factory = aiosqlite.Row
@@ -34,11 +32,26 @@ class _AuthStorage:
         return [dict(row) for row in rows]
 
 
-async def _auth_headers(conn: HttpConnector) -> dict[str, str]:
+class _HistoryStorage(_AuthStorage):
+    """Record history filters and return configured items."""
+
+    def __init__(self, items: list[DialogItem] | None = None) -> None:
+        super().__init__()
+        self.items = items or []
+        self.last_origin_type = None
+        self.last_origin_fields = None
+
+    async def get_history(self, *, origin_type=None, origin_fields=None) -> list[DialogItem]:
+        self.last_origin_type = origin_type
+        self.last_origin_fields = origin_fields
+        return self.items
+
+
+async def _auth(conn: HttpConnector, username: str = "test-user") -> tuple[dict[str, str], int]:
     await conn.authorizer.init_db()
-    await conn.authorizer.register("test-user", "test-password")
-    token = await conn.authorizer.login("test-user", "test-password")
-    return {"Authorization": f"Bearer {token}"}
+    user = await conn.authorizer.register(username, "test-password")
+    token = await conn.authorizer.login(username, "test-password")
+    return {"Authorization": f"Bearer {token}"}, user.id
 
 
 def _make_connector(agent=None) -> HttpConnector:
@@ -49,11 +62,14 @@ def _make_connector(agent=None) -> HttpConnector:
     return HttpConnector(agent=agent)
 
 
-def _mock_agent(handle_fn) -> object:
+def _mock_agent(handle_fn, storage=None) -> object:
     from commamatrix.components.config import Config
 
     class _Agent:
         config = Config()
+
+        def __init__(self) -> None:
+            self.storage = storage or _AuthStorage()
 
         async def handle(self_inner, payload):
             return await handle_fn(payload)
@@ -62,517 +78,146 @@ def _mock_agent(handle_fn) -> object:
 
 
 class TestHttpOrigin:
-    def test_platform(self):
-        origin = HttpOrigin(session_id="s1")
-        assert origin.platform == "http"
-
-    def test_session_id(self):
-        origin = HttpOrigin(session_id="abc")
-        assert origin.session_id == "abc"
-
     def test_serialization(self):
-        origin = HttpOrigin(session_id="s1")
-        data = origin.model_dump(mode="json")
-        assert data == {"platform": "http", "session_id": "s1"}
+        assert HttpOrigin(http_user_id=7).model_dump(mode="json") == {
+            "origin_type": "http",
+            "platform": "http",
+            "http_user_id": 7,
+        }
 
     def test_registered_in_origin_registry(self):
         from commamatrix.components.dialog import ORIGIN_REGISTRY
+
         assert "HttpOrigin" in ORIGIN_REGISTRY
-
-
-class TestHttpConnectorAttribute:
-    def test_stamps_connector_attribute(self):
-        assert getattr(HttpConnector, CONNECTOR_ATTRIBUTE, False) is True
-
-    def test_origin_types(self):
-        assert HttpConnector.origin_types == (HttpOrigin,)
 
 
 class TestHttpConnectorParse:
     @pytest.mark.asyncio
     async def test_ignores_non_http_payload(self):
-        conn = _make_connector()
-        result = await conn.parse({"platform": "cli", "content": "hi"})
-        assert result is None
+        assert await _make_connector().parse({"platform": "cli", "content": "hi"}) is None
 
     @pytest.mark.asyncio
-    async def test_creates_correct_origin(self):
-        conn = _make_connector()
-        result = await conn.parse({
+    async def test_creates_user_origin_and_input_item(self):
+        result = await _make_connector().parse({
             "platform": "http",
-            "session_id": "s1",
-            "content": "hello",
-        })
-        assert result is not None
-        assert len(result.dialog_items) == 1
-        origin = result.dialog_items[0].origin
-        assert isinstance(origin, HttpOrigin)
-        assert origin.session_id == "s1"
-
-    @pytest.mark.asyncio
-    async def test_creates_correct_dialog_item(self):
-        conn = _make_connector()
-        result = await conn.parse({
-            "platform": "http",
-            "session_id": "s1",
+            "user_id": 7,
             "username": "alice",
-            "content": "test message",
+            "content": "hello",
+            "previous_external_id": "http:7:old",
         })
+
+        assert result is not None
         item = result.dialog_items[0]
-        assert item.content == "test message"
-        assert item.item_type == DialogItemType.INPUT
-        assert item.role == DialogRole.USER
+        assert item.content == "hello"
+        assert item.item_type is DialogItemType.INPUT
+        assert item.role is DialogRole.USER
         assert item.user == "http:alice"
-
-    @pytest.mark.asyncio
-    async def test_default_username(self):
-        conn = _make_connector()
-        result = await conn.parse({
-            "platform": "http",
-            "session_id": "s1",
-            "content": "hi",
-        })
-        assert result.dialog_items[0].user == "http:web"
-
-    @pytest.mark.asyncio
-    async def test_previous_external_id(self):
-        conn = _make_connector()
-        result = await conn.parse({
-            "platform": "http",
-            "session_id": "s1",
-            "content": "hi",
-            "previous_external_id": "http:s1:5",
-        })
-        assert result.previous_external_id == "http:s1:5"
-
-    @pytest.mark.asyncio
-    async def test_previous_external_id_none(self):
-        conn = _make_connector()
-        result = await conn.parse({
-            "platform": "http",
-            "session_id": "s1",
-            "content": "hi",
-        })
-        assert result.previous_external_id is None
+        assert item.origin == HttpOrigin(http_user_id=7)
+        assert result.previous_external_id == "http:7:old"
 
 
 class TestHttpConnectorSend:
     @pytest.mark.asyncio
     async def test_returns_empty_for_non_http_origin(self):
         from tests.conftest import StubOrigin
+
         conn = _make_connector()
-        item = DialogItem(
-            content="hi",
-            item_type=DialogItemType.OUTPUT,
-            role=DialogRole.ASSISTANT,
-            origin=StubOrigin(),
-        )
+        item = DialogItem(content="hi", item_type=DialogItemType.OUTPUT, role=DialogRole.ASSISTANT, origin=StubOrigin())
         assert await conn.send(StubOrigin(), item) == ""
 
     @pytest.mark.asyncio
-    async def test_returns_empty_without_active_request(self):
+    async def test_returns_unique_user_scoped_external_ids(self):
         conn = _make_connector()
-        origin = HttpOrigin(session_id="s1")
-        item = DialogItem(
-            content="hi",
-            item_type=DialogItemType.OUTPUT,
-            role=DialogRole.ASSISTANT,
-            origin=origin,
-        )
-        assert await conn.send(origin, item) == ""
+        origin = HttpOrigin(http_user_id=7)
+        item = DialogItem(content="hi", item_type=DialogItemType.OUTPUT, role=DialogRole.ASSISTANT, origin=origin)
 
-    @pytest.mark.asyncio
-    async def test_accumulates_items(self):
-        conn = _make_connector()
-        origin = HttpOrigin(session_id="s1")
-        conn._active_requests["s1"] = HttpRequestContext(
-            request_id="r1", session_id="s1", username="web",
-        )
+        first = await conn.send(origin, item)
+        second = await conn.send(origin, item)
 
-        item1 = DialogItem(content="a", item_type=DialogItemType.OUTPUT, role=DialogRole.ASSISTANT, origin=origin)
-        item2 = DialogItem(content="b", item_type=DialogItemType.OUTPUT, role=DialogRole.ASSISTANT, origin=origin)
-
-        await conn.send(origin, item1)
-        await conn.send(origin, item2)
-
-        assert len(conn._active_requests["s1"].items) == 2
-
-    @pytest.mark.asyncio
-    async def test_returns_unique_external_ids(self):
-        conn = _make_connector()
-        origin = HttpOrigin(session_id="s1")
-        conn._active_requests["s1"] = HttpRequestContext(
-            request_id="r1", session_id="s1", username="web",
-        )
-
-        item = DialogItem(content="a", item_type=DialogItemType.OUTPUT, role=DialogRole.ASSISTANT, origin=origin)
-        id1 = await conn.send(origin, item)
-        id2 = await conn.send(origin, item)
-
-        assert id1 != id2
-        assert id1.startswith("http:s1:")
-        assert id2.startswith("http:s1:")
-
-    @pytest.mark.asyncio
-    async def test_updates_last_external_id(self):
-        conn = _make_connector()
-        origin = HttpOrigin(session_id="s1")
-        ctx = HttpRequestContext(request_id="r1", session_id="s1", username="web")
-        conn._active_requests["s1"] = ctx
-
-        item = DialogItem(content="a", item_type=DialogItemType.OUTPUT, role=DialogRole.ASSISTANT, origin=origin)
-        ext_id = await conn.send(origin, item)
-
-        assert ctx.last_external_id == ext_id
+        assert first != second
+        assert first.startswith("http:7:")
+        assert second.startswith("http:7:")
 
 
 class TestHttpConnectorRoutes:
     @pytest.mark.asyncio
     async def test_health(self):
         conn = _make_connector()
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=conn.app),
-            base_url="http://test",
-        ) as client:
-            resp = await client.get("/health")
-            assert resp.status_code == 200
-            assert resp.json() == {"status": "ok"}
-
-    @pytest.mark.asyncio
-    async def test_index_returns_html(self):
-        conn = _make_connector()
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=conn.app),
-            base_url="http://test",
-        ) as client:
-            resp = await client.get("/")
-            assert resp.status_code == 200
-            assert "text/html" in resp.headers["content-type"]
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=conn.app), base_url="http://test") as client:
+            response = await client.get("/health")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
 
     @pytest.mark.asyncio
     async def test_message_requires_authentication(self):
         conn = _make_connector()
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=conn.app),
-            base_url="http://test",
-        ) as client:
-            resp = await client.post("/api/message", json={"content": "hello"})
-            assert resp.status_code == 401
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=conn.app), base_url="http://test") as client:
+            response = await client.post("/api/messages", json={"content": "hello"})
+        assert response.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_message_invalid_json(self):
+    async def test_message_validates_json_and_content(self):
         conn = _make_connector()
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=conn.app),
-            base_url="http://test",
-        ) as client:
-            client.headers.update(await _auth_headers(conn))
-            resp = await client.post(
-                "/api/message",
-                content="not json",
-                headers={"content-type": "application/json"},
-            )
-            assert resp.status_code == 400
+        headers, _ = await _auth(conn)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=conn.app), base_url="http://test") as client:
+            invalid_json = await client.post("/api/messages", content="not json", headers={**headers, "content-type": "application/json"})
+            missing_content = await client.post("/api/messages", json={}, headers=headers)
+
+        assert invalid_json.status_code == 400
+        assert missing_content.status_code == 400
+        assert "content" in missing_content.json()["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_message_missing_content(self):
+    async def test_message_passes_authenticated_user(self):
+        received = {}
+
+        async def handle(payload):
+            received.update(payload)
+            return []
+
+        conn = _make_connector(_mock_agent(handle))
+        headers, user_id = await _auth(conn)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=conn.app), base_url="http://test") as client:
+            response = await client.post("/api/messages", json={"content": "hello", "previous_external_id": "http:7:old"}, headers=headers)
+
+        assert response.status_code == 202
+        assert received["platform"] == "http"
+        assert received["user_id"] == user_id
+        assert received["content"] == "hello"
+        assert received["previous_external_id"] == "http:7:old"
+
+    @pytest.mark.asyncio
+    async def test_history_is_filtered_by_authenticated_user(self):
+        storage = _HistoryStorage()
+
+        async def handle(_payload):
+            return []
+
+        conn = _make_connector(_mock_agent(handle, storage=storage))
+        headers, user_id = await _auth(conn)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=conn.app), base_url="http://test") as client:
+            response = await client.get("/api/history", headers=headers)
+
+        assert response.status_code == 200
+        assert response.json() == {"items": []}
+        assert storage.last_origin_type is HttpOrigin
+        assert storage.last_origin_fields == {"http_user_id": user_id}
+
+    @pytest.mark.asyncio
+    async def test_background_error_is_published_to_user_events(self):
         conn = _make_connector()
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=conn.app),
-            base_url="http://test",
-        ) as client:
-            client.headers.update(await _auth_headers(conn))
-            resp = await client.post("/api/message", json={"session_id": "s1"})
-            assert resp.status_code == 400
-            assert "content" in resp.json()["error"].lower()
+        session = conn._open_session(7)
 
-    @pytest.mark.asyncio
-    async def test_message_empty_content(self):
-        conn = _make_connector()
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=conn.app),
-            base_url="http://test",
-        ) as client:
-            client.headers.update(await _auth_headers(conn))
-            resp = await client.post("/api/message", json={"content": "  "})
-            assert resp.status_code == 400
+        async def fail():
+            raise RuntimeError("LLM failed")
 
-    @pytest.mark.asyncio
-    async def test_message_body_not_object(self):
-        conn = _make_connector()
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=conn.app),
-            base_url="http://test",
-        ) as client:
-            client.headers.update(await _auth_headers(conn))
-            resp = await client.post("/api/message", content='"string"', headers={"content-type": "application/json"})
-            assert resp.status_code == 400
+        task = asyncio.create_task(fail())
+        await asyncio.sleep(0)
+        conn._log_task_error(7, task)
+        event = await asyncio.wait_for(session.queue.get(), timeout=1)
 
-    @pytest.mark.asyncio
-    async def test_message_waits_for_run_completion(self):
-        send_called = asyncio.Event()
-        connector_ref = None
-
-        async def mock_handle(payload):
-            nonlocal connector_ref
-            session_id = payload["session_id"]
-            origin = HttpOrigin(session_id=session_id)
-            parsed = await connector_ref.parse(payload)
-            connector = parsed.connector
-
-            async def mock_run():
-                item = DialogItem(
-                    content="response",
-                    item_type=DialogItemType.OUTPUT,
-                    role=DialogRole.ASSISTANT,
-                    origin=origin,
-                )
-                await connector.send(origin, item)
-                send_called.set()
-
-            return [asyncio.create_task(mock_run())]
-
-        agent = _mock_agent(mock_handle)
-        conn = _make_connector(agent=agent)
-        connector_ref = conn
-
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=conn.app),
-            base_url="http://test",
-        ) as client:
-            client.headers.update(await _auth_headers(conn))
-            resp = await client.post("/api/message?stream=0", json={
-                "session_id": "s1",
-                "content": "hello",
-            })
-            assert resp.status_code == 200
-            assert send_called.is_set()
-            data = resp.json()
-            assert data["session_id"] == "s1"
-            assert len(data["items"]) == 1
-            assert data["items"][0]["content"] == "response"
-
-    @pytest.mark.asyncio
-    async def test_message_returns_multiple_items(self):
-        connector_ref = None
-
-        async def mock_handle(payload):
-            nonlocal connector_ref
-            session_id = payload["session_id"]
-            origin = HttpOrigin(session_id=session_id)
-            parsed = await connector_ref.parse(payload)
-            connector = parsed.connector
-
-            async def mock_run():
-                for content in ["block1", "block2", "block3"]:
-                    item = DialogItem(
-                        content=content,
-                        item_type=DialogItemType.OUTPUT,
-                        role=DialogRole.ASSISTANT,
-                        origin=origin,
-                    )
-                    await connector.send(origin, item)
-
-            return [asyncio.create_task(mock_run())]
-
-        agent = _mock_agent(mock_handle)
-        conn = _make_connector(agent=agent)
-        connector_ref = conn
-
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=conn.app),
-            base_url="http://test",
-        ) as client:
-            client.headers.update(await _auth_headers(conn))
-            resp = await client.post("/api/message?stream=0", json={
-                "session_id": "s1",
-                "content": "hello",
-            })
-            assert resp.status_code == 200
-            data = resp.json()
-            assert len(data["items"]) == 3
-            assert [i["content"] for i in data["items"]] == ["block1", "block2", "block3"]
-
-    @pytest.mark.asyncio
-    async def test_message_agent_error_returns_500(self):
-        async def failing_handle(payload):
-            async def fail():
-                raise RuntimeError("LLM failed")
-            return [asyncio.create_task(fail())]
-
-        conn = _make_connector(agent=_mock_agent(failing_handle))
-
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=conn.app),
-            base_url="http://test",
-        ) as client:
-            client.headers.update(await _auth_headers(conn))
-            resp = await client.post("/api/message?stream=0", json={
-                "session_id": "s1",
-                "content": "hello",
-            })
-            assert resp.status_code == 500
-
-    @pytest.mark.asyncio
-    async def test_message_generates_session_id(self):
-        async def silent_handle(payload):
-            return [asyncio.create_task(asyncio.sleep(0))]
-
-        conn = _make_connector(agent=_mock_agent(silent_handle))
-
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=conn.app),
-            base_url="http://test",
-        ) as client:
-            client.headers.update(await _auth_headers(conn))
-            resp = await client.post("/api/message?stream=0", json={"content": "hi"})
-            assert resp.status_code == 200
-            data = resp.json()
-            assert "session_id" in data
-            assert len(data["session_id"]) > 0
-
-    @pytest.mark.asyncio
-    async def test_message_cleans_up_context(self):
-        connector_ref = None
-
-        async def mock_handle(payload):
-            nonlocal connector_ref
-            session_id = payload["session_id"]
-            origin = HttpOrigin(session_id=session_id)
-            parsed = await connector_ref.parse(payload)
-            connector = parsed.connector
-
-            async def mock_run():
-                item = DialogItem(
-                    content="ok",
-                    item_type=DialogItemType.OUTPUT,
-                    role=DialogRole.ASSISTANT,
-                    origin=origin,
-                )
-                await connector.send(origin, item)
-
-            return [asyncio.create_task(mock_run())]
-
-        agent = _mock_agent(mock_handle)
-        conn = _make_connector(agent=agent)
-        connector_ref = conn
-
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=conn.app),
-            base_url="http://test",
-        ) as client:
-            client.headers.update(await _auth_headers(conn))
-            resp = await client.post("/api/message", json={
-                "session_id": "s1",
-                "content": "hello",
-            })
-            assert resp.status_code == 200
-            assert "s1" not in conn._active_requests
-
-    @pytest.mark.asyncio
-    async def test_different_sessions_parallel(self):
-        events: dict[str, asyncio.Event] = {
-            "s1": asyncio.Event(),
-            "s2": asyncio.Event(),
-        }
-        order: list[str] = []
-        connector_ref = None
-
-        async def mock_handle(payload):
-            nonlocal connector_ref
-            sid = payload["session_id"]
-            origin = HttpOrigin(session_id=sid)
-            parsed = await connector_ref.parse(payload)
-            connector = parsed.connector
-
-            async def mock_run():
-                order.append(f"start:{sid}")
-                await events[sid].wait()
-                item = DialogItem(
-                    content=f"done:{sid}",
-                    item_type=DialogItemType.OUTPUT,
-                    role=DialogRole.ASSISTANT,
-                    origin=origin,
-                )
-                await connector.send(origin, item)
-                order.append(f"end:{sid}")
-
-            return [asyncio.create_task(mock_run())]
-
-        agent = _mock_agent(mock_handle)
-        conn = _make_connector(agent=agent)
-        connector_ref = conn
-
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=conn.app),
-            base_url="http://test",
-        ) as client:
-            client.headers.update(await _auth_headers(conn))
-            t1 = asyncio.create_task(client.post("/api/message", json={"session_id": "s1", "content": "a"}))
-            t2 = asyncio.create_task(client.post("/api/message", json={"session_id": "s2", "content": "b"}))
-
-            await asyncio.sleep(0.05)
-            assert "start:s1" in order
-            assert "start:s2" in order
-
-            events["s1"].set()
-            events["s2"].set()
-
-            r1 = await t1
-            r2 = await t2
-
-            assert r1.status_code == 200
-            assert r2.status_code == 200
-
-    @pytest.mark.asyncio
-    async def test_same_session_serialized(self):
-        call_count = 0
-        gate = asyncio.Event()
-        connector_ref = None
-
-        async def mock_handle(payload):
-            nonlocal call_count, connector_ref
-            call_count += 1
-            sid = payload["session_id"]
-            origin = HttpOrigin(session_id=sid)
-            parsed = await connector_ref.parse(payload)
-            connector = parsed.connector
-
-            async def mock_run():
-                if call_count == 1:
-                    await gate.wait()
-                item = DialogItem(
-                    content=f"r{call_count}",
-                    item_type=DialogItemType.OUTPUT,
-                    role=DialogRole.ASSISTANT,
-                    origin=origin,
-                )
-                await connector.send(origin, item)
-
-            return [asyncio.create_task(mock_run())]
-
-        agent = _mock_agent(mock_handle)
-        conn = _make_connector(agent=agent)
-        connector_ref = conn
-
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=conn.app),
-            base_url="http://test",
-        ) as client:
-            client.headers.update(await _auth_headers(conn))
-            t1 = asyncio.create_task(client.post("/api/message?stream=0", json={"session_id": "s1", "content": "a"}))
-            t2 = asyncio.create_task(client.post("/api/message?stream=0", json={"session_id": "s1", "content": "b"}))
-
-            await asyncio.sleep(0.05)
-            assert call_count == 1
-
-            gate.set()
-            r1 = await t1
-            await asyncio.sleep(0.05)
-            r2 = await t2
-
-            assert r1.status_code == 200
-            assert r2.status_code == 200
+        assert event == {"type": "error", "error": "LLM failed"}
+        conn._close_session(session)
 
 
 class TestHttpConnectorLifecycle:
@@ -581,69 +226,16 @@ class TestHttpConnectorLifecycle:
         conn = _make_connector()
         conn._port = 0
         await conn.start()
-        assert conn.bound_port is not None
-        assert conn.bound_port > 0
-        assert conn.listener_task is not None
+        assert conn._bound_port is not None and conn._bound_port > 0
         await conn.stop()
-        assert conn.bound_port is None
-        assert conn.listener_task is None
+        assert conn._bound_port is None
+        assert conn._server is None
 
     @pytest.mark.asyncio
-    async def test_double_start_is_idempotent(self):
+    async def test_stop_closes_sessions(self):
         conn = _make_connector()
-        conn._port = 0
-        await conn.start()
-        port1 = conn.bound_port
-        await conn.start()
-        assert conn.bound_port == port1
+        session = conn._open_session(7)
         await conn.stop()
-
-    @pytest.mark.asyncio
-    async def test_stop_cleans_up_state(self):
-        conn = _make_connector()
-        conn._port = 0
-        await conn.start()
-
-        conn._active_requests["s1"] = HttpRequestContext(
-            request_id="r1", session_id="s1", username="web",
-        )
-        conn._session_locks["s1"] = asyncio.Lock()
-
-        await conn.stop()
-        assert len(conn._active_requests) == 0
-        assert len(conn._session_locks) == 0
-
-    @pytest.mark.asyncio
-    async def test_base_url_property(self):
-        conn = _make_connector()
-        conn._host = "127.0.0.1"
-        conn._port = 0
-        await conn.start()
-        assert f":{conn.bound_port}" in conn.base_url
-        assert conn.base_url.startswith("http://127.0.0.1:")
-        await conn.stop()
-
-    @pytest.mark.asyncio
-    async def test_server_listens_on_loopback(self):
-        conn = _make_connector()
-        conn._host = "127.0.0.1"
-        conn._port = 0
-        await conn.start()
-
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=conn.app),
-            base_url="http://test",
-        ) as client:
-            resp = await client.get("/health")
-            assert resp.status_code == 200
-
-        await conn.stop()
-
-    @pytest.mark.asyncio
-    async def test_port_zero_resolves(self):
-        conn = _make_connector()
-        conn._port = 0
-        await conn.start()
-        assert conn._port == 0
-        assert conn.bound_port != 0
-        await conn.stop()
+        assert session.closed
+        assert conn._sessions == {}
+        assert conn._sessions_by_user == {}

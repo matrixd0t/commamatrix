@@ -14,7 +14,7 @@ sequenceDiagram
     activate HM
 
     HM->>HM: lookup self._handlers["before_llm_call"]
-    Note over HM: sorted by descriptor.priority (descending)
+    Note over HM: sorted by resolve_order:<br/>before/after constraints > priority<br/>stable for equal priority
 
     loop for each descriptor
         HM->>ExtMgr: _source_of(descriptor)
@@ -49,7 +49,7 @@ sequenceDiagram
     activate TM
 
     TM->>TM: resolve(tool_call.tool_name)
-    Note over TM: 4-step chain:<br/>id → exported_name → alias → name
+    Note over TM: Looks up by public_name<br/>(alias_name or just name)
 
     alt Tool not found
         TM-->>Agent: ToolCallResult("Tool not found")
@@ -255,14 +255,22 @@ sequenceDiagram
         Agent->>Agent: add_extensions("__main__")
     end
 
-    alt no Storage in scope
+    Agent->>Agent: add_extensions(prefix + ".components")
+
+    alt auto_load_plugins (default True)
+        Agent->>Agent: add_extensions(*plugin_targets)
+    end
+
+    alt no Storage in scope (_scope_has_attribute)
         Agent->>Agent: add_extensions("commamatrix.builtin.sqlite")
-        Note over Agent: SqliteStorage becomes available
     end
 
     alt no FileStorage in scope
         Agent->>Agent: add_extensions("commamatrix.builtin.fs")
-        Note over Agent: SimpleFileStorage becomes available
+    end
+
+    alt essentials (default True)
+        Agent->>Agent: essentials.setup() → llm_http_adapter, codeact, self_modif, web_utils,<br/>and http_connector (if deps available)
     end
 
     Agent->>SM: set_scope(self._extension_scope)
@@ -277,7 +285,6 @@ sequenceDiagram
 
     SM->>TM: start()
     activate TM
-
     TM->>TM: start sources, scan, rebuild index
     Note over TM: PythonToolSource scans scope<br/>for @tool → TOOL_ATTRIBUTE
     TM-->>SM: done
@@ -376,6 +383,8 @@ sequenceDiagram
     activate Runner
     Runner->>Runner: cancel all active tasks
     deactivate Runner
+
+    Agent->>Agent: close http_client if open
 
     Agent->>SM: stop()
     activate SM
@@ -487,9 +496,9 @@ flowchart TD
     N --> O["_rebuild()"]
     O --> P{"Which subclass?"}
 
-    P -->|"HookManager"| Q["group by event,<br/>sort by priority"]
-    P -->|"InstructionManager"| InsOrd["sort by priority<br/>with before/after constraints"]
-    P -->|"ToolManager"| R["build _by_alias, _by_name,<br/>_by_exported_name index maps"]
+    P -->|"HookManager"| Q["group by event,<br/>sort by resolve_order<br/>(before/after + priority)"]
+    P -->|"InstructionManager"| InsOrd["sort by resolve_order<br/>(before/after + priority)"]
+    P -->|"ToolManager"| R["build _by_alias, _by_name,<br/>_by_public_name index maps"]
     P -->|"InstanceManager"| S["no extra rebuild<br/>(reconciliation handles it)"]
 
     Q --> T
@@ -503,7 +512,7 @@ flowchart TD
     W --> X["return True<br/>(changes applied)"]
 ```
 
-### 8c. InstanceManager._reconcile_instances() — Instance AgentLifecycle
+### 8c. InstanceManager._reconcile_instances() — Instance Lifecycle
 
 ```mermaid
 flowchart TD
@@ -566,6 +575,8 @@ classDiagram
         + save_event(entry) async → int | None
         + get_branch(last_item_id) async → list[DialogItem]
         + find_item_id_by_external_id(eid, origin) async → int | None
+        + get_history() async → list[DialogItem]
+        + execute(query, params) async → list[dict]
     }
     AbstractService <|-- Storage : extends (no SERVICE_ATTRIBUTE)
 
@@ -579,19 +590,22 @@ classDiagram
 
     class LLMAdapter {
         + __init_subclass__() → stamps LLM_ADAPTER_ATTRIBUTE
-        + ask_llm(ctx) async → LLMResponse
+        + ask_llm(ctx, *, stream) async → AsyncIterator[StreamDelta | LLMResponseBlock | StreamEnd]
     }
     AbstractService <|-- LLMAdapter : extends (no SERVICE_ATTRIBUTE)
 
     class Connector {
         + origin_types: ClassVar[tuple[type[DialogOrigin], ...]]
+        + supports_streaming: ClassVar[bool] = False
         + __init_subclass__() → stamps CONNECTOR_ATTRIBUTE
         + start() async … launches listener
         + stop() async … cancels listener
-        + parse(raw, agent) async → OnParsedCtx | None
+        + parse(data) async → OnParsedCtx | None
         + send(origin, item) async → str
+        + publish_item(origin, item) async
+        + send_stream_chunk(origin, chunk) async
         + typing(origin) → AsyncIterator
-        + listen(on_event) async … platform loop
+        + listen(on_recv) async … platform loop
     }
     AbstractService <|-- Connector : extends (no SERVICE_ATTRIBUTE)
 
@@ -614,20 +628,25 @@ classDiagram
     class ToolManager {
         + call(tool_call, ctx) async → ToolCallResult
         + resolve(name) → ToolDescriptor
+        + resolve_id(id_str) → ToolDescriptor
         + schemas() → list[dict]
-        + invoke(tool_call) async → Any
+        + invoke(descriptor, kwargs, ctx) async → Any
+        + public_name(descriptor) → str
+        + build_tool_tree(descriptors) → dict
+        + has_module(alias) → bool
+        + find_alias(alias) → list[ToolDescriptor]
         ──────────────────────────────────
         Inherits: mount, scan, invalidate, fingerprint check
-        Adds: alias/name/exported_name index maps
+        Adds: alias/name/public_name/id index maps
     }
     Manager <|-- ToolManager : extends
 
     class HookManager {
         - _handlers: dict[str, list[HookDescriptor]]
-        + fire(event, ctx) async … priority order
+        + fire(event, ctx) async … resolve_order topological sort
         ──────────────────────────────────
         Inherits: mount, scan, invalidate
-        Adds: event-grouped, priority-sorted handler map
+        Adds: event-grouped, topologically-sorted handler map
     }
     Manager <|-- HookManager : extends
 
@@ -646,6 +665,8 @@ classDiagram
         # _instances: dict[str, I]
         # _start_order: list[str]
         + instances → list[I]
+        + get_by_id(descriptor_id) → I | None
+        + set_scope(scope)
         # _create_instance(descriptor) → I
         # _start_instance(instance) async
         # _stop_instance(instance) async
@@ -661,9 +682,9 @@ classDiagram
     Manager <|-- InstanceManager : extends
 
     class ServiceInstanceManager {
-        # base_type: type[AbstractService]
-        # marker_attribute: str
-        # id_prefix: str
+        + base_type: ClassVar[type] = AbstractService
+        + marker_attribute: ClassVar[str] = SERVICE_ATTRIBUTE
+        + id_prefix: ClassVar[str] = 'service'
         ──────────────────────────────────
         Inherits: instance lifecycle
         Adds: creates via service_cls(agent), registry hooks, class-var source defaults
@@ -671,24 +692,20 @@ classDiagram
     InstanceManager <|-- ServiceInstanceManager : D=ServiceDescriptor, I=SvcT
 
     class ActiveServiceInstanceManager {
-        «abstract — subclass must set base_type, marker_attribute, active_field»
-        # base_type: type[AbstractService]
-        # marker_attribute: str
-        # id_prefix: str
-        # active_field: ConfigField[str | None]
+        + active_field: ConfigField[str | None]
         - _active_id: str | None
         + _active → instance (property)
         # _select_active() … picks configured or first
         ──────────────────────────────────
         Inherits: instance lifecycle + registry hooks
-        Adds: active-instance selection by config or “first”
+        Adds: active-instance selection by config or "first"
     }
     ServiceInstanceManager <|-- ActiveServiceInstanceManager : extends
 
     class StorageManager {
         ──────────────────────────────────
         Inherits: active selection
-        Adds: delegates save_event/get_branch/find → active Storage
+        Adds: delegates save_event/get_branch/find/get_history/execute → active Storage
     }
     ActiveServiceInstanceManager <|-- StorageManager : SvcT=Storage
 
@@ -702,15 +719,16 @@ classDiagram
     class LLMAdapterManager {
         ──────────────────────────────────
         Inherits: instance lifecycle (NOT active selection)
-        Adds: first-adapter pattern — forwards ask_llm → first instance
+        Adds: first-adapter pattern — _active forwards ask_llm → first instance
     }
     ServiceInstanceManager <|-- LLMAdapterManager : SvcT=LLMAdapter
 
     class ConnectorManager {
         + resolve() → list[Connector]
+        + resolve_for_origin(origin) → Connector
         ──────────────────────────────────
         Inherits: instance lifecycle
-        Adds: wires self.agent.handle
+        Adds: wires self.agent.handle, origin-based connector resolution
     }
     ServiceInstanceManager <|-- ConnectorManager : SvcT=Connector
 
@@ -757,7 +775,7 @@ classDiagram
 | `Connector` | `AbstractService` | `start()` (launches listener) / `stop()` (cancels) + stamps `CONNECTOR_ATTRIBUTE` |
 | `Manager[D]` | `AbstractService` | source mounting, fingerprint-based `scan()`, invalidation, `start()`→refresh (core/classes/manager.py) |
 | `ToolManager` | `Manager` | name-resolution index maps, `call()` / `resolve()` / `schemas()` |
-| `HookManager` | `Manager` | event-grouped handler map, priority-ordered `fire()` |
+| `HookManager` | `Manager` | event-grouped handler map, `fire()` with topological sort |
 | `InstructionManager` | `Manager` | ordered instruction collection, `collect()` → system prompt fragments |
 | `InstanceManager[D,I]` | `Manager` | instance create/start/stop/reconcile lifecycle + refresh |
 | `ServiceInstanceManager[SvcT]` | `InstanceManager` | *Binds D=ServiceDescriptor, I=SvcT*; `instances` → `list[SvcT]`; integrates with `ServiceInstanceRegistry` |
@@ -766,7 +784,7 @@ classDiagram
 | `FileStorageManager` | `ActiveServiceInstanceManager[FileStorage]` | delegates to active `FileStorage` |
 | `LLMAdapterManager` | `ServiceInstanceManager[LLMAdapter]` | first-adapter pattern (no active selection) |
 | `ServiceInstanceManager` (generic) | `ServiceInstanceManager[AbstractService]` | discovers custom `Service` subclasses (default params) |
-| `ConnectorManager` | `ServiceInstanceManager[Connector]` | wires `agent.handle`, `resolve()` → `list[Connector]` |
+| `ConnectorManager` | `ServiceInstanceManager[Connector]` | wires `agent.handle`, `resolve()` → `list[Connector]`, `resolve_for_origin()` |
 
 ---
 
@@ -785,6 +803,8 @@ classDiagram
         + stop() async
         + invalidate() … sets available=False, fires callbacks
         + restore() … sets available=True
+        + _attach_invalidator(callback)
+        + _detach_invalidator(callback)
     }
 
     class ToolSource {
@@ -797,9 +817,12 @@ classDiagram
         «core/classes/source.py»
         - _scope: list[str]
         + set_scope(scope)
+        + marker_attribute → str (abstract)
+        + build_descriptor(name, obj) → D | None (abstract)
+        + iter_objects() → Iterable[(name, obj)]
         ──────────────────────────────────
         Inherits: scan, invalidate, restore, available
-        Adds: modules scope, identity filtering via __module__
+        Adds: modules scope, identity filtering via __module__, marker-based scanning
     }
     Source <|-- PythonSource : extends
 
@@ -807,6 +830,8 @@ classDiagram
         «components/tool.py»
         ──────────────────────────────────
         Scopes: modules with @tool → TOOL_ATTRIBUTE
+        Builds ToolDescriptor with JSON Schema
+        Invokes original function with optional ctx injection
     }
     PythonSource <|-- PythonToolSource : D=ToolDescriptor
 
@@ -814,6 +839,7 @@ classDiagram
         «components/hook.py»
         ──────────────────────────────────
         Scopes: modules with @Hook → HOOK_ATTRIBUTE
+        Maintains internal _handlers dict for direct invocation
     }
     PythonSource <|-- PythonHookSource : D=HookDescriptor
 
@@ -834,8 +860,9 @@ classDiagram
     class PythonServiceSource {
         «core/classes/source.py»
         ──────────────────────────────────
-        Unified service source. Defaults to SERVICE_ATTRIBUTE/AbstractService/"service".
-        Accepts base_type, marker_attribute, id_prefix for provider slots.
+        Unified service source. Configurable base_type, marker_attribute, id_prefix.
+        Defaults to SERVICE_ATTRIBUTE/AbstractService/"service".
+        Used for provider slots (Storage, FileStorage, LLMAdapter) via subclass config.
     }
     PythonSource <|-- PythonServiceSource : D=ServiceDescriptor
 
@@ -854,10 +881,9 @@ classDiagram
         + namespace: str
         + alias: str
         + name: str
-        + exported_name: str
         + doc: str
         + schema: dict
-        + metadata: dict
+        + meta: dict
     }
     Descriptor <|-- ToolDescriptor
 
@@ -865,7 +891,11 @@ classDiagram
         «components/hook.py»
         + event: str
         + priority: int
-        + metadata: dict
+        + name: str
+        + module: str
+        + before: tuple[str, ...]
+        + after: tuple[str, ...]
+        + meta: dict
     }
     Descriptor <|-- HookDescriptor
 
@@ -876,6 +906,7 @@ classDiagram
         + priority: int
         + before: tuple[str, ...]
         + after: tuple[str, ...]
+        + meta: dict
     }
     Descriptor <|-- InstructionDescriptor
 
@@ -883,6 +914,7 @@ classDiagram
         «core/classes/service.py»
         + service_cls: type[AbstractService]
         + metadata: dict
+        + _fingerprint_payload() → dict
     }
     Descriptor <|-- ServiceDescriptor
 
@@ -903,7 +935,7 @@ PythonConnectorSource (components/connector.py)  ──scan()──▶ Connector
 PythonServiceSource   (core/classes/source.py)     ──scan()──▶ ServiceDescriptor    ──▶ ServiceInstanceManager / StorageManager / FileStorageManager / LLMAdapterManager
 ```
 
-Each source is mounted into an `Manager` subclass. The manager calls `source.scan()` which produces descriptors. The manager's `_rebuild()` then builds specialized indexes (event→handlers map, alias→name→descriptor maps, instance reconciliation sets).
+Each source is mounted into an `Manager` subclass. The manager calls `source.scan()` which produces descriptors. The manager's `_rebuild()` then builds specialized indexes (event→handlers map, alias→public→name→descriptor maps, instance reconciliation sets).
 
 ```
 ToolManager  ──mount(PythonToolSource)──▶ PythonToolSource (components/tool.py) ──scan()──▶ [ToolDescriptor, ...]
@@ -915,7 +947,7 @@ Each `Source` tracks its own `available` flag. When a source is invalidated (e.g
 
 ---
 
-## 9. Agent Run Loop — Response Processing
+## 10. Agent Run Loop — Response Processing
 
 ```mermaid
 sequenceDiagram
@@ -927,12 +959,12 @@ sequenceDiagram
 
     loop LLM iteration
         Agent->>Agent: _call_llm()
-        Note over Agent: load_dialog → before_llm → ask_llm → after_llm → validate
-        Agent-->>Agent: LLMResponse (blocks + meta)
+        Note over Agent: load_dialog (filter orphaned tool results)<br/>→ before_llm → ask_llm → stream handling<br/>→ after_llm → validate
 
         Agent->>Agent: _process_response()
+        Note over Agent: sort blocks: non-tool-call first,<br/>tool-call blocks last
 
-        loop for each response block
+        loop for each block (sorted order)
             Agent->>Agent: block.to_dialog_item(meta propagated)
             Agent->>HM: fire(BEFORE_SEND, ctx)
             Agent->>Conn: send(origin, dialog_item)
@@ -945,7 +977,8 @@ sequenceDiagram
             end
             Agent->>Storage: save_event(dialog_item)
             Storage-->>Agent: item_id
-            Note over Agent: reasoning, text, tool_call blocks<br/>all stored in original order
+            Agent->>Conn: publish_item(origin, item)
+            Note over Agent: reasoning, text, image, file, tool_call blocks<br/>all sent, persisted, published in order
         end
 
         loop for each tool call block
@@ -958,16 +991,18 @@ sequenceDiagram
                 TM-->>Agent: ToolCallResult
             end
             Agent->>HM: fire(AFTER_TOOL_CALL, ctx)
+            Note over Agent: acquire tool_output_lock<br/>use tool_output_tail for chaining
             Agent->>Agent: DialogItem(TOOL_CALL_RESULT)
             Agent->>Conn: send(origin, result_item)
             Agent->>Storage: save_event(result_item)
             Storage-->>Agent: item_id
+            Note over Agent: update tool_output_tail
         end
 
         alt tools were called
             Agent->>Agent: continue (next LLM iteration)
         else no tools
-            Agent->>Agent: return (end run)
+            Agent->>Agent: return after_llm_ctx
         end
     end
 ```
@@ -975,5 +1010,9 @@ sequenceDiagram
 Key differences from the previous flow:
 - Every response block (reasoning, text, tool_call) is **sent through the connector** — the connector decides what to render.
 - All blocks are **persisted in order** before any tool executes.
-- Tool results also pass through the connector.
+- Tool calls are **sorted to the end** of the block list so text/reasoning cannot appear between a call and its result in the conversation timeline.
+- Tool results also pass through the connector, serialized via `tool_output_lock`.
 - Provider-specific metadata (`meta["llm"]`) is preserved across send/store cycles.
+- `publish_item()` notifies passive subscribers after successful storage.
+- `chain_state` is serialised into every `DialogItem.meta["chain"]` for cross-message persistence.
+- `tool_output_tail` tracks the last output item_id for correct `previous_item_id` chaining when multiple tool results arrive in parallel.

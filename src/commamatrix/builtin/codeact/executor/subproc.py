@@ -57,13 +57,12 @@ class SubprocessBackend(ExecutionBackend):
         server = RPCServer(ctx)
         tm = ctx.run.agent.tool_manager
         public_descriptors = [d for d in tm.descriptors if not is_codeact_internal(d)]
-        tool_tree = tm.build_tool_tree(public_descriptors)
         payload = {
             "code": code,
             "namespace": {"__name__": "__codeact__"},
             "timeout": self._execution_timeout,
             "rpc_timeout": self._rpc_timeout,
-            "tool_tree": tool_tree,
+            "tool_tree": tm.build_tool_tree(public_descriptors),
         }
 
         token = secrets.token_urlsafe(32)
@@ -184,9 +183,7 @@ class SubprocessBackend(ExecutionBackend):
         except (ConnectionError, OSError):
             pass
 
-    async def _read_stderr(
-        self, stderr: asyncio.StreamReader, buffer: list[str]
-    ) -> None:
+    async def _read_stderr(self, stderr: asyncio.StreamReader, buffer: list[str]) -> None:
         try:
             while True:
                 line = await stderr.readline()

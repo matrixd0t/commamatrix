@@ -1,4 +1,4 @@
-# builtin/fs/file_storage.py
+# builtin/simple_fs.py
 
 from __future__ import annotations
 
@@ -7,11 +7,11 @@ from aiofiles import open, os
 from pathlib import Path
 
 from typing import TYPE_CHECKING
-from ...components.file_storage import FileStorage
-from ...components.config import ConfigField
+from commamatrix.components.file_storage import FileStorage
+from commamatrix.components.config import ConfigField
 
 if TYPE_CHECKING:
-    from ...core.agent import Agent
+    from commamatrix.core.agent import Agent
 
 files_directory = ConfigField[str](name='files_directory', default='files', description='Directory for file storage')
 
@@ -46,3 +46,9 @@ class SimpleFileStorage(FileStorage):
         except FileNotFoundError:
             return False
         return True
+
+
+__all__ = [
+    "files_directory",
+    "SimpleFileStorage"
+]

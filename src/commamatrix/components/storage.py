@@ -41,6 +41,9 @@ class Storage(AbstractService):
     @abstractmethod
     async def find_item_id_by_external_id(self, external_id: str, origin: DialogOrigin) -> Optional[int]: ...
 
+    @abstractmethod
+    async def get_history(self, *, origin_type: type[DialogOrigin] | None = None, origin_fields: dict[str, Any] | None = None) -> list[DialogItem]: ...
+
     async def execute(self, query: str, params: tuple = ()) -> list[dict[str, Any]]:
         raise NotImplementedError
 
@@ -71,6 +74,9 @@ class StorageManager(ActiveServiceInstanceManager[Storage]):
 
     async def find_item_id_by_external_id(self, external_id: str, origin: DialogOrigin) -> int | None:
         return await self._active.find_item_id_by_external_id(external_id, origin)
+
+    async def get_history(self, *, origin_type: type[DialogOrigin] | None = None, origin_fields: dict[str, Any] | None = None) -> list[DialogItem]:
+        return await self._active.get_history(origin_type=origin_type, origin_fields=origin_fields)
 
     async def execute(self, query: str, params: tuple = ()) -> list[dict[str, Any]]:
         return await self._active.execute(query, params)

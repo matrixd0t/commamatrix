@@ -7,17 +7,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...components.instruction import InstructionCtx, instruction
-from ...components.config import ConfigField
+from .hooks import codeact_enabled
 from .rpc.server import is_codeact_internal
 
 if TYPE_CHECKING:
     from .service import CodeActService
-
-codeact_guide_visible = ConfigField[bool](
-    name="codeact.guide_visible",
-    default=True,
-    description="When True, inject CodeAct environment and tool listing into system prompt.",
-)
 
 
 def _format_codeact_guide(codeact: CodeActService) -> str:
@@ -64,7 +58,7 @@ def codeact_guide(ctx: InstructionCtx) -> str | None:
     codeact = ctx.run.agent.services.get(CodeActService)
     if codeact is None:
         return None
-    if not codeact.config.get(codeact_guide_visible):
+    if not codeact.config.get(codeact_enabled):
         return None
 
     if not codeact.searcher.descriptors:

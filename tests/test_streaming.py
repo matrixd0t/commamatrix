@@ -596,8 +596,9 @@ class TestHttpConnectorStreaming:
         origin = stub_origin()
         origin.__class__.__bases__  # ensure it's not HttpOrigin
         from commamatrix.builtin.http_connector.connector import HttpOrigin
-        http_origin = HttpOrigin(session_id="s1")
-        conn._sse_queues["s1"] = queue
+        http_origin = HttpOrigin(http_user_id=1)
+        session = conn._open_session(1)
+        session.queue = queue
 
         chunk = StreamDelta(
             content='{"code":',
@@ -628,4 +629,4 @@ class TestHttpConnectorStreaming:
         agent = stub_agent()
         conn = HttpConnector(agent=agent)
         chunk = StreamDelta(content="x", delta_type="text")
-        await conn.send_stream_chunk(HttpOrigin(session_id="nonexistent"), chunk)
+        await conn.send_stream_chunk(HttpOrigin(http_user_id=999), chunk)

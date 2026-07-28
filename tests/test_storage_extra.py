@@ -10,14 +10,32 @@ from pathlib import Path
 import pytest
 
 from commamatrix.components.config import Config
-from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole, DialogOrigin
+from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
 from tests.conftest import stub_origin, stub_agent, make_dialog_item
 
 
 class TestSqliteMigrateColumns:
     @pytest.mark.asyncio
+    async def test_origin_type_column_is_created_from_dialog_origin(self):
+        from commamatrix.builtin.http_connector.connector import HttpOrigin
+        from commamatrix.builtin.sql.sqlite_storage import SqliteStorage, sqlite_path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = str(Path(tmpdir) / "test.db")
+            agent = stub_agent()
+            agent.config = Config(overrides={sqlite_path: db_path})
+            storage = SqliteStorage(agent=agent)
+
+            await storage.get_history(origin_type=HttpOrigin)
+
+            columns = await storage._columns(storage._db)
+            assert "origin_type" in columns
+            assert "http_user_id" in columns
+            await storage.stop()
+
+    @pytest.mark.asyncio
     async def test_migrate_adds_new_column(self):
-        from commamatrix.builtin.sqlite.storage import SqliteStorage, sqlite_path
+        from commamatrix.builtin.sql.sqlite_storage import SqliteStorage, sqlite_path
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = str(Path(tmpdir) / "test.db")
@@ -46,7 +64,7 @@ class TestSqliteMigrateColumns:
 
     @pytest.mark.asyncio
     async def test_migrate_is_idempotent(self):
-        from commamatrix.builtin.sqlite.storage import SqliteStorage, sqlite_path
+        from commamatrix.builtin.sql.sqlite_storage import SqliteStorage, sqlite_path
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = str(Path(tmpdir) / "test.db")
@@ -75,7 +93,7 @@ class TestSqliteMigrateColumns:
 class TestSqliteGetBranchChained:
     @pytest.mark.asyncio
     async def test_get_branch_with_chain(self):
-        from commamatrix.builtin.sqlite.storage import SqliteStorage, sqlite_path
+        from commamatrix.builtin.sql.sqlite_storage import SqliteStorage, sqlite_path
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = str(Path(tmpdir) / "test.db")
@@ -111,7 +129,7 @@ class TestSqliteGetBranchChained:
 
     @pytest.mark.asyncio
     async def test_get_branch_partial_chain(self):
-        from commamatrix.builtin.sqlite.storage import SqliteStorage, sqlite_path
+        from commamatrix.builtin.sql.sqlite_storage import SqliteStorage, sqlite_path
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = str(Path(tmpdir) / "test.db")
@@ -139,7 +157,7 @@ class TestSqliteGetBranchChained:
 
     @pytest.mark.asyncio
     async def test_get_branch_single_item(self):
-        from commamatrix.builtin.sqlite.storage import SqliteStorage, sqlite_path
+        from commamatrix.builtin.sql.sqlite_storage import SqliteStorage, sqlite_path
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = str(Path(tmpdir) / "test.db")
@@ -161,7 +179,7 @@ class TestSqliteGetBranchChained:
 class TestSqliteMultipleOrigins:
     @pytest.mark.asyncio
     async def test_different_origins_stored_separately(self):
-        from commamatrix.builtin.sqlite.storage import SqliteStorage, sqlite_path
+        from commamatrix.builtin.sql.sqlite_storage import SqliteStorage, sqlite_path
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = str(Path(tmpdir) / "test.db")
@@ -205,7 +223,7 @@ class TestSqliteMultipleOrigins:
 class TestSqliteDialogItemTypes:
     @pytest.mark.asyncio
     async def test_all_item_types_roundtrip(self):
-        from commamatrix.builtin.sqlite.storage import SqliteStorage, sqlite_path
+        from commamatrix.builtin.sql.sqlite_storage import SqliteStorage, sqlite_path
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = str(Path(tmpdir) / "test.db")
@@ -248,7 +266,7 @@ class TestSqliteDialogItemTypes:
 
     @pytest.mark.asyncio
     async def test_meta_roundtrip(self):
-        from commamatrix.builtin.sqlite.storage import SqliteStorage, sqlite_path
+        from commamatrix.builtin.sql.sqlite_storage import SqliteStorage, sqlite_path
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = str(Path(tmpdir) / "test.db")
@@ -278,7 +296,7 @@ class TestSqliteDialogItemTypes:
 class TestSqliteStopClose:
     @pytest.mark.asyncio
     async def test_stop_closes_connection(self):
-        from commamatrix.builtin.sqlite.storage import SqliteStorage, sqlite_path
+        from commamatrix.builtin.sql.sqlite_storage import SqliteStorage, sqlite_path
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = str(Path(tmpdir) / "test.db")
@@ -302,7 +320,7 @@ class TestSqliteStopClose:
 class TestSqliteFindExternalId:
     @pytest.mark.asyncio
     async def test_find_returns_none_for_wrong_origin(self):
-        from commamatrix.builtin.sqlite.storage import SqliteStorage, sqlite_path
+        from commamatrix.builtin.sql.sqlite_storage import SqliteStorage, sqlite_path
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = str(Path(tmpdir) / "test.db")

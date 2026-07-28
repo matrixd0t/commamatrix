@@ -9,14 +9,13 @@ from ...components.hook import (
     BeforeLlmCallCtx,
     before_llm_call,
 )
-from ...components.tool import ToolDescriptor
 from .rpc.server import is_codeact_internal
 from .service import CodeActService
 
 codeact_enabled = ConfigField[bool](
     name="codeact.enabled",
     default=True,
-    description="Global CodeAct switch. When False, all CodeAct tools are hidden.",
+    description="Global CodeAct switch. When True, only CodeAct tools are shown to the LLM and the rest are indexed for BM25 search. When False, CodeAct tools are hidden.",
 )
 
 
@@ -31,5 +30,6 @@ async def expose_codeact_tools(ctx: BeforeLlmCallCtx) -> None:
         ctx.tools = [td for td in ctx.tools if not is_codeact_internal(td)]
         return
 
-    ctx.tools = [t for t in ctx.tools if not is_codeact_internal(t)]
-    codeact.rebuild_index(ctx.tools, ctx.run)
+    non_codeact = [t for t in ctx.tools if not is_codeact_internal(t)]
+    codeact.rebuild_index(non_codeact, ctx.run)
+    ctx.tools = [t for t in ctx.tools if is_codeact_internal(t)]

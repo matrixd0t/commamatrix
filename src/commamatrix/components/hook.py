@@ -41,6 +41,7 @@ class HookEventType(StrEnum):
     BEFORE_TOOL_CALL = "before_tool_call"
     AFTER_TOOL_CALL = "after_tool_call"
     BEFORE_SEND = "before_send"
+    AFTER_SEND = "after_send"
     ON_ERROR = "on_error"
     AFTER_RUN = "after_run"
 
@@ -135,6 +136,13 @@ class AfterToolCallCtx(BaseEventCtx):
 class BeforeSendCtx(BaseEventCtx):
     run: RunCtx
     dialog_item: DialogItem
+
+
+@dataclass(slots=True, kw_only=True)
+class AfterSendCtx(BaseEventCtx):
+    run: RunCtx
+    dialog_item: DialogItem
+    external_id: str | None = None
 
 
 @dataclass(slots=True, kw_only=True)
@@ -411,6 +419,10 @@ Example::
     async def censor_output(ctx: BeforeSendCtx) -> None:
         ctx.dialog_item.content = ctx.dialog_item.content.replace("SECRET", "***")
 """
+
+after_send = Hook[AfterSendCtx](HookEventType.AFTER_SEND, AfterSendCtx)
+"""Fired after a dialog item is persisted and delivered or delivery is skipped."""
+
 
 on_error = Hook[OnErrorCtx](HookEventType.ON_ERROR, OnErrorCtx)
 """Fired when an exception occurs during a run.  Set ``ctx.suppress = True``

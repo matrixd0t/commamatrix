@@ -7,7 +7,7 @@ from __future__ import annotations
 from ...components.instruction import InstructionCtx, instruction
 
 
-@instruction
+@instruction(priority=-50)
 def web_research_guidance(ctx: InstructionCtx) -> str:
     return '''
 # Web research guidance

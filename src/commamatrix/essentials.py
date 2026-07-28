@@ -25,8 +25,9 @@ async def setup(agent: Agent) -> None:
     to_add: list[str] = [
         prefix + ".builtin.llm_http_adapter",
         prefix + ".builtin.codeact",
-        prefix + ".builtin.self_modif",
+        prefix + ".builtin.self_extension",
         prefix + ".builtin.web_utils",
+        prefix + ".builtin.multi_dialog",
     ]
     try:
         import bcrypt  # noqa: F401

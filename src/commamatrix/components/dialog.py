@@ -45,6 +45,7 @@ class DialogOrigin(BaseModel, ABC):
     ORIGIN_REGISTRY for polymorphic deserialization."""
 
     model_config = {"frozen": True}
+    origin_type: str = "unknown"
     platform: str = DEFAULT_PLATFORM
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -75,6 +76,7 @@ def resolve_origin_type(data: Mapping[str, Any]) -> type[DialogOrigin]:
     """Resolves the concrete DialogOrigin subclass from serialized data
     by matching platform and populated fields against ORIGIN_REGISTRY."""
 
+    origin_type = data.get("origin_type", "unknown")
     platform = data.get("platform", DEFAULT_PLATFORM)
     base_fields = set(DialogOrigin.model_fields)
     origin_field_sets = {
@@ -90,7 +92,9 @@ def resolve_origin_type(data: Mapping[str, Any]) -> type[DialogOrigin]:
     candidates = [
         origin_cls
         for origin_cls, fields in origin_field_sets.items()
-        if origin_cls.model_fields.get("platform") is not None
+        if origin_cls.model_fields.get("origin_type") is not None
+        and origin_cls.model_fields["origin_type"].default == origin_type
+        and origin_cls.model_fields.get("platform") is not None
         and origin_cls.model_fields["platform"].default == platform
         and fields == populated_fields
     ]

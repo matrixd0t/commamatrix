@@ -15,7 +15,7 @@ from .source import (
     PythonServiceSource,
     UnavailableSourceError,
 )
-from commamatrix.utils import await_if_needed
+from ...utils import await_if_needed
 from ...components.config import ConfigField
 
 if TYPE_CHECKING:
@@ -27,8 +27,7 @@ D = TypeVar("D", bound=Descriptor)
 class Manager(AbstractService, Generic[D]):
     """Owns sources, descriptors, and fingerprints for change detection.
 
-    Subclasses define what kind of stuff they manage (tools, hooks,
-    services, etc.) by providing a Source[D] and calling self.mount().
+    Subclasses define what kind of stuff they manage (tools, hooks, services, etc.) by providing a Source[D] and calling self.mount().
     """
     on_change: Callable[[], None] | None
 

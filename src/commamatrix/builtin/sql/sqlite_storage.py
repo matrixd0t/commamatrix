@@ -1,19 +1,17 @@
-# builtin/sqlite/storage.py
+# builtin/sqlite/sqlite_storage.py
 
 from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 import aiosqlite
 
-from ..sql.storage import SqlStorage
+from .sql_storage import SqlStorage
 from ...components.config import ConfigField
 
 if TYPE_CHECKING:
     from ...core.agent import Agent
 
-sqlite_path = ConfigField[str](
-    name="sqlite_path", default="db.sqlite", description="Path to SQLite database file"
-)
+sqlite_path = ConfigField[str](name="sqlite_path", default="db.sqlite", description="Path to SQLite database file")
 
 
 class SqliteStorage(SqlStorage):

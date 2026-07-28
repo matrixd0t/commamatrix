@@ -1,4 +1,4 @@
-# builtin/self_modif/tools.py
+# builtin/self_extension/tools.py
 
 """Self-modification tools - manage agent extensions at runtime."""
 
@@ -20,7 +20,7 @@ from ...components.tool import tool
 _GUIDE_PATH = str(Path(__file__).parent / "guide.md")
 
 guide_path = ConfigField[str](
-    name="self_modif.guide_path",
+    name="self_extension.guide_path",
     default=_GUIDE_PATH,
     description="Path to the extension authoring guide file.",
 )
@@ -36,8 +36,8 @@ def ensure_plugins_directory(_ctx: BeforeRunCtx) -> None:
     _ensure_plugins_directory()
 
 
-@instruction
-def reusable_behavior(ctx: InstructionCtx) -> str:
+@instruction(priority=-200)
+def self_modification_when_and_why(ctx: InstructionCtx) -> str:
     """Explain how to persist reusable behavior as an extension."""
     return '''
 # Self-modification: when and why
@@ -48,8 +48,8 @@ If some behavior should be reused in future runs, persist it with self-modificat
 '''
 
 
-@tool(alias="self_modif")
-async def manage_extension(module_or_path: str, action: Literal["add", "remove", "reload"], *, ctx: BeforeToolCallCtx) -> str:
+@tool(alias="self_extension")
+async def manage(module_or_path: str, action: Literal["add", "remove", "reload"], *, ctx: BeforeToolCallCtx) -> str:
     """Add, remove, or reload an extension by import name or filesystem path."""
     if not module_or_path:
         return "Error: an extension module or path is required."
@@ -68,8 +68,8 @@ async def manage_extension(module_or_path: str, action: Literal["add", "remove",
     return f"Extension {verb}: {handled[0]}\n"
 
 
-@tool(alias="self_modif")
-async def list_extensions(*, ctx: BeforeToolCallCtx) -> str:
+@tool(alias="self_extension")
+async def list_all(*, ctx: BeforeToolCallCtx) -> str:
     """List the extension roots currently active for this agent."""
     scope = ctx.run.agent.extension_scope
     roots = [name for name in scope if not any(name != other and name.startswith(other + ".") for other in scope)]
@@ -78,9 +78,9 @@ async def list_extensions(*, ctx: BeforeToolCallCtx) -> str:
     return "Active extension modules:\n" + "\n".join(f"- {name}" for name in roots)
 
 
-@tool(alias="self_modif")
-async def read_guide(ctx: BeforeToolCallCtx) -> str:
-    """Return the extension guide together with runtime and installation information."""
+@tool(alias="self_extension")
+async def guide(ctx: BeforeToolCallCtx) -> str:
+    """Returns self-modification (extension) guide together with runtime and installation information."""
     path = ctx.run.agent.config.get(guide_path)
     version = sys.version_info
     environment = (

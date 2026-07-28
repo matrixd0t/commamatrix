@@ -466,7 +466,7 @@ requires-dist = [
     { name = "commamatrix", extras = ["http", "postgres"], marker = "extra == 'all'" },
     { name = "ddgs", specifier = ">=9.14.4" },
     { name = "httpx" },
-    { name = "matrix-fn-schema", specifier = ">=0.1.5" },
+    { name = "matrix-fn-schema", specifier = "==0.1.8" },
     { name = "pydantic" },
     { name = "pyjwt", marker = "extra == 'http'" },
     { name = "pytest", marker = "extra == 'test'" },
@@ -769,14 +769,14 @@ wheels = [
 
 [[package]]
 name = "matrix-fn-schema"
-version = "0.1.5"
+version = "0.1.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "docstring-parser" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/86/26/71682fd8dca8d7efbf7507790c14e344ec2fea98492a39328076ada418b7/matrix_fn_schema-0.1.5.tar.gz", hash = "sha256:4ed219c1096ed663761c92a956d6b450f038e51e486251fc17c7f33374cec818", size = 6235, upload-time = "2026-07-24T09:59:40.288Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/51/37/40477eb03097298e990b7f6976f88b24d2d5f886c5cfe2c16aa9d49f1b8e/matrix_fn_schema-0.1.8.tar.gz", hash = "sha256:46605a6d093b404a12bfee07eea6e5e72e77171b4eebca11284884cbf3681191", size = 6261, upload-time = "2026-07-27T21:47:02.357Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cd/a5/7e396917a0d70479685c581ae5f767f9711408e894f7a3566b6bcf74422b/matrix_fn_schema-0.1.5-py3-none-any.whl", hash = "sha256:155d7e0b4ce5bdcc8983423f4e674eeac5ffe67e76173f5091a7999a05a35e8e", size = 6589, upload-time = "2026-07-24T09:59:39.502Z" },
+    { url = "https://files.pythonhosted.org/packages/d3/b5/fd65a6aef9806440e379cbbd98e79dab71c923ca07d56f88d47e4283589d/matrix_fn_schema-0.1.8-py3-none-any.whl", hash = "sha256:75b3c2524308e05de351f670bd1dbf56726e70a79794c69691370b7e5438bc8f", size = 6621, upload-time = "2026-07-27T21:47:01.545Z" },
 ]
 
 [[package]]

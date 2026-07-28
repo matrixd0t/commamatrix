@@ -385,10 +385,6 @@ class ToolManager(Manager[ToolDescriptor]):
             schema["name"] = self.public_name(descriptor)
             self._schemas.append(schema)
 
-    @property
-    def tool_tree(self) -> dict[str, Any]:
-        return self.build_tool_tree(self.descriptors)
-
     @staticmethod
     def build_tool_tree(descriptors: Iterable[ToolDescriptor]) -> dict[str, Any]:
         tree: dict[str, Any] = {"tools": {}}

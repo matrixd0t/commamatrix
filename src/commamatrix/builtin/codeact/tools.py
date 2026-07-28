@@ -9,9 +9,7 @@ from ...components.tool import ToolDescriptor, tool
 
 
 def _format_tool_display(d: ToolDescriptor) -> str:
-    parts = [
-        f"# tools/{d.alias}" if d.alias else "# tools",
-    ]
+    parts = [f"# tools/{d.alias}" if d.alias else "# tools"]
     doc = d.doc or ""
     if doc.startswith("[ alias: "):
         _, _, doc = doc.partition("\n")

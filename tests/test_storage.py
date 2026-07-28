@@ -9,11 +9,10 @@ from pathlib import Path
 
 import pytest
 
-from commamatrix.components.config import Config, ConfigField
+from commamatrix.components.config import Config
 from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
-from commamatrix.components.storage import STORAGE_ATTRIBUTE, Storage, StorageManager
-from commamatrix.components.file_storage import FILE_STORAGE_ATTRIBUTE, FileStorage, FileStorageManager
-from commamatrix.core.classes.manager import ServiceInstanceRegistry
+from commamatrix.components.storage import STORAGE_ATTRIBUTE, Storage
+from commamatrix.components.file_storage import FILE_STORAGE_ATTRIBUTE, FileStorage
 from tests.conftest import stub_agent, stub_origin
 
 
@@ -44,7 +43,7 @@ class TestFileStorageAttribute:
 class TestSqliteStorage:
     @pytest.mark.asyncio
     async def test_save_and_get_branch(self):
-        from commamatrix.builtin.sqlite.storage import SqliteStorage, sqlite_path
+        from commamatrix.builtin.sql.sqlite_storage import SqliteStorage, sqlite_path
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = str(Path(tmpdir) / "test.db")
@@ -73,7 +72,7 @@ class TestSqliteStorage:
 
     @pytest.mark.asyncio
     async def test_find_by_external_id(self):
-        from commamatrix.builtin.sqlite.storage import SqliteStorage, sqlite_path
+        from commamatrix.builtin.sql.sqlite_storage import SqliteStorage, sqlite_path
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = str(Path(tmpdir) / "test.db")
@@ -101,7 +100,7 @@ class TestSqliteStorage:
 
     @pytest.mark.asyncio
     async def test_get_branch_empty(self):
-        from commamatrix.builtin.sqlite.storage import SqliteStorage, sqlite_path
+        from commamatrix.builtin.sql.sqlite_storage import SqliteStorage, sqlite_path
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = str(Path(tmpdir) / "test.db")
@@ -119,7 +118,7 @@ class TestSqliteStorage:
 class TestSimpleFileStorage:
     @pytest.mark.asyncio
     async def test_save_and_get(self):
-        from commamatrix.builtin.fs.file_storage import SimpleFileStorage, files_directory
+        from commamatrix.builtin.simple_fs import SimpleFileStorage, files_directory
 
         with tempfile.TemporaryDirectory() as tmpdir:
             agent = stub_agent()
@@ -138,7 +137,7 @@ class TestSimpleFileStorage:
 
     @pytest.mark.asyncio
     async def test_get_nonexistent(self):
-        from commamatrix.builtin.fs.file_storage import SimpleFileStorage, files_directory
+        from commamatrix.builtin.simple_fs import SimpleFileStorage, files_directory
 
         with tempfile.TemporaryDirectory() as tmpdir:
             agent = stub_agent()
@@ -153,7 +152,7 @@ class TestSimpleFileStorage:
 
     @pytest.mark.asyncio
     async def test_delete_existing(self):
-        from commamatrix.builtin.fs.file_storage import SimpleFileStorage, files_directory
+        from commamatrix.builtin.simple_fs import SimpleFileStorage, files_directory
 
         with tempfile.TemporaryDirectory() as tmpdir:
             agent = stub_agent()
@@ -169,7 +168,7 @@ class TestSimpleFileStorage:
 
     @pytest.mark.asyncio
     async def test_delete_nonexistent(self):
-        from commamatrix.builtin.fs.file_storage import SimpleFileStorage, files_directory
+        from commamatrix.builtin.simple_fs import SimpleFileStorage, files_directory
 
         with tempfile.TemporaryDirectory() as tmpdir:
             agent = stub_agent()

@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from commamatrix.components.config import Config
-from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
+from commamatrix.components.dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
 from commamatrix.components.hook import (
     AfterLlmCallCtx,
     AfterRunCtx,
@@ -155,10 +155,13 @@ class InMemoryStorage(Storage):
         result.reverse()
         return result
 
-    async def find_item_id_by_external_id(
-        self, external_id: str, origin: DialogOrigin
-    ) -> int | None:
+    async def find_item_id_by_external_id(self, external_id: str, origin: DialogOrigin) -> int | None:
         return self._by_external.get(external_id)
+
+    async def get_history(self, *, origin_type: type[DialogOrigin] | None = None, origin_fields: dict[str, Any] | None = None) -> list[DialogItem]:
+        """Return stored items matching the requested origin."""
+        fields = origin_fields or {}
+        return [item for item in self._items.values() if (origin_type is None or isinstance(item.origin, origin_type)) and all(getattr(item.origin, name, None) == value for name, value in fields.items())]
 
 
 class NullFileStorage(FileStorage):
@@ -264,6 +267,9 @@ async def _setup_agent(
     class _FixedConnectorManager:
         def resolve(self):
             return [connector]
+
+        def resolve_for_origin(self, origin):
+            return connector
 
         def set_scope(self, scope):
             pass
@@ -455,6 +461,9 @@ def _make_multi_call_agent(events_list, connector_cls=RecordingConnector):
     class _FixedConnectorManager:
         def resolve(self):
             return [connector]
+
+        def resolve_for_origin(self, origin):
+            return connector
 
         def set_scope(self, scope):
             pass
