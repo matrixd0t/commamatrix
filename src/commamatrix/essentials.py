@@ -27,6 +27,7 @@ async def setup(agent: Agent) -> None:
         prefix + ".builtin.codeact",
         prefix + ".builtin.self_extension",
         prefix + ".builtin.web_utils",
+        prefix + ".builtin.io_tools",
         prefix + ".builtin.multi_dialog",
     ]
     try:

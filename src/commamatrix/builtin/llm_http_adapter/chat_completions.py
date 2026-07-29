@@ -17,8 +17,8 @@ from ...components.llm_adapter import (
     StreamDelta,
     StreamEnd,
     Usage,
-    resolve_file_uri,
 )
+from ...components.file_storage import FileContentType
 from .codec import ApiCodec, wire_meta
 
 
@@ -121,22 +121,28 @@ class ChatCompletionsCodec(ApiCodec):
 
                     case DialogItemType.IMAGE_INPUT | DialogItemType.IMAGE_OUTPUT:
                         flush_assistant()
-                        uri = await resolve_file_uri(ctx.run.agent.file_storage, item)
-                        if not uri:
+                        rendered = await self._file_context(ctx, item, modalities=FileContentType.IMAGE)
+                        if rendered is None:
+                            continue
+                        if rendered.modality is FileContentType.TEXT:
+                            messages.append({"role": "user", "content": rendered.content})
                             continue
                         messages.append({
                             "role": "user",
-                            "content": [{"type": "image_url", "image_url": {"url": uri, "detail": "auto"}}],
+                            "content": [{"type": "image_url", "image_url": {"url": rendered.content, "detail": "auto"}}],
                         })
 
                     case DialogItemType.FILE_INPUT | DialogItemType.FILE_OUTPUT:
                         flush_assistant()
-                        uri = await resolve_file_uri(ctx.run.agent.file_storage, item)
-                        if not uri:
+                        rendered = await self._file_context(ctx, item, modalities=FileContentType.FILE)
+                        if rendered is None:
+                            continue
+                        if rendered.modality is FileContentType.TEXT:
+                            messages.append({"role": "user", "content": rendered.content})
                             continue
                         messages.append({
                             "role": "user",
-                            "content": [{"type": "file", "file": {"url": uri}}],
+                            "content": [{"type": "file", "file": {"url": rendered.content}}],
                         })
 
                     case DialogItemType.TOOL_CALL:

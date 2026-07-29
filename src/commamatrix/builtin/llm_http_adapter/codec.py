@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from enum import StrEnum
+from json import loads
 from typing import Any
 
-from ...components.dialog import DialogItem
+from ...components.dialog import DialogItem, DialogItemType
+from ...components.file_storage import FileContentType, FileContext, file_to_context, read_file
 from ...components.hook import BeforeLlmCallCtx
 from ...components.llm_adapter import LLMResponse, LLMResponseBlock, StreamDelta, StreamEnd
 
@@ -35,6 +38,62 @@ class ApiCodec(ABC):
         super().__init_subclass__(**kwargs)
         if not getattr(cls, "__abstractmethods__", None):
             cls.registry[cls.protocol] = cls()
+
+    @staticmethod
+    async def _file_context(
+        ctx: BeforeLlmCallCtx,
+        item: DialogItem,
+        *,
+        modalities: Iterable[FileContentType | str] | FileContentType | str | None = None,
+    ) -> FileContext | None:
+        if item.item_type in {DialogItemType.IMAGE_INPUT, DialogItemType.IMAGE_OUTPUT}:
+            content_type = FileContentType.IMAGE
+            field_name = "image"
+        elif item.item_type in {DialogItemType.FILE_INPUT, DialogItemType.FILE_OUTPUT}:
+            content_type = FileContentType.FILE
+            field_name = "file"
+        else:
+            return None
+
+        try:
+            item_data = loads(item.content)
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(item_data, dict):
+            return None
+
+        file_data = item_data.get(field_name, {})
+        if not isinstance(file_data, dict):
+            return None
+        ref = file_data.get("ref")
+        if not isinstance(ref, str) or not ref:
+            return None
+
+        name = file_data.get("name")
+        if not isinstance(name, str) or not name:
+            name = None
+        ext = file_data.get("ext")
+        if not isinstance(ext, str):
+            ext = None
+        mime_type = file_data.get("mime_type")
+        if not isinstance(mime_type, str) or not mime_type:
+            mime_type = None
+
+        resolved = await read_file(
+            ref,
+            file_storage=ctx.run.agent.file_storage,
+            name=name,
+            ext=ext,
+            mime_type=mime_type,
+            content_type=content_type,
+        )
+        if resolved is None:
+            return None
+        return file_to_context(
+            resolved,
+            modalities=modalities,
+            content_type=content_type,
+        )
 
     @abstractmethod
     async def build_request(self, *, model: str, ctx: BeforeLlmCallCtx) -> dict[str, Any]:

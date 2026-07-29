@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import base64
 from abc import ABC, abstractmethod
 from enum import StrEnum
 from dataclasses import dataclass, field
-from json import dumps, loads
-from mimetypes import guess_type
+from json import dumps
 from collections.abc import AsyncIterator
 from typing import Any, TYPE_CHECKING
-from httpx import HTTPError
 
 from ..utils import to_jsonable
 from ..core.classes.service import AbstractService
@@ -20,7 +17,6 @@ from .dialog import DialogItem, DialogItemType, DialogRole, DialogOrigin
 
 if TYPE_CHECKING:
     from .hook import BeforeLlmCallCtx
-    from .file_storage import FileStorage
     from ..core.agent import Agent
 
 LLM_ADAPTER_ATTRIBUTE = "__commamatrix_llm_adapter__"
@@ -231,41 +227,4 @@ class LLMAdapterManager(ServiceInstanceManager[LLMAdapter]):
         return self._active.ask_llm(ctx, stream=stream)
 
 
-def ext_to_mime(ext: str) -> str:
-    mime_type, _ = guess_type(f"file.{ext}")
-    if not mime_type and ext == "webp":
-        return "image/webp"
-    return mime_type or "application/octet-stream"
 
-
-async def resolve_file_uri(file_storage: FileStorage | None, item: DialogItem) -> str:
-    if file_storage is None:
-        raise RuntimeError("FileStorage is required for image/file items")
-    item_map = {
-        DialogItemType.FILE_INPUT: "file",
-        DialogItemType.FILE_OUTPUT: "file",
-        DialogItemType.IMAGE_INPUT: "image",
-        DialogItemType.IMAGE_OUTPUT: "image",
-    }
-    if item.item_type not in item_map:
-        return ""
-    try:
-        data = loads(item.content).get(item_map[item.item_type], {})
-        ref = str(data.get("ref", ""))
-        ext = str(data.get("ext", "")).lstrip(".").lower()
-        if not ref:
-            return ""
-        if ref.startswith("http"):
-            try:
-                rq = await file_storage.agent.http_client.head(ref, follow_redirects=True, timeout=30)
-                rq.raise_for_status()
-                return ref
-            except HTTPError:
-                return ""
-        raw_bytes = await file_storage.get(ref)
-        if not raw_bytes:
-            return ""
-        mime = ext_to_mime(ext) if ext else "application/octet-stream"
-        return f"data:{mime};base64,{base64.b64encode(raw_bytes).decode('utf-8')}"
-    except KeyError:
-        return ""

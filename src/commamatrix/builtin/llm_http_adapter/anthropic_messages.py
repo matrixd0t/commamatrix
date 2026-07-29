@@ -6,6 +6,7 @@ from json import dumps, loads
 from typing import Any
 
 from ...components.dialog import DialogItemType, DialogRole
+from ...components.file_storage import FileContentType
 from ...components.hook import BeforeLlmCallCtx
 from ...components.llm_adapter import (
     LLMResponse,
@@ -61,6 +62,11 @@ class AnthropicMessagesCodec(ApiCodec):
         else:
             existing.append({"type": "text", "text": content})
 
+    @staticmethod
+    def _data_uri_payload(uri: str) -> str:
+        _, separator, payload = uri.partition(",")
+        return payload if separator else uri
+
     async def build_request(self, *, model: str, ctx: BeforeLlmCallCtx) -> dict[str, Any]:
         messages: list[dict[str, Any]] = []
         system_parts: list[str] = []
@@ -106,8 +112,45 @@ class AnthropicMessagesCodec(ApiCodec):
                             "content": cdata["content"] if isinstance(cdata["content"], str) else dumps(cdata["content"], ensure_ascii=False),
                         })
 
-                    case DialogItemType.IMAGE_INPUT | DialogItemType.IMAGE_OUTPUT | DialogItemType.FILE_INPUT | DialogItemType.FILE_OUTPUT:
-                        self._append_message(messages, DialogRole.USER.value, item.content)
+                    case DialogItemType.IMAGE_INPUT | DialogItemType.IMAGE_OUTPUT:
+                        rendered = await self._file_context(
+                            ctx,
+                            item,
+                            modalities=FileContentType.IMAGE,
+                        )
+                        if rendered is None:
+                            continue
+                        if rendered.modality is FileContentType.TEXT:
+                            self._append_message(messages, DialogRole.USER.value, rendered.content)
+                        else:
+                            self._append_message(messages, DialogRole.USER.value, [{
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": rendered.mime_type,
+                                    "data": self._data_uri_payload(rendered.content),
+                                },
+                            }])
+
+                    case DialogItemType.FILE_INPUT | DialogItemType.FILE_OUTPUT:
+                        rendered = await self._file_context(
+                            ctx,
+                            item,
+                            modalities=FileContentType.FILE,
+                        )
+                        if rendered is None:
+                            continue
+                        if rendered.modality is FileContentType.TEXT:
+                            self._append_message(messages, DialogRole.USER.value, rendered.content)
+                        else:
+                            self._append_message(messages, DialogRole.USER.value, [{
+                                "type": "document",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": rendered.mime_type,
+                                    "data": self._data_uri_payload(rendered.content),
+                                },
+                            }])
             except (KeyError, TypeError, ValueError):
                 continue
 

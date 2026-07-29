@@ -15,7 +15,17 @@ from .connector import (
     OnRecv,
 )
 from .storage import Storage, STORAGE_ATTRIBUTE, active_storage
-from .file_storage import FileStorage, FILE_STORAGE_ATTRIBUTE, active_file_storage
+from .file_storage import (
+    FileStorage,
+    FILE_STORAGE_ATTRIBUTE,
+    active_file_storage,
+    FileContentType,
+    FileData,
+    FileContext,
+    read_file,
+    file_to_context,
+    ext_to_mime,
+)
 from .llm_adapter import (
     LLMAdapter,
     LLM_ADAPTER_ATTRIBUTE,
@@ -94,6 +104,12 @@ __all__ = [
     "STORAGE_ATTRIBUTE",
     "FileStorage",
     "FILE_STORAGE_ATTRIBUTE",
+    "FileContentType",
+    "FileData",
+    "FileContext",
+    "read_file",
+    "file_to_context",
+    "ext_to_mime",
     "LLMAdapter",
     "LLM_ADAPTER_ATTRIBUTE",
     "LLMResponse",

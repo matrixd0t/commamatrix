@@ -24,7 +24,7 @@ def _type_name(annotation: object) -> str:
 
 @instruction(priority=-70)
 def describe_dialog_switch(ctx: InstructionCtx) -> str:
-    """Explain how to switch responses without mixing message text into origin fields."""
+    """Explain how to switch dialog origins."""
     return '''
 # Switching dialogs
 Use `dialogs_switch` with the `origin_type` value and identity fields listed by `dialogs_get_origins`.

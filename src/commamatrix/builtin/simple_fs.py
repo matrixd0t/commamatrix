@@ -7,13 +7,13 @@ from aiofiles import open, os
 from pathlib import Path
 
 from typing import TYPE_CHECKING
-from commamatrix.components.file_storage import FileStorage
-from commamatrix.components.config import ConfigField
+from ..components.file_storage import FileStorage
+from ..components.config import ConfigField
 
 if TYPE_CHECKING:
-    from commamatrix.core.agent import Agent
+    from ..core.agent import Agent
 
-files_directory = ConfigField[str](name='files_directory', default='files', description='Directory for file storage')
+files_directory = ConfigField[str](name='files_directory', default='commamatrix_files', description='Directory for file storage')
 
 
 class SimpleFileStorage(FileStorage):
@@ -31,16 +31,39 @@ class SimpleFileStorage(FileStorage):
             await f.write(data)
         return file_id
 
+    async def _resolve_path(self, file_id: str) -> Path | None:
+        candidates = [file_id]
+        if not file_id.startswith(self._prefix):
+            candidates.append(f'{self._prefix}{file_id}')
+
+        for c in candidates:
+            path = self._directory / c
+            try:
+                async with open(path, 'rb'):
+                    return path
+            except FileNotFoundError:
+                pass
+
+            if '.' not in c:
+                try:
+                    for entry in self._directory.iterdir():
+                        if entry.name.startswith(c + '.') and entry.is_file():
+                            return entry
+                except FileNotFoundError:
+                    return None
+
+        return None
+
     async def get(self, file_id: str) -> bytes | None:
-        path = self._directory / file_id
-        try:
-            async with open(path, 'rb') as f:
-                return await f.read()
-        except FileNotFoundError:
+        path = await self._resolve_path(file_id)
+        if path is None:
             return None
+        return await open(path, 'rb').read()
 
     async def delete(self, file_id: str) -> bool:
-        path = self._directory / file_id
+        path = await self._resolve_path(file_id)
+        if path is None:
+            return False
         try:
             await os.remove(path)
         except FileNotFoundError:

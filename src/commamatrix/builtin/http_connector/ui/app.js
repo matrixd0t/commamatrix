@@ -607,8 +607,10 @@ function handleStreamChunk(data){
   if(chunkType==="tool_call"&&updateCodeActPreview(data))return;
   const streamId=data.stream_id||chunkType;let stream=activeStreams[streamId];
   statusEl.textContent="Streaming...";
-  if(!stream){let element;if(chunkType==="reasoning")element=addReasoning("");else if(chunkType==="tool_call"){element=document.createElement("details");element.className="msg tool-call";element.open=true;const summary=document.createElement("summary");summary.textContent="Tool: ...";element.appendChild(summary);const content=document.createElement("div");element.appendChild(content);messagesEl.appendChild(element)}else element=addMessage("assistant","","Assistant");stream={element,item_type:chunkType,previous_item_id:data.previous_item_id};activeStreams[streamId]=stream}
-  const contentEl=stream.element.querySelector("div:last-child")||stream.element;contentEl.textContent+=(data.content||"");scrollToBottom();
+  if(!stream){let element;if(chunkType==="reasoning")element=addReasoning("");else if(chunkType==="tool_call"){element=document.createElement("details");element.className="msg tool-call";element.open=true;const summary=document.createElement("summary");summary.textContent="Tool: ...";element.appendChild(summary);const content=document.createElement("div");element.appendChild(content);messagesEl.appendChild(element)}else element=addMessage("assistant","","Assistant");stream={element,item_type:chunkType,previous_item_id:data.previous_item_id,text:""};activeStreams[streamId]=stream}
+  stream.text+=(data.content||"");const contentEl=stream.element.querySelector("div:last-child")||stream.element;
+  if(chunkType==="output"||chunkType==="reasoning")renderMarkdown(contentEl,stream.text);else contentEl.textContent=stream.text;
+  scrollToBottom();
 }
 
 async function submitMessage(text,parentId,branch=null){

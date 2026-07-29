@@ -6,6 +6,7 @@ from json import dumps, loads
 from typing import Any
 
 from ...components.dialog import DialogItemType, DialogRole
+from ...components.file_storage import FileContentType
 from ...components.hook import BeforeLlmCallCtx
 from ...components.llm_adapter import (
     LLMResponse,
@@ -104,11 +105,50 @@ class ResponsesCodec(ApiCodec):
                             "output": output,
                         })
 
-                    case DialogItemType.IMAGE_INPUT | DialogItemType.IMAGE_OUTPUT | DialogItemType.FILE_INPUT | DialogItemType.FILE_OUTPUT:
-                        input_items.append({
-                            "role": DialogRole.USER.value,
-                            "content": item.content,
-                        })
+                    case DialogItemType.IMAGE_INPUT | DialogItemType.IMAGE_OUTPUT:
+                        rendered = await self._file_context(
+                            ctx,
+                            item,
+                            modalities=FileContentType.IMAGE,
+                        )
+                        if rendered is None:
+                            continue
+                        if rendered.modality is FileContentType.TEXT:
+                            input_items.append({
+                                "role": DialogRole.USER.value,
+                                "content": rendered.content,
+                            })
+                        else:
+                            input_items.append({
+                                "role": DialogRole.USER.value,
+                                "content": [{
+                                    "type": "input_image",
+                                    "image_url": rendered.content,
+                                }],
+                            })
+
+                    case DialogItemType.FILE_INPUT | DialogItemType.FILE_OUTPUT:
+                        rendered = await self._file_context(
+                            ctx,
+                            item,
+                            modalities=FileContentType.FILE,
+                        )
+                        if rendered is None:
+                            continue
+                        if rendered.modality is FileContentType.TEXT:
+                            input_items.append({
+                                "role": DialogRole.USER.value,
+                                "content": rendered.content,
+                            })
+                        else:
+                            input_items.append({
+                                "role": DialogRole.USER.value,
+                                "content": [{
+                                    "type": "input_file",
+                                    "filename": rendered.name,
+                                    "file_data": rendered.content,
+                                }],
+                            })
             except (KeyError, TypeError, ValueError):
                 continue
 
