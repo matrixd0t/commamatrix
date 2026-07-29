@@ -13,6 +13,7 @@ import pytest
 from commamatrix.components.config import Config, ConfigField
 from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
 from commamatrix.components.hook import RunCtx
+from commamatrix.components.server import http_port
 from commamatrix.core.agent.agent import Agent
 from tests.conftest import StubOrigin, stub_origin, make_dialog_item
 
@@ -226,7 +227,7 @@ class TestAgentExtensions:
 class TestAgentLifecycle:
     @pytest.mark.asyncio
     async def test_start_and_stop(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent(config={http_port: 0}, auto_load_main=False)
         await agent.start()
         assert agent._started is True
         await agent.stop()
@@ -234,7 +235,7 @@ class TestAgentLifecycle:
 
     @pytest.mark.asyncio
     async def test_double_start_is_idempotent(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent(config={http_port: 0}, auto_load_main=False)
         await agent.start()
         await agent.start()
         assert agent._started is True
@@ -242,25 +243,25 @@ class TestAgentLifecycle:
 
     @pytest.mark.asyncio
     async def test_context_manager(self):
-        async with Agent(config={}, auto_load_main=False) as agent:
+        async with Agent(config={http_port: 0}, auto_load_main=False) as agent:
             assert agent._started is True
         assert agent._started is False
 
     @pytest.mark.asyncio
     async def test_auto_load_main(self):
-        agent = Agent(config={}, auto_load_main=True)
+        agent = Agent(config={http_port: 0}, auto_load_main=True)
         await agent.start()
         assert "__main__" in agent._extension_scope
         await agent.stop()
 
     @pytest.mark.asyncio
     async def test_auto_load_defaults(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent(config={http_port: 0}, auto_load_main=False)
         await agent.start()
         scope_str = ",".join(agent._extension_scope)
         assert "components.instruction" in scope_str
-        assert "builtin.sqlite" in scope_str
-        assert "builtin.fs" in scope_str
+        assert "builtin.sql.sqlite_storage" in scope_str
+        assert "builtin.simple_fs" in scope_str
         assert "builtin.llm_http_adapter" in scope_str
         assert "builtin.http_connector" in scope_str
         assert "builtin.codeact" in scope_str

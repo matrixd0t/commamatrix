@@ -19,14 +19,18 @@ from .file_storage import (
     FileStorage,
     FILE_STORAGE_ATTRIBUTE,
     active_file_storage,
-    FileContentType,
+    DataType,
     FileData,
     FileContext,
     read_file,
     file_to_context,
     ext_to_mime,
+    normalize_file_id,
 )
 from .llm_adapter import (
+    LLM,
+    LLMModalities,
+    llms,
     LLMAdapter,
     LLM_ADAPTER_ATTRIBUTE,
     LLMResponse,
@@ -47,6 +51,13 @@ from .llm_adapter import (
     LLMTruncatedError,
 )
 from .config import ConfigField, Config
+from .server import (
+    SERVER_ROOT,
+    Server,
+    http_external_url,
+    http_host,
+    http_port
+)
 from ..core.agent.agent import DEFAULT_HTTP_HEADERS, http_default_headers, http_timeout
 from .tool import tool, ToolSource, ToolDescriptor, DEFAULT_TOOL_SEARCH_AMOUNT
 from .hook import (
@@ -104,12 +115,16 @@ __all__ = [
     "STORAGE_ATTRIBUTE",
     "FileStorage",
     "FILE_STORAGE_ATTRIBUTE",
-    "FileContentType",
+    "DataType",
     "FileData",
     "FileContext",
     "read_file",
     "file_to_context",
     "ext_to_mime",
+    "normalize_file_id",
+    "LLM",
+    "LLMModalities",
+    "llms",
     "LLMAdapter",
     "LLM_ADAPTER_ATTRIBUTE",
     "LLMResponse",
@@ -130,6 +145,11 @@ __all__ = [
     "LLMTruncatedError",
     "ConfigField",
     "Config",
+    "SERVER_ROOT",
+    "Server",
+    "http_external_url",
+    "http_host",
+    "http_port",
     "DEFAULT_HTTP_HEADERS",
     "http_default_headers",
     "http_timeout",

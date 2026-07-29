@@ -4,10 +4,24 @@
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden}
 button,input,textarea{font:inherit}
 button{cursor:pointer}
-header{height:58px;background:var(--surface);border-bottom:1px solid var(--border);padding:10px 16px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+header{height:58px;background:var(--surface);border-bottom:1px solid var(--border);padding:10px 16px;display:flex;align-items:center;gap:12px;flex-shrink:0;position:relative;z-index:6}
 header h1{font-size:16px;font-weight:600}
 header .status{font-size:12px;color:var(--muted);margin-left:auto}
+.server-status-wrap{position:relative;flex:0 0 auto}
+.server-status-btn{display:grid;place-items:center;width:25px;height:25px;padding:0;border:0;border-radius:50%;background:transparent}
+.server-status-btn:hover{background:rgba(255,255,255,.08)}
+.server-status-light{display:block;width:12px;height:12px;border-radius:50%;background:#6e7681;box-shadow:none}
+.server-status-light.green{background:var(--success);box-shadow:0 0 8px rgba(63,185,80,.8)}
+.server-status-light.yellow{background:#d29922;box-shadow:0 0 8px rgba(210,153,34,.9)}
+.server-status-light.red{background:var(--error);box-shadow:0 0 8px rgba(248,81,73,.9)}
+.server-status-panel{position:absolute;top:calc(100% + 7px);left:0;display:none;flex-direction:column;gap:6px;width:max-content;min-width:250px;max-width:min(380px,calc(100vw - 24px));padding:10px 12px;background:var(--surface-raised);border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.4)}
+.server-status-panel.visible{display:flex}
+.server-status-message{font-size:12px;line-height:1.4;color:var(--text)}
+.server-status-message.yellow{border-left:3px solid #d29922;padding-left:8px}
+.server-status-message.red{border-left:3px solid var(--error);padding-left:8px}
 .header-actions{display:flex;align-items:center;gap:6px}
+.header-menu-btn{display:none;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:1px solid transparent;border-radius:var(--radius);font-size:24px;line-height:1;color:var(--text)}
+body.header-menu-open .header-menu-btn{border:1px solid var(--accent);color:var(--accent);background:rgba(88,166,255,.08)}
 .header-actions button{background:transparent;color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;font-size:12px}
 .header-actions button:hover{border-color:var(--accent);color:var(--accent)}
 #app-shell{height:100vh;display:flex;flex-direction:column}
@@ -80,11 +94,39 @@ header .status{font-size:12px;color:var(--muted);margin-left:auto}
 .msg.image{background:var(--surface);border:1px solid var(--border);align-self:flex-start;font-size:13px;color:var(--muted)}
 .msg.file{background:var(--surface);border:1px solid var(--border);align-self:flex-start;font-size:13px}
 .msg.file .icon{color:var(--accent);margin-right:6px}
+.attachment-card{display:flex;align-items:center;gap:8px;min-width:0;background:var(--surface-raised);border:1px solid var(--border);border-radius:7px;padding:6px 8px;color:var(--text);font-size:12px;line-height:1.25}
+.attachment-card.image-card{display:block;padding:4px}
+.attachment-card img{display:block;width:180px;height:130px;object-fit:cover;border-radius:4px;background:var(--bg)}
+.attachment-card.compact img{width:72px;height:54px}
+.attachment-card .attachment-info{min-width:0;display:flex;flex-direction:column;gap:2px}
+.attachment-card .attachment-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+.attachment-card .attachment-size{color:var(--muted);font-size:10px}
+.attachment-card .attachment-icon{display:grid;place-items:center;width:28px;height:34px;border-radius:4px;background:rgba(88,166,255,.12);color:var(--accent);font-size:16px;flex:0 0 auto}
+.attachment-card a{color:var(--accent);text-decoration:none}
+.attachment-card a:hover{text-decoration:underline}
+.attachment-card .attachment-error{color:var(--error);font-size:11px}
+#attachment-previews{display:flex;gap:8px;overflow-x:auto;background:var(--surface);border-top:1px solid var(--border);padding:8px 16px;min-height:0}
+#attachment-previews:empty{display:none}
+.attachment-preview{position:relative;flex:0 0 auto;display:flex;align-items:center;gap:6px;min-width:120px;max-width:220px;background:var(--surface-raised);border:1px solid var(--border);border-radius:7px;padding:5px 28px 5px 5px}
+.attachment-preview img{width:58px;height:44px;object-fit:cover;border-radius:4px;background:var(--bg)}
+.attachment-preview .attachment-icon{display:grid;place-items:center;width:58px;height:44px;border-radius:4px;background:rgba(88,166,255,.12);color:var(--accent);font-size:11px;flex:0 0 auto}
+.attachment-preview .attachment-info{min-width:0}
+.attachment-preview .attachment-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+.attachment-preview .attachment-status{display:block;color:var(--muted);font-size:10px;margin-top:2px}
+.attachment-preview.failed .attachment-status{color:var(--error)}
+.attachment-remove{position:absolute;right:4px;top:4px;border:0;background:transparent;color:var(--muted);font-size:16px;line-height:1;padding:0 3px}
+.attachment-remove:hover{color:var(--error)}
+.attachment-preview.uploading{opacity:.7}
+
 .msg.error{background:rgba(248,81,73,.1);border:1px solid var(--error);color:var(--error);align-self:center;font-size:13px}
 .msg .placeholder{color:var(--muted);font-style:italic;font-size:13px}
 .msg pre{margin:4px 0 0;padding:0;overflow:visible;font-size:12px;line-height:1.4;background:transparent;white-space:pre-wrap;overflow-wrap:anywhere}
 .msg code{padding:0;background:transparent;font-size:12px}
-#input-area{background:var(--surface);border-top:1px solid var(--border);padding:12px 16px;display:flex;gap:8px;flex-shrink:0}
+#input-area{position:relative;background:var(--surface);border-top:1px solid var(--border);padding:12px 16px;display:flex;align-items:flex-end;gap:8px;flex-shrink:0}
+.drop-overlay{position:absolute;inset:12px 16px;z-index:2;display:flex;align-items:center;justify-content:center;border:2px dashed rgba(142,201,255,.72);background:rgba(30,73,118,.97);color:var(--text);font-size:14px;font-weight:600;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .12s ease,visibility .12s ease}
+#input-area.drag-over .drop-overlay{opacity:1;visibility:visible;pointer-events:auto}
+.attach-btn{display:grid;place-items:center;width:42px;height:42px;padding:0;background:transparent;border:1px solid var(--border);border-radius:var(--radius);color:var(--accent);font-size:24px;line-height:1;flex:0 0 auto}
+.attach-btn:hover{border-color:var(--accent);background:rgba(88,166,255,.08)}
 #input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:10px 14px;font-size:14px;resize:none;outline:none;min-height:42px;max-height:var(--input-max-height);overflow:hidden}
 #input:focus{border-color:var(--accent)}
 #send-btn{background:var(--accent);color:#fff;border:0;border-radius:var(--radius);padding:10px 18px;font-size:14px;font-weight:500;cursor:pointer;flex-shrink:0}
@@ -112,8 +154,12 @@ header .status{font-size:12px;color:var(--muted);margin-left:auto}
 .password-field input{width:100%;padding-right:64px}
 .password-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent!important;color:var(--muted)!important;border:0!important;padding:4px!important;margin:0!important;font-size:12px}
 .password-toggle:hover{color:var(--accent)!important}
-.auth-card button{background:var(--accent);color:#fff;border:0;border-radius:var(--radius);padding:10px 14px;cursor:pointer;margin-top:6px}
+.auth-card button{background:var(--accent);color:#fff;border:0;border-radius:var(--radius);padding:10px 14px;cursor:pointer;margin-top:6px;transition:background .15s ease,border-color .15s ease,color .15s ease,opacity .15s ease}
+.auth-card button:not(:disabled):not(.secondary):hover{background:#79b8ff}
+.auth-card button:disabled{opacity:.45;cursor:not-allowed}
 .auth-card button.secondary{background:transparent;border:1px solid var(--border);color:var(--text)}
+.auth-card button.secondary:not(:disabled):hover{border-color:var(--accent);color:var(--accent);background:rgba(88,166,255,.08)}
+.attachment-choice-card{display:flex;flex-direction:column;gap:4px}
 .auth-error{color:var(--error);font-size:13px;min-height:18px}
 .auth-success{color:var(--success);font-size:13px;line-height:1.45;word-break:break-all}
 body.auth-locked #app-shell{filter:blur(6px);pointer-events:none;user-select:none}
@@ -124,17 +170,23 @@ body.auth-locked #app-shell{filter:blur(6px);pointer-events:none;user-select:non
   header{height:52px;padding:8px 10px}
   header h1{font-size:15px}
   header>.status{display:none}
-  .header-actions{margin-left:auto}
+  .header-menu-btn{display:grid;margin-left:auto}
+  .header-actions{position:absolute;top:calc(100% + 1px);right:10px;display:none;flex-direction:column;align-items:stretch;gap:6px;min-width:170px;padding:10px;background:var(--surface-raised);border:1px solid var(--border);border-radius:0 0 8px 8px;box-shadow:0 12px 30px rgba(0,0,0,.4)}
+  body.header-menu-open .header-actions{display:flex}
   .header-actions .status{margin-left:0}
-  .header-actions button{padding:5px 7px}
+  .header-actions button{padding:7px 9px;text-align:left}
   .mobile-only{display:block}
   #branch-open{display:block}
-  #branch-panel{position:fixed;z-index:5;left:0;right:0;bottom:0;width:auto;height:min(76vh,620px);border-right:0;border-top:1px solid var(--border);padding:16px 12px;transform:translateY(100%);transition:transform .2s ease;box-shadow:0 -14px 40px rgba(0,0,0,.35)}
+  .server-status-panel{position:fixed;z-index:20;top:52px;left:0;right:0;width:auto;min-width:0;max-width:none;border-radius:0}
+  #branch-panel{position:fixed;z-index:5;left:0;right:auto;bottom:0;width:100%;max-width:100%;height:min(76vh,620px);border-right:0;border-top:1px solid var(--border);padding:16px 12px;transform:translateY(100%);transition:transform .2s ease;box-shadow:0 -14px 40px rgba(0,0,0,.35)}
   body.branch-panel-open #branch-panel{transform:translateY(0)}
   #branch-backdrop{position:fixed;z-index:4;inset:0;background:rgba(0,0,0,.48);display:none}
   body.branch-panel-open #branch-backdrop{display:block}
   #messages{padding:12px 10px}
   .msg,.message-entry{max-width:92%}
+  #attachment-previews{padding:7px 10px}
   #input-area{padding:9px 10px}
+  .drop-overlay{inset:9px 10px}
+  .attach-btn{width:38px;height:42px}
   #send-btn{padding:10px 12px}
 }

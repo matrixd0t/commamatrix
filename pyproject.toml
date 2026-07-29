@@ -14,16 +14,20 @@ dependencies = [
     "aiofiles",
     "httpx",
     "python-dotenv",
+    "starlette",
+    "uvicorn",
+    "bcrypt",
+    "PyJWT",
+    "python-multipart",
     "trafilatura>=2.1.0",
     "ddgs>=9.14.4",
-    "matrix-fn-schema==0.1.8",
+    "matrix-fn-schema>=0.1.9",
 ]
 
 [project.optional-dependencies]
-http = ["starlette", "uvicorn", "bcrypt", "PyJWT"]
 postgres = ["asyncpg"]
-test = ["pytest", "pytest-asyncio", "commamatrix[http]"]
-all = ["commamatrix[http,postgres]"]
+test = ["pytest", "pytest-asyncio"]
+all = ["commamatrix[postgres]"]
 
 [dependency-groups]
 dev = ["commamatrix[test]"]

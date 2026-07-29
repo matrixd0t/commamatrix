@@ -6,9 +6,10 @@ from json import dumps, loads
 from typing import Any
 
 from ...components.dialog import DialogItemType, DialogRole
-from ...components.file_storage import FileContentType
 from ...components.hook import BeforeLlmCallCtx
+from ...components.file_storage import DataType
 from ...components.llm_adapter import (
+    LLM,
     LLMResponse,
     LLMResponseBlock,
     LLMResponseReasoningBlock,
@@ -62,12 +63,7 @@ class AnthropicMessagesCodec(ApiCodec):
         else:
             existing.append({"type": "text", "text": content})
 
-    @staticmethod
-    def _data_uri_payload(uri: str) -> str:
-        _, separator, payload = uri.partition(",")
-        return payload if separator else uri
-
-    async def build_request(self, *, model: str, ctx: BeforeLlmCallCtx) -> dict[str, Any]:
+    async def build_request(self, *, model: LLM | str, ctx: BeforeLlmCallCtx) -> dict[str, Any]:
         messages: list[dict[str, Any]] = []
         system_parts: list[str] = []
 
@@ -113,48 +109,38 @@ class AnthropicMessagesCodec(ApiCodec):
                         })
 
                     case DialogItemType.IMAGE_INPUT | DialogItemType.IMAGE_OUTPUT:
-                        rendered = await self._file_context(
-                            ctx,
-                            item,
-                            modalities=FileContentType.IMAGE,
-                        )
+                        rendered = await self._file_context(ctx, item)
                         if rendered is None:
                             continue
-                        if rendered.modality is FileContentType.TEXT:
+                        if rendered.data_type is DataType.TEXT:
                             self._append_message(messages, DialogRole.USER.value, rendered.content)
                         else:
                             self._append_message(messages, DialogRole.USER.value, [{
                                 "type": "image",
                                 "source": {
-                                    "type": "base64",
-                                    "media_type": rendered.mime_type,
-                                    "data": self._data_uri_payload(rendered.content),
+                                    "type": "url",
+                                    "url": rendered.content,
                                 },
                             }])
 
                     case DialogItemType.FILE_INPUT | DialogItemType.FILE_OUTPUT:
-                        rendered = await self._file_context(
-                            ctx,
-                            item,
-                            modalities=FileContentType.FILE,
-                        )
+                        rendered = await self._file_context(ctx, item)
                         if rendered is None:
                             continue
-                        if rendered.modality is FileContentType.TEXT:
+                        if rendered.data_type is DataType.TEXT:
                             self._append_message(messages, DialogRole.USER.value, rendered.content)
                         else:
                             self._append_message(messages, DialogRole.USER.value, [{
                                 "type": "document",
                                 "source": {
-                                    "type": "base64",
-                                    "media_type": rendered.mime_type,
-                                    "data": self._data_uri_payload(rendered.content),
+                                    "type": "url",
+                                    "url": rendered.content,
                                 },
                             }])
             except (KeyError, TypeError, ValueError):
                 continue
 
-        request = {"model": model, "messages": messages, **ctx.llm_call_params}
+        request = {"model": self._model_name(model), "messages": messages, **ctx.llm_call_params}
         if system_parts:
             request["system"] = "\n\n".join(system_parts)
         if ctx.tools:
@@ -162,9 +148,7 @@ class AnthropicMessagesCodec(ApiCodec):
         return request
 
     def parse_response(self, body: dict[str, Any]) -> LLMResponse:
-        response = LLMResponse(
-            raw=body,
-        )
+        response = LLMResponse(raw=body)
 
         for content_block in body.get("content", ()):
             block_type = content_block.get("type")

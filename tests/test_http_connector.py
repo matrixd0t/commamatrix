@@ -31,6 +31,9 @@ class _AuthStorage:
         await self._db.commit()
         return [dict(row) for row in rows]
 
+    async def get_history(self, *, origin_type=None, origin_fields=None) -> list[DialogItem]:
+        return []
+
 
 class _HistoryStorage(_AuthStorage):
     """Record history filters and return configured items."""
@@ -103,7 +106,7 @@ class TestHttpConnectorParse:
             "user_id": 7,
             "username": "alice",
             "content": "hello",
-            "previous_external_id": "http:7:old",
+            "previous_item_id": 42,
         })
 
         assert result is not None
@@ -111,9 +114,9 @@ class TestHttpConnectorParse:
         assert item.content == "hello"
         assert item.item_type is DialogItemType.INPUT
         assert item.role is DialogRole.USER
-        assert item.user == "http:alice"
+        assert item.user == "http:7"
         assert item.origin == HttpOrigin(http_user_id=7)
-        assert result.previous_external_id == "http:7:old"
+        assert item.previous_item_id == 42
 
 
 class TestHttpConnectorSend:
@@ -134,9 +137,8 @@ class TestHttpConnectorSend:
         first = await conn.send(origin, item)
         second = await conn.send(origin, item)
 
-        assert first != second
-        assert first.startswith("http:7:")
-        assert second.startswith("http:7:")
+        assert first == ""
+        assert second == ""
 
 
 class TestHttpConnectorRoutes:
@@ -178,13 +180,13 @@ class TestHttpConnectorRoutes:
         conn = _make_connector(_mock_agent(handle))
         headers, user_id = await _auth(conn)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=conn.app), base_url="http://test") as client:
-            response = await client.post("/api/messages", json={"content": "hello", "previous_external_id": "http:7:old"}, headers=headers)
+            response = await client.post("/api/messages", json={"content": "hello"}, headers=headers)
 
-        assert response.status_code == 202
+        assert response.status_code == 200
         assert received["platform"] == "http"
         assert received["user_id"] == user_id
         assert received["content"] == "hello"
-        assert received["previous_external_id"] == "http:7:old"
+        assert received["previous_item_id"] is None
 
     @pytest.mark.asyncio
     async def test_history_is_filtered_by_authenticated_user(self):
@@ -200,8 +202,8 @@ class TestHttpConnectorRoutes:
 
         assert response.status_code == 200
         assert response.json() == {"items": []}
-        assert storage.last_origin_type is HttpOrigin
-        assert storage.last_origin_fields == {"http_user_id": user_id}
+        assert storage.last_origin_type is None
+        assert storage.last_origin_fields is None
 
     @pytest.mark.asyncio
     async def test_background_error_is_published_to_user_events(self):

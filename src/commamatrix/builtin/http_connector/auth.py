@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 import bcrypt
 import jwt
+from starlette.responses import JSONResponse
 
 if TYPE_CHECKING:
     from ...core.agent import Agent
@@ -43,6 +44,25 @@ class Authorizer:
         self._init_lock = asyncio.Lock()
         self._invites: set[str] = set()
 
+    @staticmethod
+    def _hash_password(password: str) -> str:
+        return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+    @staticmethod
+    def _password_matches(password: str, password_hash: str) -> bool:
+        try:
+            return bcrypt.checkpw(password.encode(), password_hash.encode())
+        except (ValueError, TypeError):
+            return False
+
+    def _user_from_row(self, row, username: str | None = None) -> AuthUser:
+        return AuthUser(
+            id=int(row["id"]),
+            username=username if username is not None else row["username"],
+            app_name=self.app_name,
+            is_admin=bool(row["is_admin"]),
+        )
+
     async def init_db(self) -> None:
         async with self._init_lock:
             if self._initialized:
@@ -66,7 +86,7 @@ class Authorizer:
             )
             if not admins:
                 password = secrets.token_urlsafe(18)
-                password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+                password_hash = self._hash_password(password)
                 existing_admin = await self.agent.storage.execute(
                     "SELECT id FROM commamatrix_users WHERE app_name = ? AND username = ? LIMIT 1",
                     (self.app_name, "admin"),
@@ -82,7 +102,7 @@ class Authorizer:
             self._initialized = True
 
     async def _insert_user(self, username: str, password: str, is_admin: bool = False) -> AuthUser:
-        password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+        password_hash = self._hash_password(password)
         try:
             await self.agent.storage.execute(
                 "INSERT INTO commamatrix_users (app_name, username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -96,8 +116,7 @@ class Authorizer:
             "SELECT id, is_admin FROM commamatrix_users WHERE app_name = ? AND username = ?",
             (self.app_name, username),
         )
-        row = rows[0]
-        return AuthUser(id=int(row["id"]), username=username, app_name=self.app_name, is_admin=bool(row["is_admin"]))
+        return self._user_from_row(rows[0], username)
 
     @staticmethod
     def _check_credentials(username: str, password: str) -> None:
@@ -125,7 +144,9 @@ class Authorizer:
         if not isinstance(token, str) or token not in self._invites:
             raise AuthError("Invalid or expired invitation")
         self._invites.remove(token)
-        return await self.register(username, password)
+        username = username.strip() if isinstance(username, str) else username
+        self._check_credentials(username, password)
+        return await self._insert_user(username, password)
 
     async def login(self, username: str, password: str) -> str:
         await self.init_db()
@@ -138,11 +159,7 @@ class Authorizer:
         if not rows:
             raise AuthError("Invalid username or password")
         row = rows[0]
-        try:
-            valid = bcrypt.checkpw(password.encode(), row["password_hash"].encode())
-        except (ValueError, TypeError):
-            valid = False
-        if not valid:
+        if not self._password_matches(password, row["password_hash"]):
             raise AuthError("Invalid username or password")
         return self._issue_token(int(row["id"]), username)
 
@@ -184,27 +201,18 @@ class Authorizer:
         )
         if not rows:
             raise AuthError("User no longer exists")
-        row = rows[0]
-        return AuthUser(id=int(row["id"]), username=row["username"], app_name=self.app_name, is_admin=bool(row["is_admin"]))
+        return self._user_from_row(rows[0])
 
     async def find_user(self, user: int | str) -> AuthUser | None:
         await self.init_db()
         if isinstance(user, bool) or not isinstance(user, (int, str)):
             raise ValueError("User must be an integer ID or username")
-        if isinstance(user, int):
-            rows = await self.agent.storage.execute(
-                "SELECT id, username, is_admin FROM commamatrix_users WHERE id = ? AND app_name = ?",
-                (user, self.app_name),
-            )
-        else:
-            rows = await self.agent.storage.execute(
-                "SELECT id, username, is_admin FROM commamatrix_users WHERE username = ? AND app_name = ?",
-                (user, self.app_name),
-            )
-        if not rows:
-            return None
-        row = rows[0]
-        return AuthUser(id=int(row["id"]), username=row["username"], app_name=self.app_name, is_admin=bool(row["is_admin"]))
+        field = "id" if isinstance(user, int) else "username"
+        rows = await self.agent.storage.execute(
+            f"SELECT id, username, is_admin FROM commamatrix_users WHERE {field} = ? AND app_name = ?",
+            (user, self.app_name),
+        )
+        return self._user_from_row(rows[0]) if rows else None
 
     async def change_password(self, user: AuthUser, old_password: str, new_password: str) -> None:
         await self.init_db()
@@ -216,13 +224,9 @@ class Authorizer:
         )
         if not rows:
             raise AuthError("User no longer exists")
-        try:
-            valid = bcrypt.checkpw(old_password.encode(), rows[0]["password_hash"].encode())
-        except (ValueError, TypeError):
-            valid = False
-        if not valid:
+        if not self._password_matches(old_password, rows[0]["password_hash"]):
             raise AuthError("Invalid current password")
-        password_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
+        password_hash = self._hash_password(new_password)
         await self.agent.storage.execute(
             "UPDATE commamatrix_users SET password_hash = ? WHERE id = ? AND app_name = ?",
             (password_hash, user.id, self.app_name),
@@ -238,8 +242,6 @@ class Authorizer:
         return token
 
     async def _authenticate_request(self, request):
-        from starlette.responses import JSONResponse
-
         try:
             token = self.extract_bearer_token(request.headers.get("Authorization"))
             request.state.user = await self.authenticate(token)
@@ -249,29 +251,23 @@ class Authorizer:
             return JSONResponse({"detail": "Authentication service unavailable"}, status_code=503)
         return None
 
-    def requires_auth(self, endpoint):
+    def _protect(self, endpoint, admin: bool = False):
         @wraps(endpoint)
         async def wrapper(request, *args, **kwargs):
             response = await self._authenticate_request(request)
             if response is not None:
                 return response
-            return await endpoint(request, *args, **kwargs)
-
-        return wrapper
-
-    def requires_admin(self, endpoint):
-        @wraps(endpoint)
-        async def wrapper(request, *args, **kwargs):
-            from starlette.responses import JSONResponse
-
-            response = await self._authenticate_request(request)
-            if response is not None:
-                return response
-            if not request.state.user.is_admin:
+            if admin and not request.state.user.is_admin:
                 return JSONResponse({"detail": "Administrator access required"}, status_code=403)
             return await endpoint(request, *args, **kwargs)
 
         return wrapper
+
+    def requires_auth(self, endpoint):
+        return self._protect(endpoint)
+
+    def requires_admin(self, endpoint):
+        return self._protect(endpoint, admin=True)
 
     async def stop(self) -> None:
         self._invites.clear()

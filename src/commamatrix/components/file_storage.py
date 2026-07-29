@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 from abc import abstractmethod
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -29,7 +28,7 @@ active_file_storage = ConfigField[str | None](
 )
 
 
-class FileContentType(StrEnum):
+class DataType(StrEnum):
     TEXT = "text"
     FILE = "file"
     IMAGE = "image"
@@ -40,18 +39,16 @@ class FileData:
     data: bytes
     name: str
     mime_type: str
-    content_type: FileContentType
-    source: str
+    data_type: DataType
+    url: str | None = None
 
 
 @dataclass(slots=True, kw_only=True)
 class FileContext:
     content: str
-    modality: FileContentType
-    source_type: FileContentType
-    mime_type: str
     name: str
-    size: int
+    mime_type: str
+    data_type: DataType
 
 
 class FileStorage(AbstractService):
@@ -68,6 +65,9 @@ class FileStorage(AbstractService):
 
     @abstractmethod
     async def delete(self, file_id: str) -> bool: ...
+
+    def url(self, file_id: str) -> str:
+        return self.agent.server.file_url(file_id)
 
 
 class PythonFileStorageSource(PythonServiceSource):
@@ -93,6 +93,9 @@ class FileStorageManager(ActiveServiceInstanceManager[FileStorage]):
     async def delete(self, file_id: str) -> bool:
         return await self._active.delete(file_id)
 
+    def url(self, file_id: str) -> str:
+        return self.agent.server.file_url(file_id)
+
 
 def ext_to_mime(ext: str) -> str:
     mime_type, _ = guess_type(f"file.{ext.lstrip('.')}")
@@ -101,19 +104,27 @@ def ext_to_mime(ext: str) -> str:
     return mime_type or "application/octet-stream"
 
 
-def _normalize_content_type(content_type: FileContentType | str) -> FileContentType:
-    value = content_type.value if isinstance(content_type, FileContentType) else str(content_type).lower()
+def normalize_file_id(file_id: object) -> str | None:
+    if not isinstance(file_id, str) or not file_id or file_id in {".", ".."}:
+        return None
+    if "/" in file_id or "\\" in file_id:
+        return None
+    return file_id
+
+
+def _normalize_content_type(content_type: DataType | str) -> DataType:
+    value = content_type.value if isinstance(content_type, DataType) else str(content_type).lower()
     value = value.removesuffix("_input").removesuffix("_output")
     try:
-        return FileContentType(value)
+        return DataType(value)
     except ValueError as exc:
         raise ValueError(f"Unsupported file content type: {content_type!r}") from exc
 
 
-def _normalize_modalities(modalities: Iterable[FileContentType | str] | FileContentType | str | None) -> set[FileContentType]:
+def _normalize_modalities(modalities: Iterable[DataType | str] | DataType | str | None) -> set[DataType]:
     if modalities is None:
         return set()
-    if isinstance(modalities, (FileContentType, str)):
+    if isinstance(modalities, (DataType, str)):
         modalities = (modalities,)
     return {_normalize_content_type(modality) for modality in modalities}
 
@@ -134,12 +145,16 @@ def _source_name(ref: str, name: str | None) -> str:
     return Path(ref).name or ref
 
 
-def _infer_content_type(mime_type: str) -> FileContentType:
+def _infer_content_type(mime_type: str) -> DataType:
     if mime_type.startswith("image/"):
-        return FileContentType.IMAGE
-    if mime_type.startswith("text/"):
-        return FileContentType.TEXT
-    return FileContentType.FILE
+        return DataType.IMAGE
+    if (
+        mime_type.startswith("text/")
+        or mime_type in {"application/json", "application/javascript", "application/yaml", "application/x-yaml"}
+        or mime_type.endswith(("+json", "+xml"))
+    ):
+        return DataType.TEXT
+    return DataType.FILE
 
 
 async def read_file(
@@ -150,7 +165,8 @@ async def read_file(
     name: str | None = None,
     ext: str | None = None,
     mime_type: str | None = None,
-    content_type: FileContentType | str | None = None,
+    content_type: DataType | str | None = None,
+    make_url: bool = False,
 ) -> FileData | None:
     """Load bytes from a URL, absolute path, or configured file storage."""
     ref = str(ref).strip()
@@ -159,6 +175,7 @@ async def read_file(
 
     data: bytes = b""
     response_mime: str | None = None
+    source_url: str | None = None
     if urlparse(ref).scheme in {"http", "https"}:
         if http_client is None:
             if file_storage is None:
@@ -171,6 +188,7 @@ async def read_file(
             return None
         data = response.content
         response_mime = _clean_mime_type(response.headers.get("content-type"))
+        source_url = ref
     elif Path(ref).is_absolute():
         path = Path(ref)
         if not path.is_file():
@@ -187,9 +205,13 @@ async def read_file(
         if stored_data is None:
             return None
         data = stored_data
+        source_url = file_storage.url(ref)
 
     file_name = _source_name(ref, name)
     file_ext = (ext or Path(file_name).suffix).lstrip(".").lower()
+    if source_url is None and make_url and Path(ref).is_absolute() and file_storage is not None:
+        stored_id = await file_storage.save(data, ext=file_ext or None)
+        source_url = file_storage.url(stored_id)
     resolved_mime = (
         _clean_mime_type(mime_type)
         or response_mime
@@ -205,8 +227,8 @@ async def read_file(
         data=data,
         name=file_name,
         mime_type=resolved_mime,
-        content_type=resolved_type,
-        source=ref,
+        data_type=resolved_type,
+        url=source_url,
     )
 
 
@@ -222,38 +244,33 @@ def _decode_text(data: bytes) -> str:
 def file_to_context(
     file_data: FileData,
     *,
-    modalities: Iterable[FileContentType | str] | FileContentType | str | None = None,
-    content_type: FileContentType | str | None = None,
+    modalities: Iterable[DataType | str] | DataType | str | None = None,
+    content_type: DataType | str | None = None,
 ) -> FileContext:
-    """Render file data as text, a data URI, or a compact context marker."""
-    source_type: FileContentType
+    """Render file data as text, a URL, or a compact context marker."""
+    source_type: DataType
     if content_type is not None:
         source_type = _normalize_content_type(content_type)
     else:
-        inferred_type = file_data.content_type
+        inferred_type = file_data.data_type
         if inferred_type is None:
-            inferred_type = FileContentType.FILE
+            inferred_type = DataType.FILE
         source_type = _normalize_content_type(inferred_type)
-    if source_type is FileContentType.TEXT:
+    if source_type is DataType.TEXT:
         content = _decode_text(file_data.data)
         return FileContext(
             content=content,
-            modality=FileContentType.TEXT,
-            source_type=source_type,
+            data_type=source_type,
             mime_type=file_data.mime_type,
             name=file_data.name,
-            size=len(file_data.data),
         )
 
-    if source_type in _normalize_modalities(modalities):
-        content = f"data:{file_data.mime_type};base64,{base64.b64encode(file_data.data).decode('ascii')}"
+    if source_type in _normalize_modalities(modalities) and file_data.url:
         return FileContext(
-            content=content,
-            modality=source_type,
-            source_type=source_type,
+            content=file_data.url,
+            data_type=source_type,
             mime_type=file_data.mime_type,
             name=file_data.name,
-            size=len(file_data.data),
         )
 
     content = (
@@ -262,9 +279,7 @@ def file_to_context(
     )
     return FileContext(
         content=content,
-        modality=FileContentType.TEXT,
-        source_type=source_type,
+        data_type=source_type,
         mime_type=file_data.mime_type,
         name=file_data.name,
-        size=len(file_data.data),
     )

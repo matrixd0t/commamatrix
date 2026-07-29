@@ -7,7 +7,9 @@ from typing import Any
 
 from ...components.dialog import DialogItemType, DialogRole
 from ...components.hook import BeforeLlmCallCtx
+from ...components.file_storage import DataType
 from ...components.llm_adapter import (
+    LLM,
     LLMResponse,
     LLMResponseBlock,
     LLMResponseReasoningBlock,
@@ -18,7 +20,6 @@ from ...components.llm_adapter import (
     StreamEnd,
     Usage,
 )
-from ...components.file_storage import FileContentType
 from .codec import ApiCodec, wire_meta
 
 
@@ -69,7 +70,7 @@ class ChatCompletionsCodec(ApiCodec):
         value = wire.get("value")
         return value if isinstance(value, dict) else None
 
-    async def build_request(self, *, model: str, ctx: BeforeLlmCallCtx) -> dict[str, Any]:
+    async def build_request(self, *, model: LLM | str, ctx: BeforeLlmCallCtx) -> dict[str, Any]:
         messages: list[dict[str, Any]] = []
         assistant_message: dict[str, Any] | None = None
         assistant_wire = False
@@ -121,10 +122,10 @@ class ChatCompletionsCodec(ApiCodec):
 
                     case DialogItemType.IMAGE_INPUT | DialogItemType.IMAGE_OUTPUT:
                         flush_assistant()
-                        rendered = await self._file_context(ctx, item, modalities=FileContentType.IMAGE)
+                        rendered = await self._file_context(ctx, item)
                         if rendered is None:
                             continue
-                        if rendered.modality is FileContentType.TEXT:
+                        if rendered.data_type is DataType.TEXT:
                             messages.append({"role": "user", "content": rendered.content})
                             continue
                         messages.append({
@@ -134,10 +135,10 @@ class ChatCompletionsCodec(ApiCodec):
 
                     case DialogItemType.FILE_INPUT | DialogItemType.FILE_OUTPUT:
                         flush_assistant()
-                        rendered = await self._file_context(ctx, item, modalities=FileContentType.FILE)
+                        rendered = await self._file_context(ctx, item)
                         if rendered is None:
                             continue
-                        if rendered.modality is FileContentType.TEXT:
+                        if rendered.data_type is DataType.TEXT:
                             messages.append({"role": "user", "content": rendered.content})
                             continue
                         messages.append({
@@ -174,7 +175,7 @@ class ChatCompletionsCodec(ApiCodec):
                 continue
 
         flush_assistant()
-        request = {"model": model, "messages": messages, **ctx.llm_call_params}
+        request = {"model": self._model_name(model), "messages": messages, **ctx.llm_call_params}
         if ctx.tools:
             request["tools"] = self.serialize_tools(ctx)
         return request

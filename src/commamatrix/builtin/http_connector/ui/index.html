@@ -4,16 +4,25 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CommaMatrix</title>
-<base href="/ui/">
+<base href="/commamatrix/ui/">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-<link rel="stylesheet" href="styles.css?v=5">
+<link rel="stylesheet" href="styles.css?v=12">
 </head>
 <body>
 <div id="app-shell">
   <header>
     <button id="branch-open" class="mobile-only icon-button" type="button" aria-label="Open branches" title="Open branches">☰</button>
     <h1>CommaMatrix</h1>
+    <div id="server-status-wrap" class="server-status-wrap">
+      <button id="server-status-btn" class="server-status-btn" type="button" aria-label="Server status" aria-expanded="false" title="Server status">
+        <span id="server-status-light" class="server-status-light gray" aria-hidden="true"></span>
+      </button>
+      <div id="server-status-panel" class="server-status-panel" role="status" aria-live="polite"></div>
+    </div>
     <span class="status" id="status">Sign in required</span>
+    <button id="header-menu-btn" class="mobile-only icon-button header-menu-btn" type="button" aria-label="Open account menu" aria-expanded="false" title="Open account menu">
+      ⋮
+    </button>
     <div class="header-actions">
       <span class="status" id="user-label"></span>
       <button id="password-btn" type="button" hidden>Change password</button>
@@ -39,8 +48,12 @@
     </aside>
     <main id="chat-column">
       <div id="messages"></div>
+      <div id="attachment-previews" aria-live="polite"></div>
       <div id="input-area">
         <label class="sr-only" for="input">Message</label>
+        <input id="file-input" type="file" multiple hidden>
+        <div id="drop-overlay" class="drop-overlay" aria-hidden="true">Drop a link or file here</div>
+        <button id="attach-btn" class="attach-btn" type="button" title="Add a link or file" aria-label="Add a link or file">+</button>
         <textarea id="input" rows="1" placeholder="Type a message..." autofocus></textarea>
         <button id="send-btn" type="button">Send</button>
       </div>
@@ -48,6 +61,28 @@
   </div>
 </div>
 <div id="branch-backdrop" class="mobile-only"></div>
+<div class="auth-overlay hidden" id="attachment-overlay">
+  <div class="auth-card attachment-choice-card">
+    <h2>Add to message</h2>
+    <p>Choose how to add content to your message.</p>
+    <button id="insert-link-choice" type="button">Insert link</button>
+    <button id="upload-file-choice" type="button">Upload file</button>
+    <button class="secondary" id="attachment-cancel" type="button">Cancel</button>
+  </div>
+</div>
+<div class="auth-overlay hidden" id="link-overlay">
+  <div class="auth-card">
+    <h2>Insert link</h2>
+    <p>The link will be added as an attachment and sent directly to the LLM without being saved on the server.</p>
+    <form id="link-form">
+      <label for="link-input">URL</label>
+      <input id="link-input" type="url" inputmode="url" autocomplete="url" placeholder="https://example.com" required>
+      <div class="auth-error" id="link-error"></div>
+      <button type="submit">Insert link</button>
+      <button class="secondary" id="link-cancel" type="button">Cancel</button>
+    </form>
+  </div>
+</div>
 <div class="auth-overlay hidden" id="auth-overlay" style="display:none">
   <div class="auth-card">
     <h2 id="auth-title">Sign in</h2>
@@ -63,7 +98,7 @@
       <label id="auth-confirm-label" for="auth-confirm" hidden>Confirm password</label>
       <input id="auth-confirm" type="password" autocomplete="new-password" hidden>
       <div class="auth-error" id="auth-error"></div>
-      <button id="auth-submit" type="button">Sign in</button>
+      <button id="auth-submit" type="submit">Sign in</button>
     </form>
   </div>
 </div>
@@ -105,6 +140,6 @@
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" async></script>
-<script src="app.js?v=13" defer></script>
+<script src="app.js?v=25" defer></script>
 </body>
 </html>

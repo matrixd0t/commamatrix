@@ -124,7 +124,14 @@ class TestConnectorStreaming:
 
     def test_http_connector_supports_streaming_true(self):
         from commamatrix.builtin.http_connector.connector import HttpConnector
-        assert HttpConnector.supports_streaming is True
+
+        connector = HttpConnector(agent=stub_agent())
+        assert connector.supports_streaming is True
+        token = connector._request_streaming.set(False)
+        try:
+            assert connector.supports_streaming is False
+        finally:
+            connector._request_streaming.reset(token)
 
 
 # ── ApiCodec streaming base ──────────────────────────────────────────────────

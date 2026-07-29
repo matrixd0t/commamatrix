@@ -13,13 +13,11 @@ from .api import ToolSearcher
 
 
 class BM25ToolSearcher(ToolSearcher):
-    """Indexes ``ToolDescriptor.doc`` with BM25 for fast semantic lookup.
-
-    All operations are synchronous by design — CodeAct does not
-    offload them to threads.  The BM25 index is rebuilt in-process
-    via ``bm25s`` tokenisation and scoring.  For very large tool
-    registries consider implementing ``ToolSearcher`` backed by an
-    external search service instead.
+    """
+    Indexes ``ToolDescriptor.doc`` with BM25 for fast semantic lookup.
+    All operations are synchronous by design — CodeAct does not offload them to threads.
+    The BM25 index is rebuilt in-process via ``bm25s`` tokenization and scoring.
+    For very large tool registries consider implementing ``ToolSearcher`` backed by an external search service instead.
     """
 
     def __init__(self) -> None:

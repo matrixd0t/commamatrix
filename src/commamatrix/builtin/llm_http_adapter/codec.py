@@ -9,9 +9,9 @@ from json import loads
 from typing import Any
 
 from ...components.dialog import DialogItem, DialogItemType
-from ...components.file_storage import FileContentType, FileContext, file_to_context, read_file
+from ...components.file_storage import DataType, FileContext, file_to_context, read_file
 from ...components.hook import BeforeLlmCallCtx
-from ...components.llm_adapter import LLMResponse, LLMResponseBlock, StreamDelta, StreamEnd
+from ...components.llm_adapter import LLM, LLMResponse, LLMResponseBlock, StreamDelta, StreamEnd
 
 
 class ApiProtocol(StrEnum):
@@ -40,17 +40,16 @@ class ApiCodec(ABC):
             cls.registry[cls.protocol] = cls()
 
     @staticmethod
-    async def _file_context(
-        ctx: BeforeLlmCallCtx,
-        item: DialogItem,
-        *,
-        modalities: Iterable[FileContentType | str] | FileContentType | str | None = None,
-    ) -> FileContext | None:
+    def _input_modalities(ctx: BeforeLlmCallCtx) -> set[DataType]:
+        model = ctx.run.model
+        return model.modalities.input if isinstance(model, LLM) else set()
+
+    async def _file_context(self, ctx: BeforeLlmCallCtx, item: DialogItem, *, modalities: Iterable[DataType | str] | DataType | str | None = None) -> FileContext | None:
         if item.item_type in {DialogItemType.IMAGE_INPUT, DialogItemType.IMAGE_OUTPUT}:
-            content_type = FileContentType.IMAGE
+            content_type = DataType.IMAGE
             field_name = "image"
         elif item.item_type in {DialogItemType.FILE_INPUT, DialogItemType.FILE_OUTPUT}:
-            content_type = FileContentType.FILE
+            content_type = DataType.FILE
             field_name = "file"
         else:
             return None
@@ -65,9 +64,6 @@ class ApiCodec(ABC):
         file_data = item_data.get(field_name, {})
         if not isinstance(file_data, dict):
             return None
-        ref = file_data.get("ref")
-        if not isinstance(ref, str) or not ref:
-            return None
 
         name = file_data.get("name")
         if not isinstance(name, str) or not name:
@@ -79,6 +75,19 @@ class ApiCodec(ABC):
         if not isinstance(mime_type, str) or not mime_type:
             mime_type = None
 
+        external_url = file_data.get("url")
+        if isinstance(external_url, str) and external_url:
+            return FileContext(
+                content=external_url,
+                name=name or external_url,
+                mime_type=mime_type or "application/octet-stream",
+                data_type=content_type,
+            )
+
+        ref = file_data.get("ref")
+        if not isinstance(ref, str) or not ref:
+            return None
+
         resolved = await read_file(
             ref,
             file_storage=ctx.run.agent.file_storage,
@@ -86,17 +95,24 @@ class ApiCodec(ABC):
             ext=ext,
             mime_type=mime_type,
             content_type=content_type,
+            make_url=True,
         )
         if resolved is None:
             return None
+        if modalities is None:
+            modalities = self._input_modalities(ctx)
         return file_to_context(
             resolved,
             modalities=modalities,
             content_type=content_type,
         )
 
+    @staticmethod
+    def _model_name(model: LLM | str) -> str:
+        return model if isinstance(model, str) else model.model_name
+
     @abstractmethod
-    async def build_request(self, *, model: str, ctx: BeforeLlmCallCtx) -> dict[str, Any]:
+    async def build_request(self, *, model: LLM | str, ctx: BeforeLlmCallCtx) -> dict[str, Any]:
         ...
 
     @abstractmethod

@@ -40,6 +40,7 @@ from ...components.hook import (
     RunCtx,
 )
 from ...components.llm_adapter import (
+    LLM,
     LLMResponse,
     LLMResponseBlock,
     LLMResponseToolCallBlock,
@@ -50,6 +51,7 @@ from ...components.llm_adapter import (
     StreamEnd,
     ToolCall,
     ToolCallResult,
+    llms,
 )
 from ...components.tool import ToolManager
 from ...components.hook import HookManager
@@ -58,6 +60,7 @@ from ...components.connector import ConnectorManager
 from ...components.llm_adapter import LLMAdapterManager
 from ...components.storage import StorageManager, STORAGE_ATTRIBUTE
 from ...components.file_storage import FileStorageManager, FILE_STORAGE_ATTRIBUTE
+from ...components.server import Server
 from ..classes.manager import ServiceInstanceManager, ServiceInstanceRegistry
 from ..classes.service import AbstractService
 from ..extensions import (
@@ -68,7 +71,6 @@ from ..extensions import (
 )
 from .runner import AgentRunner
 from .lifecycle import AgentLifecycle
-
 
 DEFAULT_HTTP_HEADERS: dict[str, str] = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
@@ -113,12 +115,12 @@ class Agent:
     """
 
     def __init__(
-        self,
-        *,
-        config: dict[ConfigField, Any] | Config = {},
-        auto_load_main: bool = True,
-        auto_load_plugins: bool = True,
-        essentials: bool = True,
+            self,
+            *,
+            config: dict[ConfigField, Any] | Config = {},
+            auto_load_main: bool = True,
+            auto_load_plugins: bool = True,
+            essentials: bool = True,
     ):
         load_dotenv()
         if isinstance(config, dict):
@@ -143,6 +145,7 @@ class Agent:
         self.file_storage = FileStorageManager(agent=self)
         self.service_manager: ServiceInstanceManager[AbstractService] = ServiceInstanceManager(agent=self)
         self.connector_manager = ConnectorManager(agent=self)
+        self.server = Server(agent=self)
 
         self.manager = AgentLifecycle(registry=self.services, children=[
             self.tool_manager,
@@ -153,6 +156,7 @@ class Agent:
             self.file_storage,
             self.service_manager,
             self.connector_manager,
+            self.server,
         ])
 
         if self._auto_load_plugins:
@@ -195,6 +199,33 @@ class Agent:
     def _resolve_module_name(module_or_path: str | types.ModuleType) -> str | None:
         """Resolve an import name or filesystem path to a canonical module name."""
         return ExtensionRuntime.resolve_module_name(module_or_path)
+
+    def add_llms(self, *items: LLM | str) -> None:
+        """Add configured LLMs, creating text-only models from names."""
+        available = list(self.config.get(llms))
+        available.extend(
+            LLM(model_name=item) if isinstance(item, str) else item
+            for item in items
+        )
+        self.config.set(llms, available)
+
+    def remove_llms(self, *items: LLM | str) -> None:
+        """Remove LLMs by value or the first model matching each supplied name."""
+        available = list(self.config.get(llms))
+        for item in items:
+            if isinstance(item, str):
+                index = next(
+                    (index for index, candidate in enumerate(available) if candidate.model_name == item),
+                    None,
+                )
+            else:
+                try:
+                    index = available.index(item)
+                except ValueError:
+                    index = None
+            if index is not None:
+                del available[index]
+        self.config.set(llms, available)
 
     async def _apply_extensions(self, *module_or_path: str | types.ModuleType, operation: ExtensionOperation) -> list[str]:
         """Apply an extension operation and refresh active managers."""
@@ -265,7 +296,9 @@ class Agent:
             print("[Agent DEBUG] handle no connector parsed the event", file=sys.stderr)
             return []
 
-        print(f"[Agent DEBUG] handle parsed items={len(parsed.dialog_items)} previous_external_id={parsed.previous_external_id!r} ids={[item.item_id for item in parsed.dialog_items]}", file=sys.stderr)
+        print(
+            f"[Agent DEBUG] handle parsed items={len(parsed.dialog_items)} previous_external_id={parsed.previous_external_id!r} ids={[item.item_id for item in parsed.dialog_items]}",
+            file=sys.stderr)
         await self._resolve_previous_item(parsed)
         await self.hook_manager.fire(HookEventType.ON_PARSED, parsed)
 
@@ -309,6 +342,7 @@ class Agent:
 
             if (await self._before_run(run)).abort:
                 return None
+            self._select_model(run)
 
             async with self._typing(run):
                 while True:
@@ -425,14 +459,28 @@ class Agent:
         await self.hook_manager.fire(HookEventType.BEFORE_RUN, ctx)
         return ctx
 
-    async def _store_history(
-        self, run: RunCtx, history: list[DialogItem] | None
-    ) -> int | None:
+    def _select_model(self, run: RunCtx) -> None:
+        if run.model is not None:
+            return
+
+        available = self.config.get(llms)
+        if not available:
+            raise RuntimeError("No LLM models configured")
+
+        selected = next((candidate for candidate in available if candidate.meta.get("agentic")), None)
+        if selected is None:
+            selected = available[0]
+            selected.meta["agentic"] = True
+        run.model = selected
+
+    async def _store_history(self, run: RunCtx, history: list[DialogItem] | None) -> int | None:
         """Persist items in a history batch and return the last item_id."""
         last_item_id: int | None = None
         if history is not None:
             for item in history:
                 if item.item_id is None:
+                    if last_item_id is not None:
+                        item.previous_item_id = last_item_id
                     item.meta.setdefault("chain", {}).update(run.chain_state)
                     print(f"[Agent DEBUG] save input item_type={item.item_type.value} previous_item_id={item.previous_item_id} external_id={item.external_id!r} origin={item.origin}", file=sys.stderr)
                     last_item_id = await self.storage.save_event(item)
@@ -516,7 +564,11 @@ class Agent:
         await self.hook_manager.fire(HookEventType.AFTER_TOOL_CALL, after_ctx)
 
         if not persist_result:
+            run.pending_input_items.extend(before_ctx.follow_up_items)
             return last_item_id, after_ctx.result
+
+        follow_up_items = [*run.pending_input_items, *before_ctx.follow_up_items]
+        run.pending_input_items.clear()
 
         async with run.tool_output_lock:
             tail = (
@@ -533,6 +585,9 @@ class Agent:
                 previous_item_id=tail,
             )
             last_item_id = await self._send_and_store_item(run, result_item, tail)
+            for follow_up_item in follow_up_items:
+                follow_up_item.previous_item_id = last_item_id
+                last_item_id = await self._send_and_store_item(run, follow_up_item, last_item_id)
             run.tool_output_tail = last_item_id
 
         return last_item_id, after_ctx.result

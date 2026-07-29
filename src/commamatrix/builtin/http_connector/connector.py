@@ -6,37 +6,36 @@ import asyncio
 import json
 import os
 import secrets
-import sys
+import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable, Mapping
 from datetime import tzinfo
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from mimetypes import guess_type
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import quote, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import aiofiles
-import uvicorn
-from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
-from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from ...components.config import ConfigField
 from ...components.connector import Connector
 from ...components.dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
+from ...components.file_storage import normalize_file_id
 from ...components.hook import OnParsedCtx
 from ...components.llm_adapter import StreamDelta
+from ...components.server import http_external_url
 from .auth import AuthError, Authorizer
 
 if TYPE_CHECKING:
     from ...core.agent import Agent
 
-http_port = ConfigField[int](name="http_port", default=8338, description="Local HTTP server port for HTTP connector")
-http_host = ConfigField[str](name="http_host", default="0.0.0.0", description="HTTP server bind host; use 127.0.0.1 to restrict it to this machine")
 http_ui_path = ConfigField[str](name="http_ui_path", default=str(Path(__file__).parent / "ui" / "index.html"), description="Path to the HTTP connector UI HTML file")
 http_auth_app_name = ConfigField[str](name="http_auth_app_name", default="commamatrix", description="Application name used to isolate HTTP users")
 _http_jwt_secret_cache: str | None = None
@@ -81,166 +80,197 @@ class HTTPSession:
     closed: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class HttpFileRecord:
+    file_id: str
+    filename: str
+    mime_type: str
+    size: int
+    purpose: str
+    created_at: int
+    user_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class HttpStatusMessage:
+    message: str
+    severity: str = "yellow"
+
+    def __post_init__(self) -> None:
+        if not self.message.strip():
+            raise ValueError("Status message must not be empty")
+        if self.severity not in {"yellow", "red"}:
+            raise ValueError("Status severity must be 'yellow' or 'red'")
+
+
+_NO_PUBLIC_ADDRESS_MESSAGE = "You cannot upload files for LLM: CommaMatrix is not visible from the Internet."
+
+
 class HttpConnector(Connector[HttpOrigin]):
     def __init__(self, agent: Agent) -> None:
         super().__init__(agent)
-        self._port = self.config.get(http_port)
-        self._host = self.config.get(http_host)
         self._ui_path = Path(self.config.get(http_ui_path))
         self.authorizer = Authorizer(agent=agent, app_name=self.config.get(http_auth_app_name), jwt_secret=self.config.get(http_auth_jwt_secret), token_ttl_seconds=self.config.get(http_auth_token_ttl_seconds))
-        self._server: uvicorn.Server | None = None
-        self._bound_port: int | None = None
         self._sessions: dict[str, HTTPSession] = {}
         self._sessions_by_user: dict[int, set[str]] = {}
         self._timezones_by_user: dict[int, tzinfo] = {}
-        self._app: Starlette | None = None
+        self._files: dict[str, HttpFileRecord] = {}
+        self._status_messages: list[HttpStatusMessage] = []
         self._stream_tasks: dict[str, asyncio.Task] = {}
+        self._route_handles: list[object] = []
         self._request_streaming: ContextVar[bool] = ContextVar(f"http_streaming:{id(self)}", default=True)
+        self._register_routes()
 
     @property
     def supports_streaming(self) -> bool:
         """Return the streaming mode of the current HTTP request context."""
         return self._request_streaming.get()
 
-    @staticmethod
-    def _debug(message: str) -> None:
-        # print(f"[HttpConnector DEBUG] {message}", file=sys.stderr)
-        pass
-
     @property
     def base_url(self) -> str:
-        return f"http://{self._host}:{self._bound_port or self._port}"
+        return self.agent.server.base_url
 
-    @property
-    def app(self) -> Starlette:
-        if self._app is None:
-            self._app = self._build_app()
-        assert self._app is not None
-        return self._app
-
-    def _build_app(self) -> Starlette:
-        async def index(_request: Request) -> Response:
-            if self._ui_path.exists():
-                async with aiofiles.open(self._ui_path, encoding="utf-8") as file:
-                    return HTMLResponse(await file.read())
-            return HTMLResponse("<h1>CommaMatrix HTTP UI</h1><p>index.html not found.</p>", status_code=404)
-
-        async def login(request: Request) -> Response:
-            try:
-                body = await request.json()
-                token = await self.authorizer.login(body.get("username", ""), body.get("password", ""))
-            except AuthError as exc:
-                return JSONResponse({"detail": str(exc)}, status_code=401)
-            except Exception:
-                return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
-            return JSONResponse({"access_token": token, "token_type": "bearer", "expires_in": self.authorizer.token_ttl_seconds})
-
-        async def register(request: Request) -> Response:
-            try:
-                body = await request.json()
-                user = await self.authorizer.register_with_invite(body.get("token", ""), body.get("username", ""), body.get("password", ""))
-            except AuthError as exc:
-                return JSONResponse({"detail": str(exc)}, status_code=400)
-            except Exception:
-                return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
-            return JSONResponse({"id": user.id, "username": user.username}, status_code=201)
-
-        async def invite_page(request: Request) -> Response:
-            return await index(request)
-
-        async def health(_request: Request) -> Response:
-            return JSONResponse({"status": "ok"})
-
-        @self.authorizer.requires_auth
-        async def me(request: Request) -> Response:
-            user = request.state.user
-            return JSONResponse({"id": user.id, "username": user.username, "app": user.app_name, "is_admin": user.is_admin})
-
-        @self.authorizer.requires_auth
-        async def change_password(request: Request) -> Response:
-            try:
-                body = await request.json()
-                await self.authorizer.change_password(request.state.user, body.get("old_password", ""), body.get("new_password", ""))
-            except AuthError as exc:
-                return JSONResponse({"detail": str(exc)}, status_code=400)
-            except Exception:
-                return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
-            return JSONResponse({"status": "ok"})
-
-        @self.authorizer.requires_admin
-        async def create_invite(request: Request) -> Response:
-            token = await self.authorizer.create_invite()
-            url = str(request.base_url).rstrip("/") + "/invite?token=" + token
-            return JSONResponse({"url": url})
-
-        @self.authorizer.requires_auth
-        async def messages(request: Request) -> Response:
-            return await self._handle_message(request)
-
-        @self.authorizer.requires_auth
-        async def events(request: Request) -> Response:
-            return await self._handle_events(request)
-
-        @self.authorizer.requires_auth
-        async def history(request: Request) -> Response:
-            return await self._handle_history(request)
-
-        @self.authorizer.requires_auth
-        async def cancel_message(request: Request) -> Response:
-            stream_id = request.path_params.get("stream_id", "")
-            task = self._stream_tasks.pop(stream_id, None)
-            if task is None:
-                return JSONResponse({"error": "Unknown or already completed stream"}, status_code=404)
-            if not task.done():
-                task.cancel()
-            return JSONResponse({"status": "cancelled"})
-
-        return Starlette(routes=[
-            Route("/", index, methods=["GET"]),
-            Route("/invite", invite_page, methods=["GET"]),
-            Route("/health", health, methods=["GET"]),
-            Route("/api/login", login, methods=["POST"]),
-            Route("/api/register", register, methods=["POST"]),
-            Route("/api/me", me, methods=["GET"]),
-            Route("/api/password", change_password, methods=["POST"]),
-            Route("/api/invite", create_invite, methods=["POST"]),
-            Route("/api/messages", messages, methods=["POST"]),
-            Route("/api/messages/{stream_id:str}", cancel_message, methods=["DELETE"]),
-            Route("/api/events", events, methods=["GET"]),
-            Route("/api/history", history, methods=["GET"]),
-            Mount("/ui", app=StaticFiles(directory=str(self._ui_path.parent)), name="http-ui"),
+    def _register_routes(self) -> None:
+        server = self.agent.server
+        auth = self.authorizer.requires_auth
+        admin = self.authorizer.requires_admin
+        self._route_handles.extend([
+            server.register_route("/", self._index),
+            server.register_route("/invite", self._index),
+            server.register_route("/health", self._health),
+            server.register_route("/api/login", self._login, methods=["POST"]),
+            server.register_route("/api/register", self._register, methods=["POST"]),
+            server.register_route("/api/me", auth(self._me)),
+            server.register_route("/api/status", auth(self._status)),
+            server.register_route("/api/password", auth(self._change_password), methods=["POST"]),
+            server.register_route("/api/invite", admin(self._create_invite), methods=["POST"]),
+            server.register_route("/api/messages", auth(self._handle_message), methods=["POST"]),
+            server.register_route("/api/messages/{stream_id:str}", auth(self._cancel_message), methods=["DELETE"]),
+            server.register_route("/v1/files", auth(self._handle_file_upload), methods=["POST"]),
+            server.register_route("/api/files", auth(self._handle_file_upload), methods=["POST"]),
+            server.register_route("/v1/files/{file_id:str}/content", auth(self._handle_file_content)),
+            server.register_route("/api/files/{file_id:str}/content", auth(self._handle_file_content)),
+            server.register_route("/v1/files/{file_id:str}", auth(self._handle_file_metadata)),
+            server.register_route("/api/files/{file_id:str}", auth(self._handle_file_metadata)),
+            server.register_route("/api/events", auth(self._handle_events)),
+            server.register_route("/api/history", auth(self._handle_history)),
+            server.register_mount("/ui", StaticFiles(directory=str(self._ui_path.parent)), name="http-ui"),
         ])
 
+    async def _index(self, _request: Request) -> Response:
+        if self._ui_path.exists():
+            async with aiofiles.open(self._ui_path, encoding="utf-8") as file:
+                return HTMLResponse(await file.read())
+        return HTMLResponse("<h1>CommaMatrix HTTP UI</h1><p>index.html not found.</p>", status_code=404)
+
+    async def _login(self, request: Request) -> Response:
+        try:
+            body = await request.json()
+            token = await self.authorizer.login(body.get("username", ""), body.get("password", ""))
+        except AuthError as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=401)
+        except Exception:
+            return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+        return JSONResponse({"access_token": token, "token_type": "bearer", "expires_in": self.authorizer.token_ttl_seconds})
+
+    async def _register(self, request: Request) -> Response:
+        try:
+            body = await request.json()
+            user = await self.authorizer.register_with_invite(body.get("token", ""), body.get("username", ""), body.get("password", ""))
+        except AuthError as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=400)
+        except Exception:
+            return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+        return JSONResponse({"id": user.id, "username": user.username}, status_code=201)
+
+    async def _health(self, _request: Request) -> Response:
+        return JSONResponse({"status": "ok"})
+
+    async def _me(self, request: Request) -> Response:
+        user = request.state.user
+        return JSONResponse({"id": user.id, "username": user.username, "app": user.app_name, "is_admin": user.is_admin})
+
+    @property
+    def file_upload_allowed(self) -> bool:
+        return bool(self.config.get(http_external_url))
+
+    @property
+    def status_messages(self) -> tuple[HttpStatusMessage, ...]:
+        return tuple(self._status_messages)
+
+    def set_status_messages(self, messages: Iterable[HttpStatusMessage | Mapping[str, object] | str]) -> None:
+        normalized: list[HttpStatusMessage] = []
+        for value in messages:
+            if isinstance(value, HttpStatusMessage):
+                normalized.append(value)
+                continue
+            if isinstance(value, str):
+                normalized.append(HttpStatusMessage(value))
+                continue
+            if isinstance(value, Mapping):
+                message = value.get("message")
+                severity = value.get("severity", "yellow")
+                if isinstance(message, str) and isinstance(severity, str):
+                    normalized.append(HttpStatusMessage(message, severity))
+        self._status_messages = normalized
+
+    def _status_payload(self) -> dict[str, object]:
+        messages = []
+        if not self.file_upload_allowed:
+            messages.append({"message": _NO_PUBLIC_ADDRESS_MESSAGE, "severity": "yellow"})
+        messages.extend({"message": item.message, "severity": item.severity} for item in self._status_messages)
+        return {"messages": messages, "file_upload_allowed": self.file_upload_allowed, "poll_after": 10}
+
+    async def _status(self, _request: Request) -> Response:
+        return JSONResponse(self._status_payload())
+
+    def _file_upload_blocked(self) -> JSONResponse:
+        return JSONResponse({"error": _NO_PUBLIC_ADDRESS_MESSAGE, "code": "public_address_required"}, status_code=403)
+
+    async def _change_password(self, request: Request) -> Response:
+        try:
+            body = await request.json()
+            await self.authorizer.change_password(request.state.user, body.get("old_password", ""), body.get("new_password", ""))
+        except AuthError as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=400)
+        except Exception:
+            return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+        return JSONResponse({"status": "ok"})
+
+    async def _create_invite(self, request: Request) -> Response:
+        token = await self.authorizer.create_invite()
+        url = str(request.base_url).rstrip("/") + "/invite?token=" + token
+        return JSONResponse({"url": url})
+
+    async def _cancel_message(self, request: Request) -> Response:
+        stream_id = request.path_params.get("stream_id", "")
+        task = self._stream_tasks.pop(stream_id, None)
+        if task is None:
+            return JSONResponse({"error": "Unknown or already completed stream"}, status_code=404)
+        if not task.done():
+            task.cancel()
+        return JSONResponse({"status": "cancelled"})
+
+    def _unregister_routes(self) -> None:
+        for registration in self._route_handles:
+            self.agent.server.unregister(registration)
+        self._route_handles.clear()
+
     async def start(self) -> None:
-        if self._server is not None and self._server.started:
-            return
-        await self.authorizer.init_db()
-        config = uvicorn.Config(app=self.app, host=self._host, port=self._port, log_level="warning")
-        self._server = uvicorn.Server(config)
-        listener_task = asyncio.create_task(self._server.serve())
-        self._listener_task = listener_task
-        while not self._server.started:
-            if self._server.should_exit:
-                await asyncio.gather(listener_task, return_exceptions=True)
-                raise RuntimeError(f"HTTP server failed to start on {self._host}:{self._port}")
-            await asyncio.sleep(0.01)
-        if hasattr(self._server, "servers") and self._server.servers:
-            self._bound_port = self._server.servers[0].sockets[0].getsockname()[1]
-        print(f"CommaMatrix web client running on {self.base_url}")
+        try:
+            await self.authorizer.init_db()
+        except BaseException:
+            self._unregister_routes()
+            raise
 
     async def stop(self) -> None:
-        server = self._server
-        self._server = None
-        self._bound_port = None
-        if server is not None:
-            server.should_exit = True
         await self.authorizer.stop()
-        task = getattr(self, "_listener_task", None)
-        self._listener_task = None
-        if task is not None and not task.done():
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
+        self._unregister_routes()
+        for task in self._stream_tasks.values():
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*self._stream_tasks.values(), return_exceptions=True)
+        self._stream_tasks.clear()
         for session in tuple(self._sessions.values()):
             self._close_session(session)
         self._sessions.clear()
@@ -251,21 +281,43 @@ class HttpConnector(Connector[HttpOrigin]):
         if data.get("platform") != "http":
             return None
         user_id = int(data["user_id"])
-        username = data.get("username", str(user_id))
         timezone_name = data.get("timezone")
         if isinstance(timezone_name, str) and timezone_name:
             try:
                 self._timezones_by_user[user_id] = ZoneInfo(timezone_name)
             except ZoneInfoNotFoundError:
-                self._debug(f"invalid timezone user={user_id} timezone={timezone_name!r}")
+                pass
         previous_item_id = data.get("previous_item_id")
-        self._debug(f"parse user={user_id} previous_item_id={previous_item_id!r}")
-        return OnParsedCtx(
-            raw=data,
-            connector=self,
-            agent=self.agent,
-            dialog_items=[DialogItem(content=data["content"], item_type=DialogItemType.INPUT, user=f"http:{user_id}", role=DialogRole.USER, origin=HttpOrigin(http_user_id=user_id), previous_item_id=previous_item_id)],
-        )
+        content = data.get("content", "")
+        origin = HttpOrigin(http_user_id=user_id)
+        dialog_items: list[DialogItem] = []
+        if isinstance(content, str) and content:
+            dialog_items.append(DialogItem(content=content, item_type=DialogItemType.INPUT, user=f"http:{user_id}", role=DialogRole.USER, origin=origin, previous_item_id=previous_item_id))
+        attachments = data.get("attachments")
+        if isinstance(attachments, list):
+            for attachment in attachments:
+                if not isinstance(attachment, dict):
+                    continue
+                kind = attachment.get("kind")
+                if kind not in {"image", "file"}:
+                    continue
+                field_name = kind
+                dialog_items.append(DialogItem(
+                    content=json.dumps({field_name: {
+                        "ref": attachment.get("file_id"),
+                        "ext": attachment.get("ext", ""),
+                        "name": attachment.get("name", attachment.get("file_id", "file")),
+                        "mime_type": attachment.get("mime_type", "application/octet-stream"),
+                        "url": attachment.get("url"),
+                        "size": attachment.get("size"),
+                    }}, ensure_ascii=False),
+                    item_type=DialogItemType.IMAGE_INPUT if kind == "image" else DialogItemType.FILE_INPUT,
+                    user=f"http:{user_id}",
+                    role=DialogRole.USER,
+                    origin=origin,
+                    previous_item_id=previous_item_id,
+                ))
+        return OnParsedCtx(raw=data, connector=self, agent=self.agent, dialog_items=dialog_items)
 
     async def get_user_timezone(self, origin: DialogOrigin) -> tzinfo | None:
         if not isinstance(origin, HttpOrigin):
@@ -283,10 +335,6 @@ class HttpConnector(Connector[HttpOrigin]):
 
     async def _publish(self, user_id: int, event: dict) -> None:
         sessions = self._sessions_for_user(user_id)
-        details = ""
-        if event.get("type") == "dialog_item":
-            details = f" item_id={event.get('item_id')} previous_item_id={event.get('previous_item_id')} external_id={event.get('external_id')!r}"
-        self._debug(f"publish user={user_id} type={event.get('type')} sessions={len(sessions)}{details}")
         for session in sessions:
             await session.queue.put(event)
 
@@ -295,7 +343,6 @@ class HttpConnector(Connector[HttpOrigin]):
 
     async def publish_item(self, origin: DialogOrigin, item: DialogItem) -> None:
         if isinstance(origin, HttpOrigin):
-            self._debug(f"publish_item user={origin.http_user_id} item_id={item.item_id} item_type={item.item_type.value} previous_item_id={item.previous_item_id} external_id={item.external_id!r}")
             await self._publish(origin.http_user_id, _serialize_item(item))
 
     async def send_stream_chunk(self, origin: DialogOrigin, chunk: StreamDelta) -> None:
@@ -319,7 +366,6 @@ class HttpConnector(Connector[HttpOrigin]):
         session = HTTPSession(session_id=uuid.uuid4().hex, user_id=user_id, queue=asyncio.Queue())
         self._sessions[session.session_id] = session
         self._sessions_by_user.setdefault(user_id, set()).add(session.session_id)
-        self._debug(f"open_session user={user_id} session={session.session_id} total_user_sessions={len(self._sessions_by_user[user_id])}")
         return session
 
     def _close_session(self, session: HTTPSession) -> None:
@@ -343,10 +389,8 @@ class HttpConnector(Connector[HttpOrigin]):
         if previous_item_id is None:
             return True
         branch = await self.agent.storage.get_branch(previous_item_id)
-        parent = next((item for item in branch if item.item_id == previous_item_id), None)
-        parent_is_visible = parent is not None and self._is_user_origin(parent, user_id)
+        parent_is_visible = any(item.item_id == previous_item_id and self._is_user_origin(item, user_id) for item in branch)
         branch_has_visible = any(self._is_user_origin(item, user_id) for item in branch)
-        self._debug(f"validate parent user={user_id} parent={previous_item_id} parent_is_visible={parent_is_visible} branch_has_visible={branch_has_visible} chain={[item.item_id for item in branch]}")
         if not parent_is_visible:
             return False
         return branch_has_visible
@@ -378,8 +422,216 @@ class HttpConnector(Connector[HttpOrigin]):
                 result.append(_serialize_item(item))
             else:
                 result.append({"item_id": item.item_id, "previous_item_id": item.previous_item_id})
-        self._debug(f"history projection user={user_id} full_items={len(items)} returned={len(result)} opaque={sum(1 for item in result if set(item) == {'item_id', 'previous_item_id'})} roots={[item['item_id'] for item in result if item.get('previous_item_id') is None]}")
         return result
+
+    def _file_content_url(self, file_id: str) -> str:
+        return self.agent.server.file_url(file_id)
+
+    def _file_payload(self, record: HttpFileRecord) -> dict:
+        content_url = self._file_content_url(record.file_id)
+        return {
+            "id": record.file_id,
+            "file_id": record.file_id,
+            "object": "file",
+            "type": "file",
+            "filename": record.filename,
+            "name": record.filename,
+            "bytes": record.size,
+            "size_bytes": record.size,
+            "mime_type": record.mime_type,
+            "purpose": record.purpose,
+            "status": "processed",
+            "created_at": record.created_at,
+            "url": content_url,
+            "content_url": content_url,
+        }
+
+    @staticmethod
+    def _fallback_file_record(file_id: str, size: int, user_id: int) -> HttpFileRecord:
+        filename = file_id
+        return HttpFileRecord(
+            file_id=file_id,
+            filename=filename,
+            mime_type=guess_type(filename)[0] or "application/octet-stream",
+            size=size,
+            purpose="user_data",
+            created_at=0,
+            user_id=user_id,
+        )
+
+    async def _handle_file_upload(self, request: Request) -> Response:
+        if not self.file_upload_allowed:
+            return self._file_upload_blocked()
+        try:
+            form = await request.form()
+        except Exception as exc:
+            return JSONResponse({"error": f"Invalid multipart form: {exc}"}, status_code=400)
+
+        upload = form.get("file")
+        if upload is None or not hasattr(upload, "read"):
+            return JSONResponse({"error": "Missing multipart 'file' field"}, status_code=400)
+        filename = str(getattr(upload, "filename", "") or "file").replace("\\", "/")
+        filename = Path(filename).name or "file"
+        try:
+            data = await upload.read()
+        except Exception as exc:
+            return JSONResponse({"error": f"Could not read uploaded file: {exc}"}, status_code=400)
+        if not isinstance(data, bytes):
+            return JSONResponse({"error": "Uploaded file data is invalid"}, status_code=400)
+
+        mime_type = str(getattr(upload, "content_type", "") or "").split(";", 1)[0].strip().lower()
+        mime_type = mime_type or guess_type(filename)[0] or "application/octet-stream"
+        extension = Path(filename).suffix.lstrip(".") or None
+        purpose = str(form.get("purpose") or "user_data")
+        try:
+            file_id = await self.agent.file_storage.save(data, ext=extension)
+        except Exception as exc:
+            return JSONResponse({"error": f"Could not save file: {exc}"}, status_code=503)
+
+        record = HttpFileRecord(
+            file_id=file_id,
+            filename=filename,
+            mime_type=mime_type,
+            size=len(data),
+            purpose=purpose,
+            created_at=int(time.time()),
+            user_id=request.state.user.id,
+        )
+        self._files[file_id] = record
+        return JSONResponse(self._file_payload(record))
+
+    def _resolve_file_id(self, request: Request) -> str | Response:
+        file_id = normalize_file_id(request.path_params.get("file_id"))
+        return file_id if file_id is not None else JSONResponse({"error": "Invalid file_id"}, status_code=404)
+
+    async def _read_file(self, file_id: str) -> bytes | Response:
+        try:
+            data = await self.agent.file_storage.get(file_id)
+        except Exception as exc:
+            return JSONResponse({"error": f"Could not read file: {exc}"}, status_code=503)
+        return data if data is not None else JSONResponse({"error": "File not found"}, status_code=404)
+
+    async def _handle_file_metadata(self, request: Request) -> Response:
+        file_id = self._resolve_file_id(request)
+        if isinstance(file_id, Response):
+            return file_id
+        record = self._files.get(file_id)
+        if record is None:
+            data = await self._read_file(file_id)
+            if isinstance(data, Response):
+                return data
+            record = self._fallback_file_record(file_id, len(data), request.state.user.id)
+        return JSONResponse(self._file_payload(record))
+
+    async def _handle_file_content(self, request: Request) -> Response:
+        file_id = self._resolve_file_id(request)
+        if isinstance(file_id, Response):
+            return file_id
+        data = await self._read_file(file_id)
+        if isinstance(data, Response):
+            return data
+        record = self._files.get(file_id) or self._fallback_file_record(file_id, len(data), request.state.user.id)
+        return Response(
+            data,
+            media_type=record.mime_type,
+            headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(record.filename)}"},
+        )
+
+    async def _user_history(self, user_id: int) -> list[DialogItem]:
+        return await self.agent.storage.get_history(origin_type=HttpOrigin, origin_fields={"http_user_id": user_id})
+
+    async def _normalize_attachments(self, value: object) -> tuple[list[dict], str | None]:
+        if value is None:
+            return [], None
+        if not isinstance(value, list):
+            return [], "'attachments' must be an array"
+
+        normalized: list[dict] = []
+        for attachment in value:
+            if not isinstance(attachment, dict):
+                return [], "Each attachment must be an object"
+            file_id = normalize_file_id(attachment.get("file_id") or attachment.get("id"))
+            external_url = attachment.get("url")
+            if file_id is None and isinstance(external_url, str) and external_url:
+                parsed_url = urlparse(external_url)
+                if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+                    return [], "External attachment URL must be an absolute HTTP or HTTPS URL"
+                declared_type = str(attachment.get("type") or attachment.get("kind") or "").lower()
+                mime_value = attachment.get("mime_type")
+                mime_type = mime_value if isinstance(mime_value, str) and mime_value else guess_type(parsed_url.path)[0] or "application/octet-stream"
+                if declared_type in {"image", "image_input"} or mime_type.startswith("image/"):
+                    kind = "image"
+                else:
+                    kind = "file"
+                filename_value = attachment.get("filename") or attachment.get("name")
+                filename = filename_value if isinstance(filename_value, str) and filename_value else Path(parsed_url.path).name or external_url
+                ext = attachment.get("ext")
+                if not isinstance(ext, str) or not ext:
+                    ext = Path(filename).suffix.lstrip(".")
+                size = attachment.get("size")
+                if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+                    size = None
+                normalized.append({
+                    "kind": kind,
+                    "file_id": None,
+                    "name": filename,
+                    "mime_type": mime_type,
+                    "ext": ext,
+                    "url": external_url,
+                    "size": size,
+                })
+                continue
+            if file_id is None:
+                return [], "Each attachment requires a valid file_id or external URL"
+            try:
+                data = await self.agent.file_storage.get(file_id)
+            except Exception as exc:
+                return [], f"Could not read file_id {file_id!r}: {exc}"
+            if data is None:
+                return [], f"File not found: {file_id}"
+
+            record = self._files.get(file_id)
+            declared_type = str(attachment.get("type") or attachment.get("kind") or "").lower()
+            if declared_type in {"image", "image_input"}:
+                kind = "image"
+            elif declared_type in {"file", "file_input"}:
+                kind = "file"
+            elif record is not None and record.mime_type.startswith("image/"):
+                kind = "image"
+            else:
+                kind = "image" if str(attachment.get("mime_type") or "").startswith("image/") else "file"
+
+            filename_value = attachment.get("filename") or attachment.get("name")
+            if isinstance(filename_value, str) and filename_value:
+                filename = filename_value
+            elif record is not None:
+                filename = record.filename
+            else:
+                filename = file_id
+            mime_value = attachment.get("mime_type")
+            if isinstance(mime_value, str) and mime_value:
+                mime_type = mime_value
+            elif record is not None:
+                mime_type = record.mime_type
+            else:
+                mime_type = guess_type(filename)[0] or "application/octet-stream"
+            ext = attachment.get("ext")
+            if not isinstance(ext, str) or not ext:
+                ext = Path(filename).suffix.lstrip(".")
+            normalized.append({
+                "kind": kind,
+                "file_id": file_id,
+                "name": filename,
+                "mime_type": mime_type,
+                "ext": ext,
+                "url": self._file_content_url(file_id),
+                "size": len(data) if record is None else record.size,
+            })
+        return normalized, None
+
+    @staticmethod
+    def _has_stored_attachment(value: object) -> bool:
+        return isinstance(value, list) and any(isinstance(item, dict) and (item.get("file_id") or item.get("id")) for item in value)
 
     async def _handle_message(self, request: Request) -> Response:
         try:
@@ -388,30 +640,41 @@ class HttpConnector(Connector[HttpOrigin]):
             return JSONResponse({"error": "Invalid JSON"}, status_code=400)
         if not isinstance(body, dict):
             return JSONResponse({"error": "Body must be a JSON object"}, status_code=400)
-        content = body.get("content")
-        if not isinstance(content, str) or not content.strip():
-            return JSONResponse({"error": "Missing or empty 'content' field"}, status_code=400)
+        content = body.get("content", "")
+        if not isinstance(content, str):
+            return JSONResponse({"error": "'content' must be a string"}, status_code=400)
+        if self._has_stored_attachment(body.get("attachments")) and not self.file_upload_allowed:
+            return self._file_upload_blocked()
+        attachments, attachment_error = await self._normalize_attachments(body.get("attachments"))
+        if attachment_error is not None:
+            return JSONResponse({"error": attachment_error}, status_code=400)
+        if not content.strip() and not attachments:
+            return JSONResponse({"error": "Message must contain text or at least one attachment"}, status_code=400)
         previous_item_id = body.get("previous_item_id")
         if previous_item_id is not None and (isinstance(previous_item_id, bool) or not isinstance(previous_item_id, int)):
             return JSONResponse({"error": "'previous_item_id' must be an integer or null"}, status_code=400)
         user = request.state.user
-        self._debug(f"POST /api/messages received user={user.id} previous_item_id={previous_item_id!r}")
         if not await self._validate_parent(user.id, previous_item_id):
             return JSONResponse({"error": "The selected branch is not available"}, status_code=403)
         stream_requested = request.query_params.get("stream") == "1"
-        self._debug(f"POST /api/messages user={user.id} previous_item_id={previous_item_id!r} stream={stream_requested}")
-        payload = {"platform": "http", "user_id": user.id, "username": user.username, "content": content, "previous_item_id": previous_item_id}
-        origin_fields = {"http_user_id": user.id}
+        payload = {
+            "platform": "http",
+            "user_id": user.id,
+            "username": user.username,
+            "content": content,
+            "attachments": attachments,
+            "previous_item_id": previous_item_id,
+            "timezone": body.get("timezone"),
+        }
         known_ids: set[int] = set()
         if not stream_requested:
-            before = await self.agent.storage.get_history(origin_type=HttpOrigin, origin_fields=origin_fields)
+            before = await self._user_history(user.id)
             known_ids = {item.item_id for item in before if item.item_id is not None}
 
         async def _run_agent() -> None:
             token = self._request_streaming.set(stream_requested)
             try:
                 tasks = await self.agent.handle(payload)
-                self._debug(f"agent.handle user={user.id} tasks={len(tasks)} stream={stream_requested}")
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 for result in results:
                     if isinstance(result, BaseException):
@@ -427,7 +690,7 @@ class HttpConnector(Connector[HttpOrigin]):
             except Exception as exc:
                 print(f"[HttpConnector] non-stream request failed: {exc}")
                 return JSONResponse({"error": str(exc)}, status_code=500)
-            after = await self.agent.storage.get_history(origin_type=HttpOrigin, origin_fields=origin_fields)
+            after = await self._user_history(user.id)
             items = [item for item in after if item.item_id not in known_ids]
             return JSONResponse({"items": [_serialize_item(item) for item in items]})
 
@@ -437,10 +700,10 @@ class HttpConnector(Connector[HttpOrigin]):
             try:
                 await _run_agent()
             except asyncio.CancelledError:
-                self._debug(f"stream cancelled stream_id={stream_id} user={user.id}")
-            except Exception as exc:
-                print(f"[HttpConnector] background stream failed: {exc}")
-                await self._publish(user.id, {"type": "error", "error": str(exc), "stream_id": stream_id})
+                pass
+            except Exception as stream_error:
+                print(f"[HttpConnector] background stream failed: {stream_error}")
+                await self._publish(user.id, {"type": "error", "error": str(stream_error), "stream_id": stream_id})
             finally:
                 await self._publish(user.id, {"type": "message_done", "stream_id": stream_id})
                 self._stream_tasks.pop(stream_id, None)
@@ -456,17 +719,7 @@ class HttpConnector(Connector[HttpOrigin]):
     async def _handle_history(self, request: Request) -> Response:
         user_id = request.state.user.id
         items = await self._history_for_user(user_id)
-        self._debug(f"GET /api/history user={user_id} items={len(items)} ids={[item.get('item_id') for item in items]}")
         return JSONResponse({"items": items})
-
-    def _log_task_error(self, user_id: int, task: asyncio.Task) -> None:
-        if task.cancelled():
-            return
-        error = task.exception()
-        if error is None:
-            return
-        print(f"[HttpConnector] background run failed: {error}")
-        asyncio.create_task(self._publish(user_id, {"type": "error", "error": str(error)}))
 
 
 async def _sse_generator(queue: asyncio.Queue[dict | None], on_disconnect=None):
@@ -479,20 +732,16 @@ async def _sse_generator(queue: asyncio.Queue[dict | None], on_disconnect=None):
                 yield ": ping\n\n"
                 continue
             if item is None:
-                # print("[HttpConnector DEBUG] SSE yield close", file=sys.stderr)
                 break
-            # print(f"[HttpConnector DEBUG] SSE yield type={item.get('type')} item_id={item.get('item_id')} previous_item_id={item.get('previous_item_id')}", file=sys.stderr)
             yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
     except asyncio.CancelledError:
         disconnected = True
-        # print("[HttpConnector DEBUG] SSE generator cancelled", file=sys.stderr)
     finally:
         if disconnected and on_disconnect is not None:
             on_disconnect()
-            # print("[HttpConnector DEBUG] SSE session closed after disconnect", file=sys.stderr)
     if not disconnected:
         yield "data: {\"type\":\"done\"}\n\n"
 
 
 def _serialize_item(item: DialogItem) -> dict:
-    return {"type": "dialog_item", "item_id": item.item_id, "previous_item_id": item.previous_item_id, "item_type": item.item_type.value, "role": item.role.value, "content": item.content, "user": item.user, "origin": item.origin.model_dump(mode="json"), "external_id": item.external_id, "created_at": item.created_at.isoformat() if item.created_at else None}
+    return {"type": "dialog_item", "item_id": item.item_id, "previous_item_id": item.previous_item_id, "item_type": item.item_type.value, "role": item.role.value, "content": item.content, "user": item.user, "origin": item.origin.model_dump(mode="json"), "external_id": item.external_id, "created_at": item.created_at.isoformat() if item.created_at else None, "meta": item.meta}

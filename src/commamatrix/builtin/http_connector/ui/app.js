@@ -1,24 +1,32 @@
 // builtin/http_connector/ui/app.js
 /** @typedef {{origin_type?: string, platform?: string, http_user_id?: number}} DialogOrigin */
-/** @typedef {{item_id: number|null, previous_item_id: number|null, item_type?: string, role?: string, content?: string, user?: string, origin?: DialogOrigin, created_at?: string|null, external_id?: string|null}} DialogItem */
+/** @typedef {{item_id: number|null, previous_item_id: number|null, item_type?: string, role?: string, content?: string, user?: string, origin?: DialogOrigin, created_at?: string|null, external_id?: string|null, meta?: Record<string, unknown>}} DialogItem */
 /** @typedef {{tool_name?: string, tool_call_id?: string}} StreamMeta */
 /** @typedef {{type?: string, item_id?: number|null, item_type?: string, role?: string, content?: string, error?: string, active?: boolean, previous_item_id?: number|null, stream_id?: string|null, meta?: StreamMeta}} StreamEvent */
 /* global hljs, marked, DOMPurify */
 (function(){
 "use strict";
 
-const DEBUG=true;
-function debug(message,data){if(DEBUG)console.log("[CommaMatrix UI] "+message,data??"")}
+const SERVER_ROOT="/commamatrix";
+function serverUrl(path){return SERVER_ROOT+path}
 window.__commamatrixUiLoaded=true;
 window.addEventListener("error",event=>{console.error("[CommaMatrix UI] uncaught error",event.error||event.message);const error=document.getElementById("auth-error");if(error)error.textContent="Interface error: "+event.message});
 window.addEventListener("unhandledrejection",event=>{console.error("[CommaMatrix UI] unhandled rejection",event.reason);const error=document.getElementById("auth-error");if(error)error.textContent="Interface error: "+(event.reason?.message||event.reason||"Unknown error")});
-debug("script loaded",{path:location.pathname,hasToken:Boolean(localStorage.getItem("commamatrix_auth_token"))});
 
 const messagesEl=document.getElementById("messages");
 const inputEl=document.getElementById("input");
+const fileInput=document.getElementById("file-input");
+const attachBtn=document.getElementById("attach-btn");
+const inputArea=document.getElementById("input-area");
+const dropOverlay=document.getElementById("drop-overlay");
+const attachmentPreviewsEl=document.getElementById("attachment-previews");
 const sendBtn=document.getElementById("send-btn");
 const statusEl=document.getElementById("status");
+const serverStatusBtn=document.getElementById("server-status-btn");
+const serverStatusLight=document.getElementById("server-status-light");
+const serverStatusPanel=document.getElementById("server-status-panel");
 const userLabel=document.getElementById("user-label");
+const headerMenuBtn=document.getElementById("header-menu-btn");
 const passwordBtn=document.getElementById("password-btn");
 const inviteBtn=document.getElementById("invite-btn");
 const logoutBtn=document.getElementById("logout-btn");
@@ -44,6 +52,15 @@ const passwordForm=document.getElementById("password-form");
 const passwordError=document.getElementById("password-error");
 const inviteOverlay=document.getElementById("invite-overlay");
 const inviteUrl=document.getElementById("invite-url");
+const attachmentOverlay=document.getElementById("attachment-overlay");
+const insertLinkChoice=document.getElementById("insert-link-choice");
+const uploadFileChoice=document.getElementById("upload-file-choice");
+const attachmentCancel=document.getElementById("attachment-cancel");
+const linkOverlay=document.getElementById("link-overlay");
+const linkForm=document.getElementById("link-form");
+const linkInput=document.getElementById("link-input");
+const linkError=document.getElementById("link-error");
+const linkCancel=document.getElementById("link-cancel");
 
 let inviteToken=new URLSearchParams(location.search).get("token");
 let authToken=localStorage.getItem("commamatrix_auth_token");
@@ -74,14 +91,82 @@ let deletedRootIds=new Set();
 let showDeletedBranches=false;
 let pendingBranch=null;
 let pendingMessage=null;
+let pendingAttachments=[];
+let pageDragDepth=0;
 let pendingRoot=false;
 let pendingRootContent="";
 let historyLoaded=false;
+let fileUploadAllowed=false;
+let serverStatusMessages=[];
+let statusPollTimer=null;
+let statusPanelOverride=null;
+let statusOverrideTimer=null;
+const STATUS_POLL_INTERVAL_MS=10000;
+const NO_PUBLIC_ADDRESS_MESSAGE="You cannot upload files for LLM: CommaMatrix is not visible from the Internet.";
 
 function setAuthLocked(locked){
   document.body.classList.toggle("auth-locked",locked);
   if(locked){authOverlay.classList.remove("hidden");authOverlay.style.display="flex"}
   else{authOverlay.classList.add("hidden");authOverlay.style.display="none"}
+}
+
+function setHeaderMenuOpen(open){
+  document.body.classList.toggle("header-menu-open",open);
+  headerMenuBtn.setAttribute("aria-expanded",String(open));
+  headerMenuBtn.setAttribute("aria-label",open?"Close account menu":"Open account menu");
+  headerMenuBtn.title=open?"Close account menu":"Open account menu";
+}
+
+function setStatusPanelVisible(visible){
+  serverStatusPanel.classList.toggle("visible",visible);
+  serverStatusBtn.setAttribute("aria-expanded",String(visible));
+}
+
+function renderServerStatusMessages(){
+  const messages=statusPanelOverride?[statusPanelOverride]:serverStatusMessages;
+  serverStatusPanel.replaceChildren();
+  for(const item of messages){
+    const message=document.createElement("div");message.className="server-status-message "+item.severity;message.textContent=item.message;serverStatusPanel.appendChild(message);
+  }
+}
+
+function updateServerStatus(data){
+  const messages=Array.isArray(data.messages)?data.messages.filter(item=>item&&typeof item.message==="string"&&["yellow","red"].includes(item.severity)).map(item=>({message:item.message,severity:item.severity})):[];
+  serverStatusMessages=messages;
+  fileUploadAllowed=data.file_upload_allowed===true;
+  uploadFileChoice.disabled=!fileUploadAllowed;
+  uploadFileChoice.title=fileUploadAllowed?"Upload a file":"File uploads require a public server address";
+  const severity=messages.some(item=>item.severity==="red")?"red":messages.length?"yellow":"green";
+  serverStatusLight.className="server-status-light "+severity;
+  renderServerStatusMessages();
+}
+
+function showTemporaryStatus(message,severity="yellow"){
+  statusPanelOverride={message,severity};
+  serverStatusLight.className="server-status-light "+severity;
+  renderServerStatusMessages();setStatusPanelVisible(true);
+  if(statusOverrideTimer)clearTimeout(statusOverrideTimer);
+  statusOverrideTimer=setTimeout(()=>{statusPanelOverride=null;statusOverrideTimer=null;renderServerStatusMessages();setStatusPanelVisible(false)},5000);
+}
+
+function showUploadBlocked(){showTemporaryStatus(NO_PUBLIC_ADDRESS_MESSAGE);}
+
+function stopStatusPolling(){if(statusPollTimer){clearInterval(statusPollTimer);statusPollTimer=null}if(statusOverrideTimer){clearTimeout(statusOverrideTimer);statusOverrideTimer=null}}
+
+async function pollServerStatus(){
+  if(!authToken)return;
+  try{
+    const {response,data,unauthorized}=await authJson(serverUrl("/api/status"));
+    if(!authToken||unauthorized)return;
+    if(response.ok)updateServerStatus(data);
+    else{fileUploadAllowed=false;uploadFileChoice.disabled=true}
+  }catch{fileUploadAllowed=false;uploadFileChoice.disabled=true}
+}
+
+function startStatusPolling(){
+  stopStatusPolling();
+  void pollServerStatus();
+  statusPollTimer=setInterval(()=>{void pollServerStatus()},STATUS_POLL_INTERVAL_MS);
 }
 
 function setAuthMode(mode){
@@ -95,38 +180,195 @@ function setAuthMode(mode){
   authPassword.autocomplete=register?"new-password":"current-password";
   authSubmit.textContent=register?"Register":"Sign in";
   authError.textContent="";
-  debug("auth mode changed",{mode});
 }
 
 function authHeaders(){return authToken?{Authorization:"Bearer "+authToken}:{};}
 
 function browserTimezone(){try{return Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC"}catch{return "UTC"}}
 
+function formatFileSize(size){if(!Number.isFinite(Number(size))||Number(size)<0)return "";const value=Number(size);if(value<1024)return value+" B";if(value<1024*1024)return (value/1024).toFixed(1)+" KB";if(value<1024*1024*1024)return (value/1024/1024).toFixed(1)+" MB";return (value/1024/1024/1024).toFixed(1)+" GB"}
+
+function isDirectResource(url){return typeof url==="string"&&(/^(data|https?|blob):/i.test(url))}
+function fileContentUrl(ref){return typeof ref==="string"&&ref?serverUrl("/files/")+encodeURIComponent(ref):null}
+
+function parseAttachmentContent(content){
+  let data;try{data=typeof content==="string"?JSON.parse(content):content}catch{return null}
+  if(!data||typeof data!=="object")return null;
+  const kind=data.image?"image":data.file?"file":data.type==="image"?"image":data.type==="file"?"file":null;
+  const value=(kind&&data[kind]&&typeof data[kind]==="object")?data[kind]:data;
+  const ref=value.ref||value.file_id||value.id||null;
+  const url=value.url||value.content_url||null;
+  if(!ref&&!url&&!value.name&&!value.filename&&!value.path)return null;
+  return {kind:kind||((value.mime_type||"").startsWith("image/")?"image":"file"),ref,name:value.name||value.filename||value.path||ref||"file",mime_type:value.mime_type||"",size:value.size,ext:value.ext||"",url,previewUrl:value.previewUrl||null}
+}
+
+function attachmentResourceUrl(info){
+  const candidate=info.previewUrl||info.url;
+  if(typeof candidate==="string"&&candidate){
+    if(candidate.startsWith(SERVER_ROOT+"/"))return candidate;
+    if(candidate.startsWith("/"))return serverUrl(candidate);
+    return candidate;
+  }
+  return fileContentUrl(info.ref);
+}
+
+async function protectedResourceUrl(url){
+  if(!url||isDirectResource(url))return url;
+  const response=await authFetch(url);
+  if(isUnauthorized(response))throw new Error("Authentication required")
+  if(!response.ok)throw new Error("File request failed")
+  return URL.createObjectURL(await response.blob());
+}
+
+function setResource(element,resource,property,onError){
+  if(!resource)return;
+  if(isDirectResource(resource)){element[property]=resource;return}
+  void protectedResourceUrl(resource).then(url=>{if(url)element[property]=url}).catch(onError);
+}
+
+function createAttachmentCard(info,{compact=false}={}){
+  const card=document.createElement("div");card.className="attachment-card"+(info.kind==="image"?" image-card":"")+(compact?" compact":"");
+  const resource=attachmentResourceUrl(info);
+  if(info.kind==="image"){
+    const image=document.createElement("img");image.alt=info.name||"Image";card.appendChild(image);
+    setResource(image,resource,"src",()=>{image.alt="Image unavailable"})
+  }else{
+    const icon=document.createElement("span");icon.className="attachment-icon";icon.textContent="FILE";card.appendChild(icon);
+  }
+  const details=document.createElement("span");details.className="attachment-info";
+  if(info.kind!=="image"){
+    const link=document.createElement("a");link.className="attachment-name";link.textContent=info.name||"File";link.download=info.name||"file";link.rel="noopener noreferrer";
+    setResource(link,resource,"href",()=>{link.textContent=(info.name||"File")+" (unavailable)"})
+    details.appendChild(link);
+  }else{const name=document.createElement("span");name.className="attachment-name";name.textContent=info.name||"Image";details.appendChild(name)}
+  if(info.size!==undefined&&info.size!==null){const size=document.createElement("span");size.className="attachment-size";size.textContent=formatFileSize(info.size);details.appendChild(size)}
+  card.appendChild(details);return card;
+}
+
+function addAttachmentMessage(content,kind){
+  const div=document.createElement("div");div.className="msg "+(kind==="image"?"image":"file");const info=parseAttachmentContent(content);
+  if(info&&(info.ref||info.url||kind==="file")){info.kind=kind||info.kind;div.appendChild(createAttachmentCard(info))}else div.textContent=kind==="image"?"Image: "+content:"File: "+content;
+  messagesEl.appendChild(div);scrollToBottom();return div;
+}
+
+function attachmentPayload(attachment){
+  const payload={type:attachment.kind,filename:attachment.name,mime_type:attachment.mime_type,ext:attachment.ext};
+  if(attachment.external)payload.url=attachment.url;else payload.file_id=attachment.file_id;
+  return payload;
+}
+
+function renderAttachmentPreviews(){
+  attachmentPreviewsEl.replaceChildren();
+  for(const attachment of pendingAttachments){
+    const preview=document.createElement("div");preview.className="attachment-preview "+(attachment.status||"")+(attachment.external?" external":"");
+    if(attachment.kind==="image"&&attachment.previewUrl){const image=document.createElement("img");image.src=attachment.previewUrl;image.alt=attachment.name;preview.appendChild(image)}else{const icon=document.createElement("span");icon.className="attachment-icon";icon.textContent=attachment.external?"LINK":"FILE";preview.appendChild(icon)}
+    const details=document.createElement("span");details.className="attachment-info";const name=document.createElement("span");name.className="attachment-name";name.textContent=attachment.name;details.appendChild(name);const status=document.createElement("span");status.className="attachment-status";status.textContent=attachment.status==="uploading"?"Uploading...":attachment.status==="failed"?attachment.error||"Upload failed":attachment.external?"External link":formatFileSize(attachment.size)||"Ready";details.appendChild(status);preview.appendChild(details);
+    const remove=document.createElement("button");remove.type="button";remove.className="attachment-remove";remove.textContent="×";remove.title="Remove attachment";remove.setAttribute("aria-label","Remove "+attachment.name);remove.addEventListener("click",()=>removePendingAttachment(attachment));preview.appendChild(remove);attachmentPreviewsEl.appendChild(preview);
+  }
+}
+
+function releasePreviewUrl(attachment){if(typeof attachment.previewUrl==="string"&&attachment.previewUrl.startsWith("blob:"))URL.revokeObjectURL(attachment.previewUrl)}
+function removePendingAttachment(attachment){const index=pendingAttachments.indexOf(attachment);if(index<0)return;releasePreviewUrl(attachment);pendingAttachments.splice(index,1);renderAttachmentPreviews()}
+function clearPendingAttachments(){for(const attachment of pendingAttachments)releasePreviewUrl(attachment);pendingAttachments=[];if(attachmentPreviewsEl)renderAttachmentPreviews()}
+
+function externalLinkAttachment(url){
+  let name="External link";let ext="";let kind="file";let mime_type="application/octet-stream";
+  try{
+    const parsed=new URL(url);const pathName=decodeURIComponent(parsed.pathname.split("/").pop()||"");if(pathName)name=pathName;else if(parsed.hostname)name=parsed.hostname;
+    ext=(pathName.match(/\.([a-z0-9]+)$/i)?.[1]||"").toLowerCase();
+    const imageMime={gif:"image/gif",jpeg:"image/jpeg",jpg:"image/jpeg",png:"image/png",svg:"image/svg+xml",webp:"image/webp",avif:"image/avif",bmp:"image/bmp"}[ext];
+    if(imageMime){kind="image";mime_type=imageMime}
+  }catch{}
+  return {external:true,url,previewUrl:url,name,mime_type,ext,kind,status:"ready"};
+}
+
+function addExternalLink(url){pendingAttachments.push(externalLinkAttachment(url));renderAttachmentPreviews();statusEl.textContent="Ready"}
+
+async function uploadFile(file){
+  if(!authToken){showAuth();return false}
+  if(!fileUploadAllowed){showUploadBlocked();return false}
+  const attachment={name:file.name||"file",size:file.size,mime_type:file.type||"application/octet-stream",kind:(file.type||"").startsWith("image/")?"image":"file",status:"uploading",previewUrl:URL.createObjectURL(file)};pendingAttachments.push(attachment);renderAttachmentPreviews();
+  const form=new FormData();form.append("file",file,attachment.name);form.append("purpose","user_data");
+  try{
+    const {response,data,unauthorized}=await authJson(serverUrl("/v1/files"),{method:"POST",body:form});
+    if(unauthorized)return false
+    if(!response.ok)throw new Error(data.error||data.detail||"Upload failed");
+    attachment.file_id=data.id||data.file_id;attachment.name=data.filename||data.name||attachment.name;attachment.mime_type=data.mime_type||attachment.mime_type;attachment.size=data.bytes??data.size_bytes??attachment.size;attachment.kind=attachment.mime_type.startsWith("image/")?"image":attachment.kind;attachment.url=data.content_url||data.url||fileContentUrl(attachment.file_id);attachment.ext=attachment.name.includes(".")?attachment.name.split(".").pop().toLowerCase():"";attachment.status="ready";
+  }catch(error){attachment.status="failed";attachment.error=error.message||"Upload failed"}
+  renderAttachmentPreviews();return attachment.status==="ready";
+}
+
+function uploadFiles(files){
+  const values=Array.from(files||[]);if(!values.length)return;
+  if(!fileUploadAllowed){showUploadBlocked();return}
+  for(const file of values)void uploadFile(file)
+}
+function hasDraggedContent(event){const transfer=event.dataTransfer;if(!transfer)return false;const types=Array.from(transfer.types||[]);return Boolean(transfer.files?.length||types.some(type=>["Files","text/uri-list","text/html","text/plain"].includes(type)))}
+function readTransferData(transfer,type){try{return transfer.getData(type)||""}catch{return ""}}
+function httpUrl(value){try{const raw=value.trim();const url=new URL(raw);return ["http:","https:"].includes(url.protocol)?raw:null}catch{return null}}
+function droppedUrl(event){
+  const transfer=event.dataTransfer;if(!transfer)return null;
+  const uriList=readTransferData(transfer,"text/uri-list");
+  for(const line of uriList.split(/\r?\n/)){const url=httpUrl(line.replace(/^#.*$/,""));if(url)return url}
+  const plainUrl=httpUrl(readTransferData(transfer,"text/plain"));if(plainUrl)return plainUrl;
+  const html=readTransferData(transfer,"text/html");if(html){try{const doc=new DOMParser().parseFromString(html,"text/html");const link=doc.querySelector("a")?.getAttribute("href")||doc.querySelector("img")?.getAttribute("src");const url=httpUrl(link||"");if(url)return url}catch{}}
+  return null;
+}
+function insertDroppedUrl(url){addExternalLink(url)}
+function setDropActive(active){inputArea.classList.toggle("drag-over",active);dropOverlay.setAttribute("aria-hidden",String(!active))}
+function resetPageDrag(){pageDragDepth=0;setDropActive(false)}
+function handlePageDragEnter(event){if(!hasDraggedContent(event))return;event.preventDefault();pageDragDepth+=1;setDropActive(true)}
+function handlePageDragOver(event){if(!hasDraggedContent(event))return;event.preventDefault();event.dataTransfer.dropEffect="copy";setDropActive(true)}
+function handlePageDragLeave(event){if(!pageDragDepth)return;event.preventDefault();pageDragDepth=Math.max(0,pageDragDepth-1);if(!pageDragDepth)setDropActive(false)}
+function handlePageDrop(event){event.preventDefault();resetPageDrag()}
+function handleDrop(event){
+  event.preventDefault();resetPageDrag();
+  const url=droppedUrl(event);if(url){insertDroppedUrl(url);return}
+  const files=event.dataTransfer?.files;if(files?.length)uploadFiles(files);else if(!fileUploadAllowed)showUploadBlocked();
+}
+
+function pendingItemMatches(item){
+  if(!pendingMessage||!isUserItem(item)||item.previous_item_id!==pendingMessage.parentId)return false;
+  if(item.item_type==="input"&&item.content===pendingMessage.content)return true;
+  const info=parseAttachmentContent(item.content);return Boolean(info&&pendingMessage.attachments?.some(attachment=>attachment.external?attachment.url===info.url:attachment.file_id===info.ref));
+}
+
 async function authFetch(url,options={}){
   const headers={...authHeaders(),...(options.headers||{})};
   return fetch(url,{...options,headers});
 }
 
+function expireSession(){clearAuth();showAuth("Your session has expired. Sign in again.")}
+function isUnauthorized(response){if(response.status!==401)return false;expireSession();return true}
+async function authJson(url,options={}){
+  const response=await authFetch(url,options);
+  const data=await response.json().catch(()=>({}));
+  return {response,data,unauthorized:isUnauthorized(response)};
+}
+
 function showAuth(message=""){
-  debug("show auth",{mode:inviteToken?"register":"login",message});
   setAuthMode(inviteToken?"register":"login");
   authError.textContent=message;
   setAuthLocked(true);
   authUsername.focus();
 }
 
+function clearPendingMessage(){pendingBranch=null;pendingMessage=null;pendingRoot=false;pendingRootContent=""}
+
 function clearAuth(){
   if(eventsAbortController)eventsAbortController.abort();
+  stopStatusPolling();statusPanelOverride=null;serverStatusMessages=[];fileUploadAllowed=false;uploadFileChoice.disabled=true;renderServerStatusMessages();setStatusPanelVisible(false);serverStatusLight.className="server-status-light gray";setHeaderMenuOpen(false);
   eventsTask=null;authToken=null;currentUser=null;historyLoaded=false;activeStreamId=null;
   sendBtn.textContent="Send";sendBtn.classList.remove("cancel");sendBtn.disabled=false;
   localStorage.removeItem("commamatrix_auth_token");
-  hideTyping();messagesEl.replaceChildren();itemsById=new Map();childrenByParent=new Map();selectedHeadId=null;newRootSelected=false;selectedLeafByNode=new Map();expandedNodes=new Set();deletedRootIds=new Set();showDeletedBranches=false;activeStreams={};streamingPreviews={};pendingBranch=null;pendingMessage=null;pendingRoot=false;pendingRootContent="";
+  clearPendingAttachments();
+  hideTyping();messagesEl.replaceChildren();itemsById=new Map();childrenByParent=new Map();selectedHeadId=null;newRootSelected=false;selectedLeafByNode=new Map();expandedNodes=new Set();deletedRootIds=new Set();showDeletedBranches=false;activeStreams={};streamingPreviews={};clearPendingMessage();
   passwordBtn.hidden=true;inviteBtn.hidden=true;logoutBtn.hidden=true;userLabel.textContent="";statusEl.textContent="Sign in required";
   renderBranchPanel();
 }
 
 function applyUser(user){
-  currentUser=user;loadDeletedBranches();showDeletedBranches=false;userLabel.textContent=user.username;passwordBtn.hidden=false;inviteBtn.hidden=!user.is_admin;logoutBtn.hidden=false;statusEl.textContent="Ready";setAuthLocked(false);
+  currentUser=user;loadDeletedBranches();showDeletedBranches=false;userLabel.textContent=user.username;passwordBtn.hidden=false;inviteBtn.hidden=!user.is_admin;logoutBtn.hidden=false;statusEl.textContent="Ready";setHeaderMenuOpen(false);setAuthLocked(false);
 }
 
 function deletedBranchesStorageKey(){
@@ -299,8 +541,7 @@ function selectBranchNode(itemId){
   const preferred=selectedLeafByNode.get(itemId);
   selectedHeadId=preferred!==undefined&&chainContains(preferred,itemId)?preferred:(latestVisibleItemId(itemId)||itemId);
   newRootSelected=false;
-  debug("branch selected",{itemId,selectedHeadId,preferred,visible:currentChain().filter(isVisibleItem).map(item=>item.item_id)});
-  pendingBranch=null;pendingMessage=null;pendingRoot=false;pendingRootContent="";expandUserAncestors(itemId);rememberCurrentSelection();renderHistory();closeBranchPanel();
+  clearPendingMessage();expandUserAncestors(itemId);rememberCurrentSelection();renderHistory();closeBranchPanel();
 }
 
 function groupForDate(timestamp){
@@ -422,7 +663,6 @@ function renderHistory(){
 /** @param {DialogItem} item */
 async function applyDialogItem(item){
   if(item.item_id===null||item.item_id===undefined||itemsById.has(item.item_id))return;
-  debug("dialog item",{itemId:item.item_id,previousItemId:item.previous_item_id,role:item.role,itemType:item.item_type,origin:item.origin,selectedHeadId,newRootSelected,pendingParentId:pendingMessage?.parentId});
   const parentMissing=item.previous_item_id!==null&&item.previous_item_id!==undefined&&!itemsById.has(item.previous_item_id);
   itemsById.set(item.item_id,item);
   if(item.previous_item_id!==null&&item.previous_item_id!==undefined){const children=childrenByParent.get(item.previous_item_id)||[];children.push(item.item_id);children.sort((a,b)=>compareItems(itemsById.get(a),itemsById.get(b)));childrenByParent.set(item.previous_item_id,children)}
@@ -431,7 +671,7 @@ async function applyDialogItem(item){
     return;
   }
   let shouldSelect=selectedHeadId===null||item.previous_item_id===selectedHeadId;
-  if(pendingMessage&&isUserItem(item)&&item.previous_item_id===pendingMessage.parentId&&item.content===pendingMessage.content){shouldSelect=true;newRootSelected=false;pendingMessage=null;pendingBranch=null;pendingRoot=false;pendingRootContent=""}
+  if(pendingItemMatches(item)){shouldSelect=true;newRootSelected=false;clearPendingMessage()}
   if(shouldSelect){selectedHeadId=item.item_id;rememberCurrentSelection();renderHistory()}
   else renderBranchPanel();
 }
@@ -464,7 +704,11 @@ function createUserEntry(item){
   const bubble=document.createElement("div");bubble.className="msg user";
   const role=document.createElement("div");role.className="role";role.textContent=displayUserName(item);bubble.appendChild(role);
   bubble.appendChild(createMessageMeta(item));
-  const content=document.createElement("div");content.className="message-content";content.textContent=item.content;bubble.appendChild(content);wrapper.appendChild(bubble);
+  const content=document.createElement("div");content.className="message-content";
+  if(item.item_type==="image_input"||item.item_type==="file_input"){
+    const info=parseAttachmentContent(item.content);if(info){info.kind=item.item_type==="image_input"?"image":"file";content.appendChild(createAttachmentCard(info,{compact:true}))}else content.textContent=item.content;
+  }else content.textContent=item.content;
+  bubble.appendChild(content);wrapper.appendChild(bubble);
   const actions=document.createElement("div");actions.className="message-actions";
   const siblings=branchSiblings(item);const index=siblings.findIndex(sibling=>sibling.item_id===item.item_id);
   if(siblings.length>1){
@@ -473,8 +717,10 @@ function createUserEntry(item){
     const count=document.createElement("span");count.className="branch-count";count.textContent=(index+1)+" / "+siblings.length;nav.appendChild(count);
     const next=document.createElement("button");next.type="button";next.textContent="→";next.title="Next branch";next.setAttribute("aria-label","Next branch");next.disabled=index<0||index>=siblings.length-1;next.addEventListener("click",()=>selectBranchNode(siblings[index+1].item_id));nav.appendChild(next);actions.appendChild(nav);
   }
-  const regenerate=document.createElement("button");regenerate.type="button";regenerate.textContent="↻";regenerate.title="Regenerate response";regenerate.setAttribute("aria-label","Regenerate response");regenerate.addEventListener("click",()=>regenerateBranch(item));actions.appendChild(regenerate);
-  const edit=document.createElement("button");edit.type="button";edit.textContent="Edit";edit.title="Edit message";edit.addEventListener("click",()=>editMessage(item,wrapper,content,actions));actions.appendChild(edit);
+  if(item.item_type==="input"){
+    const regenerate=document.createElement("button");regenerate.type="button";regenerate.textContent="↻";regenerate.title="Regenerate response";regenerate.setAttribute("aria-label","Regenerate response");regenerate.addEventListener("click",()=>regenerateBranch(item));actions.appendChild(regenerate);
+    const edit=document.createElement("button");edit.type="button";edit.textContent="Edit";edit.title="Edit message";edit.addEventListener("click",()=>editMessage(item,wrapper,content,actions));actions.appendChild(edit);
+  }
   wrapper.appendChild(actions);return wrapper;
 }
 
@@ -551,18 +797,13 @@ function addToolCall(name,args){
 }
 
 function addToolResult(content){
-  const value=typeof content==="string"?content:JSON.stringify(content,null,2);
+  const value=content===undefined||content===null?"":typeof content==="string"?content:JSON.stringify(content,null,2);
   if(!value.includes("\n")){const div=document.createElement("div");div.className="msg tool-result";const label=document.createElement("div");label.textContent="Tool Result";div.appendChild(label);div.appendChild(createPrettyBlock(value,null));messagesEl.appendChild(div);return}
   const details=document.createElement("details");details.className="msg tool-result";details.open=true;const summary=document.createElement("summary");summary.textContent="Tool Result";details.appendChild(summary);let lang=null;try{JSON.parse(value);lang="json"}catch{}details.appendChild(createPrettyBlock(value,lang));messagesEl.appendChild(details);
 }
 
-function addImageOutput(content){
-  const div=document.createElement("div");div.className="msg image";try{const data=JSON.parse(content);if(data.url&&data.url.startsWith("data:image")){const image=document.createElement("img");image.src=data.url;image.style.maxWidth="300px";image.style.borderRadius="4px";div.appendChild(image)}else div.textContent="Image: "+content}catch{div.textContent="Image: "+content}messagesEl.appendChild(div);
-}
-
-function addFileOutput(content){
-  const div=document.createElement("div");div.className="msg file";try{const data=JSON.parse(content);const icon=document.createElement("span");icon.className="icon";div.appendChild(icon);const span=document.createElement("span");span.textContent=(data.filename||data.name||data.path||"file")+(data.size?" ("+data.size+" bytes)":"");div.appendChild(span)}catch{const icon=document.createElement("span");icon.className="icon";div.appendChild(icon);const span=document.createElement("span");span.textContent=content;div.appendChild(span)}messagesEl.appendChild(div);
-}
+function addImageOutput(content){return addAttachmentMessage(content,"image")}
+function addFileOutput(content){return addAttachmentMessage(content,"file")}
 
 function addPlaceholder(type){const div=document.createElement("div");div.className="msg assistant";const placeholder=document.createElement("div");placeholder.className="placeholder";placeholder.textContent="["+type+"]";div.appendChild(placeholder);messagesEl.appendChild(div)}
 function addError(text){addMessage("error",text,null)}
@@ -586,6 +827,7 @@ function renderItem(item){
   hideTyping();
   const preview=streamingPreviews[item.item_type];if(preview){preview.remove();delete streamingPreviews[item.item_type]}
   for(const key of Object.keys(activeStreams)){const stream=activeStreams[key];if(stream.item_type===item.item_type&&stream.previous_item_id===item.previous_item_id){stream.element.remove();delete activeStreams[key]}}
+  if(item.meta?.is_tool_call_result&&!(["image_input","file_input"].includes(item.item_type))){addToolResult(item.content||"");return}
   switch(item.item_type){
     case "input":
     case "image_input":
@@ -613,35 +855,35 @@ function handleStreamChunk(data){
   scrollToBottom();
 }
 
-async function submitMessage(text,parentId,branch=null){
+async function submitMessage(text,parentId,branch=null,attachments=[]){
   if(!authToken){showAuth();return false}
   if(activeStreamId)return false;
   const previousItemId=parentId===null||parentId===undefined?null:parentId;
-  debug("submit message",{previousItemId,selectedHeadId,newRootSelected,historyLoaded,branch: Boolean(branch),contentLength:text.length});
-  pendingBranch=branch;pendingMessage={parentId:previousItemId,content:text};pendingRoot=!branch&&previousItemId===null;pendingRootContent=pendingRoot?text:"";statusEl.textContent="Sending...";sendBtn.disabled=true;
+  pendingBranch=branch;pendingMessage={parentId:previousItemId,content:text,attachments};pendingRoot=!branch&&previousItemId===null;pendingRootContent=pendingRoot?text:"";statusEl.textContent="Sending...";sendBtn.disabled=true;
   try{
-    const response=await authFetch("/api/messages?stream=1",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({content:text,previous_item_id:previousItemId,timezone:browserTimezone()})});
-    if(response.status===401){setProcessing(false);clearAuth();showAuth("Your session has expired. Sign in again.");pendingBranch=null;pendingMessage=null;pendingRoot=false;pendingRootContent="";return false}
-    if(!response.ok){setProcessing(false);const data=await response.json().catch(()=>({}));addError(data.error||data.detail||"Message was rejected");pendingBranch=null;pendingMessage=null;pendingRoot=false;pendingRootContent="";return false}
-    const data=await response.json();setProcessing(true,data.stream_id);showTyping();return true;
-  }catch(error){addError("Network error: "+error.message);pendingBranch=null;pendingMessage=null;pendingRoot=false;pendingRootContent="";setProcessing(false);return false}
+    const {response,data,unauthorized}=await authJson(serverUrl("/api/messages?stream=1"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({content:text,attachments:attachments.map(attachmentPayload),previous_item_id:previousItemId,timezone:browserTimezone()})});
+    if(unauthorized){setProcessing(false);clearPendingMessage();return false}
+    if(!response.ok){setProcessing(false);addError(data.error||data.detail||"Message was rejected");clearPendingMessage();return false}
+    setProcessing(true,data.stream_id);showTyping();return true;
+  }catch(error){addError("Network error: "+error.message);clearPendingMessage();setProcessing(false);return false}
 }
 
 async function send(){
-  const text=inputEl.value.trim();if(!text||activeStreamId)return;
-  inputEl.value="";inputEl.style.height="auto";
+  const text=inputEl.value.trim();if(activeStreamId)return;
+  const uploading=pendingAttachments.some(attachment=>attachment.status==="uploading");if(uploading){statusEl.textContent="Wait for uploads to finish";return}
+  const failed=pendingAttachments.some(attachment=>attachment.status!=="ready");if(failed){statusEl.textContent="Remove failed uploads";return}
+  const attachments=pendingAttachments.filter(attachment=>attachment.status==="ready"&&(attachment.file_id||attachment.external&&attachment.url));
+  if(!text&&!attachments.length)return;
   const fallbackParentId=latestGlobalVisibleId();
   const parentId=newRootSelected?null:(selectedHeadId??fallbackParentId);
-  debug("send selected parent",{selectedHeadId,newRootSelected,fallbackParentId,parentId,historyLoaded});
-  const sent=await submitMessage(text,parentId,null);if(!sent){inputEl.value=text;adjustInputHeight()}
+  const sent=await submitMessage(text,parentId,null,attachments);if(sent){inputEl.value="";inputEl.style.height="auto";clearPendingAttachments()}else adjustInputHeight();
 }
 
 async function cancelProcessing(){
   const streamId=activeStreamId;if(!streamId)return;
   setProcessing(false);
   try{
-    const response=await authFetch("/api/messages/"+streamId,{method:"DELETE"});
-    if(response.status===401){clearAuth();showAuth("Your session has expired. Sign in again.")}
+    await authJson(serverUrl("/api/messages/")+streamId,{method:"DELETE"});
   }catch(error){addError("Cancel request failed: "+error.message)}
 }
 
@@ -669,8 +911,7 @@ function editMessage(item,wrapper,content,actions){
 function newBranch(){
   if(activeStreamId)return;
   newRootSelected=true;selectedHeadId=null;
-  debug("new root selected",{historyLoaded,latestVisibleId:latestGlobalVisibleId()});
-  pendingBranch=null;pendingMessage=null;pendingRoot=false;pendingRootContent="";renderHistory();inputEl.focus();closeBranchPanel();
+  clearPendingMessage();renderHistory();inputEl.focus();closeBranchPanel();
 }
 
 /** @param {StreamEvent} data */
@@ -686,18 +927,16 @@ async function handleServerEvent(data){
 
 async function loadHistory(preferredHeadId=null){
   const knownItemIds=new Set(itemsById.keys());
-  debug("load history start",{selectedHeadId,newRootSelected,historyLoaded,knownItems:knownItemIds.size,pendingParentId:pendingMessage?.parentId,preferredHeadId});
-  const response=await authFetch("/api/history");
-  if(response.status===401){clearAuth();showAuth("Your session has expired. Sign in again.");return}
+  const {response,data,unauthorized}=await authJson(serverUrl("/api/history"));
+  if(unauthorized)return
   if(!response.ok)throw new Error("History request failed");
-  const data=await response.json();const previousSelected=selectedHeadId;rebuildGraph(data.items||[]);
+  const previousSelected=selectedHeadId;rebuildGraph(data.items||[]);
   const preferredItem=typeof preferredHeadId==="number"?itemsById.get(preferredHeadId):null;
   const preferredContinuesSelection=Boolean(preferredItem&&((selectedHeadId!==null&&chainContains(preferredItem.item_id,selectedHeadId))||(selectedHeadId===null&&!newRootSelected)));
-  debug("history loaded",{items:(data.items||[]).length,opaque:(data.items||[]).filter(isOpaqueItem).length,visibleRoots:visibleRoots().map(item=>item.item_id),previousSelected,newRootSelected,preferredContinuesSelection});
-  const pendingItem=pendingMessage?[...itemsById.values()].filter(item=>!knownItemIds.has(item.item_id)&&isUserItem(item)&&item.previous_item_id===pendingMessage.parentId&&item.content===pendingMessage.content).sort(compareItems).pop():null;
+  const pendingItem=pendingMessage?[...itemsById.values()].filter(item=>!knownItemIds.has(item.item_id)&&pendingItemMatches(item)).sort(compareItems).pop():null;
   const keepSelection=historyLoaded&&!pendingMessage&&previousSelected!==null&&isVisibleItem(itemsById.get(previousSelected));
-  if(pendingItem){selectedHeadId=latestVisibleItemId(pendingItem.item_id)||pendingItem.item_id;pendingMessage=null;pendingBranch=null;pendingRoot=false;pendingRootContent=""}else if(preferredContinuesSelection&&preferredItem)selectedHeadId=latestVisibleItemId(preferredItem.item_id)||preferredItem.item_id;else if(keepSelection)selectedHeadId=previousSelected;else if(!historyLoaded&&!pendingMessage)selectedHeadId=latestGlobalVisibleId();else if(!pendingMessage&&selectedHeadId!==null&&!itemsById.has(selectedHeadId))selectedHeadId=latestGlobalVisibleId();
-  historyLoaded=true;debug("history selection",{selectedHeadId,newRootSelected,visible:selectedVisibleId(),chain:currentChain().map(item=>({itemId:item.item_id,previousItemId:item.previous_item_id,opaque:isOpaqueItem(item)}))});rememberCurrentSelection();renderHistory();
+  if(pendingItem){selectedHeadId=latestVisibleItemId(pendingItem.item_id)||pendingItem.item_id;clearPendingMessage()}else if(preferredContinuesSelection&&preferredItem)selectedHeadId=latestVisibleItemId(preferredItem.item_id)||preferredItem.item_id;else if(keepSelection)selectedHeadId=previousSelected;else if(!historyLoaded&&!pendingMessage)selectedHeadId=latestGlobalVisibleId();else if(!pendingMessage&&selectedHeadId!==null&&!itemsById.has(selectedHeadId))selectedHeadId=latestGlobalVisibleId();
+  historyLoaded=true;rememberCurrentSelection();renderHistory();
 }
 
 async function handleEventStream(response){
@@ -712,8 +951,8 @@ async function handleEventStream(response){
 async function eventsLoop(){
   while(authToken){
     try{
-      eventsAbortController=new AbortController();const response=await authFetch("/api/events",{signal:eventsAbortController.signal});
-      if(response.status===401){clearAuth();showAuth("Your session has expired. Sign in again.");return}
+      eventsAbortController=new AbortController();const response=await authFetch(serverUrl("/api/events"),{signal:eventsAbortController.signal});
+      if(isUnauthorized(response))return
       if(!response.ok){await new Promise(resolve=>setTimeout(resolve,1000));continue}
       await loadHistory();await handleEventStream(response);
     }catch(error){if(!authToken||error.name==="AbortError")return;await new Promise(resolve=>setTimeout(resolve,1000))}
@@ -724,12 +963,11 @@ async function eventsLoop(){
 function startEvents(){if(!eventsTask)eventsTask=eventsLoop().finally(()=>{eventsTask=null})}
 
 async function loadCurrentUser(){
-  debug("load current user",{hasToken:Boolean(authToken)});
   if(!authToken){showAuth();return false}
-  const response=await authFetch("/api/me");
-  debug("current user response",{status:response.status});
-  if(!response.ok){clearAuth();showAuth();return false}
-  applyUser(await response.json());
+  const {response,data,unauthorized}=await authJson(serverUrl("/api/me"));
+  if(unauthorized||!response.ok){if(!unauthorized){clearAuth();showAuth()}return false}
+  applyUser(data);
+  startStatusPolling();
   try{await loadHistory()}catch(error){addError("Could not load history: "+error.message)}
   startEvents();
   return true;
@@ -743,34 +981,45 @@ function adjustInputHeight(){inputEl.style.height="auto";const maxHeight=window.
 
 function setupPasswordToggle(button){
   const input=document.getElementById(button.dataset.passwordTarget);
-  if(!input){debug("password toggle target missing",{target:button.dataset.passwordTarget});return}
-  debug("password toggle ready",{target:input.id});
-  button.addEventListener("click",()=>{const visible=input.type==="text";input.type=visible?"password":"text";button.textContent=visible?"Show":"Hide";button.setAttribute("aria-pressed",String(!visible));debug("password visibility changed",{target:input.id,visible:!visible})});
+  if(!input)return
+  button.addEventListener("click",()=>{const visible=input.type==="text";input.type=visible?"password":"text";button.textContent=visible?"Show":"Hide";button.setAttribute("aria-pressed",String(!visible))});
 }
 
+function closeAttachmentOverlay(){attachmentOverlay.classList.add("hidden")}
+function openAttachmentOverlay(){if(!authToken){showAuth();return}uploadFileChoice.disabled=!fileUploadAllowed;closeLinkOverlay();attachmentOverlay.classList.remove("hidden")}
+function closeLinkOverlay(){linkOverlay.classList.add("hidden");linkError.textContent=""}
+function openLinkOverlay(){if(!authToken){showAuth();return}closeAttachmentOverlay();linkForm.reset();linkError.textContent="";linkOverlay.classList.remove("hidden");linkInput.focus()}
+function chooseUpload(){closeAttachmentOverlay();if(!fileUploadAllowed){showUploadBlocked();return}fileInput.click()}
+
 async function registerOrLogin(event){
-  event.preventDefault();const username=authUsername.value.trim();const password=authPassword.value;authError.textContent="";debug("auth submit started",{mode:authMode,username});
+  event.preventDefault();const username=authUsername.value.trim();const password=authPassword.value;authError.textContent="";
   if(!username||!password){authError.textContent="Username and password are required";return}
   if(authMode==="register"&&password!==authConfirm.value){authError.textContent="Passwords do not match";return}
   authSubmit.disabled=true;
   try{
     if(authMode==="register"){
-      const response=await fetch("/api/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:inviteToken,username,password})});debug("register response",{status:response.status});const data=await response.json().catch(()=>({}));if(!response.ok){authError.textContent=data.detail||"Registration failed";return}history.replaceState({},"",location.pathname);inviteToken=null;authMode="login";setAuthMode("login");authUsername.value=username;authPassword.value="";authError.textContent="Account created. Sign in with your new password.";return;
+      const response=await fetch(serverUrl("/api/register"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:inviteToken,username,password})});const data=await response.json().catch(()=>({}));if(!response.ok){authError.textContent=data.detail||"Registration failed";return}history.replaceState({},"",location.pathname);inviteToken=null;authMode="login";setAuthMode("login");authUsername.value=username;authPassword.value="";authError.textContent="Account created. Sign in with your new password.";return;
     }
-    const response=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});debug("login response",{status:response.status});const data=await response.json().catch(()=>({}));if(!response.ok){authError.textContent=data.detail||"Sign in failed";return}authToken=data.access_token;localStorage.setItem("commamatrix_auth_token",authToken);debug("login token stored");await loadCurrentUser();authForm.reset();
+    const response=await fetch(serverUrl("/api/login"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});const data=await response.json().catch(()=>({}));if(!response.ok){authError.textContent=data.detail||"Sign in failed";return}authToken=data.access_token;localStorage.setItem("commamatrix_auth_token",authToken);await loadCurrentUser();authForm.reset();
   }catch(error){console.error("[CommaMatrix UI] auth request failed",error);authError.textContent="Network error: "+error.message}finally{authSubmit.disabled=false}
 }
 
 document.querySelectorAll(".password-toggle").forEach(setupPasswordToggle);
-authSubmit.addEventListener("click",()=>{debug("auth button clicked");void registerOrLogin({preventDefault(){}})});
-passwordBtn.addEventListener("click",()=>{passwordError.textContent="";passwordForm.reset();passwordOverlay.classList.remove("hidden")});
+headerMenuBtn.addEventListener("click",()=>setHeaderMenuOpen(!document.body.classList.contains("header-menu-open")));
+serverStatusBtn.addEventListener("click",()=>{const visible=serverStatusPanel.classList.contains("visible");if(!visible&&!statusPanelOverride&&!serverStatusMessages.length)return;setStatusPanelVisible(!visible)});
+passwordBtn.addEventListener("click",()=>{setHeaderMenuOpen(false);passwordError.textContent="";passwordForm.reset();passwordOverlay.classList.remove("hidden")});
 document.getElementById("password-cancel").addEventListener("click",()=>passwordOverlay.classList.add("hidden"));
-passwordForm.addEventListener("submit",async event=>{event.preventDefault();passwordError.textContent="";const next=document.getElementById("new-password").value;if(next!==document.getElementById("new-password-confirm").value){passwordError.textContent="Passwords do not match";return}try{const response=await authFetch("/api/password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({old_password:document.getElementById("old-password").value,new_password:next})});const data=await response.json().catch(()=>({}));if(response.status===401){logout();return}if(!response.ok){passwordError.textContent=data.detail||"Password change failed";return}passwordOverlay.classList.add("hidden")}catch(error){passwordError.textContent="Network error: "+error.message}});
-inviteBtn.addEventListener("click",async()=>{const response=await authFetch("/api/invite",{method:"POST"});const data=await response.json().catch(()=>({}));if(response.status===401){logout();return}if(!response.ok){addError(data.detail||"Could not create invitation");return}inviteUrl.textContent=data.url;inviteOverlay.classList.remove("hidden")});
+passwordForm.addEventListener("submit",async event=>{event.preventDefault();passwordError.textContent="";const next=document.getElementById("new-password").value;if(next!==document.getElementById("new-password-confirm").value){passwordError.textContent="Passwords do not match";return}try{const {response,data,unauthorized}=await authJson(serverUrl("/api/password"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({old_password:document.getElementById("old-password").value,new_password:next})});if(unauthorized)return;if(!response.ok){passwordError.textContent=data.detail||"Password change failed";return}passwordOverlay.classList.add("hidden")}catch(error){passwordError.textContent="Network error: "+error.message}});
+inviteBtn.addEventListener("click",async()=>{setHeaderMenuOpen(false);const {response,data,unauthorized}=await authJson(serverUrl("/api/invite"),{method:"POST"});if(unauthorized)return;if(!response.ok){addError(data.detail||"Could not create invitation");return}inviteUrl.textContent=data.url;inviteOverlay.classList.remove("hidden")});
 document.getElementById("invite-copy").addEventListener("click",async function(){await navigator.clipboard.writeText(inviteUrl.textContent);this.textContent="Copied";setTimeout(()=>{this.textContent="Copy link"},1200)});
 document.getElementById("invite-close").addEventListener("click",()=>inviteOverlay.classList.add("hidden"));
-logoutBtn.addEventListener("click",logout);authForm.addEventListener("submit",event=>{debug("auth form submitted");void registerOrLogin(event)});authForm.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();debug("auth form enter pressed");void registerOrLogin(event)}});sendBtn.addEventListener("click",()=>{if(activeStreamId)void cancelProcessing();else void send()});newBranchBtn.addEventListener("click",newBranch);activeBranchesBtn.addEventListener("click",()=>setBranchView(false));deletedBranchesBtn.addEventListener("click",()=>setBranchView(true));branchOpenBtn.addEventListener("click",openBranchPanel);branchCloseBtn.addEventListener("click",closeBranchPanel);branchBackdrop.addEventListener("click",closeBranchPanel);
+attachmentCancel.addEventListener("click",closeAttachmentOverlay);
+insertLinkChoice.addEventListener("click",openLinkOverlay);
+uploadFileChoice.addEventListener("click",chooseUpload);
+linkCancel.addEventListener("click",closeLinkOverlay);
+linkForm.addEventListener("submit",event=>{event.preventDefault();const url=httpUrl(linkInput.value);if(!url){linkError.textContent="Enter a valid HTTP or HTTPS URL";return}addExternalLink(url);closeLinkOverlay()});
+logoutBtn.addEventListener("click",logout);authForm.addEventListener("submit",event=>{void registerOrLogin(event)});sendBtn.addEventListener("click",()=>{if(activeStreamId)void cancelProcessing();else void send()});attachBtn.addEventListener("click",openAttachmentOverlay);fileInput.addEventListener("change",event=>{uploadFiles(event.target.files);fileInput.value=""});inputArea.addEventListener("drop",handleDrop);window.addEventListener("dragenter",handlePageDragEnter);window.addEventListener("dragover",handlePageDragOver);window.addEventListener("dragleave",handlePageDragLeave);window.addEventListener("drop",handlePageDrop);window.addEventListener("dragend",resetPageDrag);newBranchBtn.addEventListener("click",newBranch);activeBranchesBtn.addEventListener("click",()=>setBranchView(false));deletedBranchesBtn.addEventListener("click",()=>setBranchView(true));branchOpenBtn.addEventListener("click",openBranchPanel);branchCloseBtn.addEventListener("click",closeBranchPanel);branchBackdrop.addEventListener("click",closeBranchPanel);
 inputEl.addEventListener("keydown",event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();void send()}});inputEl.addEventListener("input",adjustInputHeight);window.addEventListener("resize",adjustInputHeight);
 
-debug("auth controls initialized",{form:Boolean(authForm),button:Boolean(authSubmit),username:Boolean(authUsername),password:Boolean(authPassword)});setAuthMode(authMode);renderBranchPanel();if(inviteToken){clearAuth();showAuth()}else void loadCurrentUser();
+setAuthMode(authMode);renderBranchPanel();if(inviteToken){clearAuth();showAuth()}else void loadCurrentUser();
 })();

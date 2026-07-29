@@ -8,12 +8,12 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from commamatrix.builtin.multi_dialog import (
+from commamatrix.builtin.multi_dialog import get_user_info
+from commamatrix.builtin.multi_user import (
     add_user_message_headers,
     describe_user_message_headers,
-    get_user_info,
-    multi_dialog_datetime_format,
-    multi_dialog_header_template,
+    user_header_datetime_format,
+    user_header_template,
 )
 from commamatrix.components.config import Config
 from commamatrix.components.dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
@@ -27,8 +27,16 @@ class TelegramOriginForMultiDialog(DialogOrigin):
     user_id: int
 
 
-def _agent(config: Config):
-    return SimpleNamespace(config=config)
+def _agent(config: Config, connector=None):
+    def resolve_for_origin(_origin):
+        if connector is None:
+            raise LookupError
+        return connector
+
+    return SimpleNamespace(
+        config=config,
+        connector_manager=SimpleNamespace(resolve_for_origin=resolve_for_origin),
+    )
 
 
 def _item() -> DialogItem:
@@ -45,8 +53,8 @@ def _item() -> DialogItem:
 @pytest.mark.asyncio
 async def test_user_message_header_is_added_to_a_transient_copy():
     agent = _agent(Config({
-        multi_dialog_header_template: "[{datetime} | {user}]",
-        multi_dialog_datetime_format: "%H:%M:%S %d.%m.%Y",
+        user_header_template: "[{datetime} | {user}]",
+        user_header_datetime_format: "%H:%M:%S %d.%m.%Y",
     }))
     item = _item()
     ctx = BeforeLlmCallCtx(run=RunCtx(agent=agent, origin=item.origin, user=item.user), dialog=[item], tools=[])
@@ -59,16 +67,15 @@ async def test_user_message_header_is_added_to_a_transient_copy():
 
 @pytest.mark.asyncio
 async def test_user_message_header_uses_connector_timezone():
-    agent = _agent(Config({
-        multi_dialog_header_template: "[{datetime} | {user}]",
-        multi_dialog_datetime_format: "%H:%M:%S %d.%m.%Y",
-    }))
-    item = _item()
-
     async def get_user_timezone(_origin):
         return ZoneInfo("Europe/Moscow")
 
     connector = SimpleNamespace(get_user_timezone=get_user_timezone)
+    agent = _agent(Config({
+        user_header_template: "[{datetime} | {user}]",
+        user_header_datetime_format: "%H:%M:%S %d.%m.%Y",
+    }), connector)
+    item = _item()
     ctx = BeforeLlmCallCtx(run=RunCtx(agent=agent, connector=connector, origin=item.origin, user=item.user), dialog=[item], tools=[])
 
     await add_user_message_headers(ctx)
@@ -86,12 +93,16 @@ async def test_user_info_uses_connector_for_platform():
     agent = SimpleNamespace(connector_manager=SimpleNamespace(resolve=lambda: [connector]))
     ctx = SimpleNamespace(run=SimpleNamespace(agent=agent))
 
-    assert await get_user_info("Елена", "telegram", ctx) == {"id": 12345, "username": "Елена"}
+    assert await get_user_info("telegram:Елена", ctx) == {
+        "id": 12345,
+        "username": "Елена",
+        "platform": "telegram",
+    }
 
 
 @pytest.mark.asyncio
 async def test_user_message_header_is_optional_and_instruction_is_dynamic():
-    agent = _agent(Config())
+    agent = _agent(Config(overrides={user_header_template: ""}))
     item = _item()
     ctx = BeforeLlmCallCtx(run=RunCtx(agent=agent, origin=item.origin, user=item.user), dialog=[item], tools=[])
     await add_user_message_headers(ctx)
@@ -100,6 +111,6 @@ async def test_user_message_header_is_optional_and_instruction_is_dynamic():
     assert item.content == "привет"
     assert describe_user_message_headers(InstructionCtx(run=run)) is None
 
-    agent.config.set(multi_dialog_header_template, "[{datetime}] {user}")
+    agent.config.set(user_header_template, "[{datetime}] {user}")
 
     assert describe_user_message_headers(InstructionCtx(run=run)) is not None

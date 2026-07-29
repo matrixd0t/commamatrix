@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from ..core.agent import Agent
     from .connector import Connector
     from .dialog import DialogItem, DialogOrigin
-    from .llm_adapter import LLMResponse, ToolCallResult, ToolCall
+    from .llm_adapter import LLM, LLMResponse, ToolCallResult, ToolCall
     from .tool import ToolDescriptor
 
 CtxT = TypeVar("CtxT")
@@ -60,6 +60,7 @@ class RunCtx:
     connector: Connector | None = None
     origin: DialogOrigin
     user: str
+    model: LLM | None = None
     run_id: str = field(default_factory=lambda: uuid4().hex)
     iteration: int = 0
     state: dict[str, Any] = field(default_factory=dict)
@@ -78,6 +79,7 @@ class RunCtx:
     """
 
     tool_output_tail: int | None = None
+    pending_input_items: list[DialogItem] = field(default_factory=list)
 
 
 @dataclass(slots=True, kw_only=True)
@@ -103,7 +105,6 @@ class BeforeRunCtx(BaseEventCtx):
 @dataclass(slots=True, kw_only=True)
 class BeforeLlmCallCtx(BaseEventCtx):
     run: RunCtx
-    model: str | None = None
     api_base: str | None = None
     api_protocol: str | None = None
     dialog: list[DialogItem]
@@ -121,6 +122,7 @@ class AfterLlmCallCtx(BaseEventCtx):
 class BeforeToolCallCtx(BaseEventCtx):
     run: RunCtx
     tool_call: ToolCall
+    follow_up_items: list[DialogItem] = field(default_factory=list)
     abort_tool_call: bool = False
     abort_reason: str = ""
 
@@ -344,7 +346,7 @@ Example::
 """
 
 before_llm_call = Hook[BeforeLlmCallCtx](HookEventType.BEFORE_LLM_CALL, BeforeLlmCallCtx)
-"""Fired before the LLM is called.  Mutate ``ctx.dialog``, ``ctx.model``,
+"""Fired before the LLM is called.  Mutate ``ctx.dialog``, ``ctx.run.model``,
 ``ctx.api_base``, ``ctx.tools``, or ``ctx.llm_call_params`` to influence the call.
 
 The decorated function must accept ``BeforeLlmCallCtx`` and return ``None``.
@@ -354,7 +356,7 @@ Example::
     @before_llm_call
     async def override_model(ctx: BeforeLlmCallCtx) -> None:
         if ctx.run.state.get("use_fast_model"):
-            ctx.model = "gpt-4o-mini"
+            ctx.run.model = LLM(model_name="gpt-4o-mini")
 
     @before_llm_call(after=override_model)
     async def add_model_specific_instructions(ctx: BeforeLlmCallCtx) -> None:

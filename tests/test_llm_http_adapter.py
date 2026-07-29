@@ -83,5 +83,6 @@ class TestResolveProtocol:
         adapter = LLMHTTPAdapter(agent=agent)
         origin = stub_origin()
         run = RunCtx(agent=agent, origin=origin, user="u")
-        ctx = BeforeLlmCallCtx(run=run, dialog=[], tools=[], model="claude-3")
+        run.model = "claude-3"
+        ctx = BeforeLlmCallCtx(run=run, dialog=[], tools=[])
         assert adapter._resolve_protocol(ctx) == ApiProtocol.ANTHROPIC_MESSAGES

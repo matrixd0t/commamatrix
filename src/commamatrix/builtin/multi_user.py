@@ -46,19 +46,11 @@ def _configured_timezone(agent: Agent) -> tzinfo:
 
 
 async def _user_timezone(ctx: BeforeLlmCallCtx, item: DialogItem) -> tzinfo:
-    connector = ctx.run.connector
-    manager = getattr(ctx.run.agent, "connector_manager", None)
-    if manager is not None:
-        try:
-            connector = manager.resolve_for_origin(item.origin)
-        except LookupError:
-            connector = None
-    resolver = getattr(connector, "get_user_timezone", None)
-    if resolver is not None:
-        resolved = await await_if_needed(resolver(item.origin))
-        if resolved is not None:
-            return resolved
-    return _configured_timezone(ctx.run.agent)
+    try:
+        connector = ctx.run.agent.connector_manager.resolve_for_origin(item.origin)
+    except LookupError:
+        return _configured_timezone(ctx.run.agent)
+    return resolved if (resolved := await await_if_needed(connector.get_user_timezone(item.origin))) else _configured_timezone(ctx.run.agent)
 
 
 def _render_header(item: DialogItem, template: str, datetime_format: str, user_timezone: tzinfo) -> str:
@@ -109,5 +101,4 @@ __all__ = [
     "user_header_datetime_format",
     "user_header_timezone",
     "describe_user_message_headers",
-    "agent_timezone"
 ]

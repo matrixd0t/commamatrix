@@ -2,8 +2,8 @@
 
 """Root lifecycle composite for Agent-owned services.
 
-AgentLifecycle takes a ready-made ordered list of Manager instances from
-Agent, wires their on_change callbacks, and provides start/stop/refresh
+AgentLifecycle takes a ready-made ordered list of agent-owned services from
+Agent, wires manager on_change callbacks, and provides start/stop/refresh
 entry points with transactional rollback support.
 """
 
@@ -12,17 +12,18 @@ from __future__ import annotations
 import asyncio
 
 from ..classes.manager import Manager, ServiceInstanceRegistry
+from ..classes.service import AbstractService
 from commamatrix.utils import await_if_needed
 
 
 class AgentLifecycle:
     """Root lifecycle composite. Receives an ordered children list from Agent.
 
-    Order: tool → hook → llm_adapter → storage → file_storage → service → connector.
+    Order: tool → hook → llm_adapter → storage → file_storage → service → connector → server.
     Supports transactional startup with rollback on failure.
     """
 
-    def __init__(self, children: list[Manager], registry: ServiceInstanceRegistry) -> None:
+    def __init__(self, children: list[AbstractService], registry: ServiceInstanceRegistry) -> None:
         self._children = children
         self._registry = registry
         self._refresh_lock = asyncio.Lock()
@@ -30,7 +31,8 @@ class AgentLifecycle:
         self._changed = False
         self._last_scope: tuple[str, ...] = ()
         for child in children:
-            child.on_change = self._mark_changed
+            if isinstance(child, Manager):
+                child.on_change = self._mark_changed
 
     @property
     def registry(self) -> ServiceInstanceRegistry:
@@ -47,13 +49,14 @@ class AgentLifecycle:
         if scope_key != self._last_scope:
             self._last_scope = scope_key
             for child in self._children:
-                child.set_scope(scope)
+                if isinstance(child, Manager):
+                    child.set_scope(scope)
             self._mark_changed()
 
     async def start(self) -> None:
         if self._started:
             return
-        started_children: list[Manager] = []
+        started_children: list[AbstractService] = []
         try:
             for child in self._children:
                 started_children.append(child)

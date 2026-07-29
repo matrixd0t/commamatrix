@@ -6,9 +6,10 @@ from json import dumps, loads
 from typing import Any
 
 from ...components.dialog import DialogItemType, DialogRole
-from ...components.file_storage import FileContentType
 from ...components.hook import BeforeLlmCallCtx
+from ...components.file_storage import DataType
 from ...components.llm_adapter import (
+    LLM,
     LLMResponse,
     LLMResponseBlock,
     LLMResponseReasoningBlock,
@@ -59,7 +60,7 @@ class ResponsesCodec(ApiCodec):
             )
         return text
 
-    async def build_request(self, *, model: str, ctx: BeforeLlmCallCtx) -> dict[str, Any]:
+    async def build_request(self, *, model: LLM | str, ctx: BeforeLlmCallCtx) -> dict[str, Any]:
         input_items: list[dict[str, Any]] = []
 
         for item in ctx.dialog:
@@ -106,14 +107,10 @@ class ResponsesCodec(ApiCodec):
                         })
 
                     case DialogItemType.IMAGE_INPUT | DialogItemType.IMAGE_OUTPUT:
-                        rendered = await self._file_context(
-                            ctx,
-                            item,
-                            modalities=FileContentType.IMAGE,
-                        )
+                        rendered = await self._file_context(ctx, item)
                         if rendered is None:
                             continue
-                        if rendered.modality is FileContentType.TEXT:
+                        if rendered.data_type is DataType.TEXT:
                             input_items.append({
                                 "role": DialogRole.USER.value,
                                 "content": rendered.content,
@@ -128,14 +125,10 @@ class ResponsesCodec(ApiCodec):
                             })
 
                     case DialogItemType.FILE_INPUT | DialogItemType.FILE_OUTPUT:
-                        rendered = await self._file_context(
-                            ctx,
-                            item,
-                            modalities=FileContentType.FILE,
-                        )
+                        rendered = await self._file_context(ctx, item)
                         if rendered is None:
                             continue
-                        if rendered.modality is FileContentType.TEXT:
+                        if rendered.data_type is DataType.TEXT:
                             input_items.append({
                                 "role": DialogRole.USER.value,
                                 "content": rendered.content,
@@ -146,21 +139,19 @@ class ResponsesCodec(ApiCodec):
                                 "content": [{
                                     "type": "input_file",
                                     "filename": rendered.name,
-                                    "file_data": rendered.content,
+                                    "file_url": rendered.content,
                                 }],
                             })
             except (KeyError, TypeError, ValueError):
                 continue
 
-        request = {"model": model, "input": input_items, **ctx.llm_call_params}
+        request = {"model": self._model_name(model), "input": input_items, **ctx.llm_call_params}
         if ctx.tools:
             request["tools"] = self.serialize_tools(ctx)
         return request
 
     def parse_response(self, body: dict[str, Any]) -> LLMResponse:
-        response = LLMResponse(
-            raw=body,
-        )
+        response = LLMResponse(raw=body)
 
         for output_item in body.get("output", ()):
             item_type = output_item.get("type")
@@ -234,14 +225,8 @@ class ResponsesCodec(ApiCodec):
         tm = ctx.run.agent.tool_manager
         return [{"type": "function", **t.schema, "name": tm.public_name(t)} for t in ctx.tools]
 
-    def parse_stream_event(
-        self,
-        event_type: str | None,
-        data: dict[str, Any],
-        acc: dict[str, Any],
-    ) -> StreamDelta | LLMResponseBlock | None:
+    def parse_stream_event(self, event_type: str | None, data: dict[str, Any], acc: dict[str, Any]) -> StreamDelta | LLMResponseBlock | None:
         etype = data.get("type", event_type)
-        # print(f"[responses codec] event type={etype} keys={list(data.keys())}")
 
         if etype == "response.created":
             response_obj = data.get("response", {})
@@ -361,11 +346,9 @@ class ResponsesCodec(ApiCodec):
         blocks: list[LLMResponseBlock] = []
         response_obj = acc.get("response", {})
         yielded_reasoning = acc.get("yielded_reasoning", False)
-        # print(f"[responses flush] yielded_reasoning={yielded_reasoning} output_items={len(response_obj.get('output', []))}")
 
         for output_item in response_obj.get("output", ()):
             item_type = output_item.get("type")
-            # print(f"[responses flush] item type={item_type}")
             if item_type == "reasoning" and not yielded_reasoning:
                 summary_text = self._extract_reasoning_text(output_item)
                 if summary_text:

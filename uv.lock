@@ -415,39 +415,31 @@ source = { editable = "." }
 dependencies = [
     { name = "aiofiles" },
     { name = "aiosqlite" },
+    { name = "bcrypt" },
     { name = "bm25s" },
     { name = "ddgs" },
     { name = "httpx" },
     { name = "matrix-fn-schema" },
     { name = "pydantic" },
+    { name = "pyjwt" },
     { name = "python-dotenv" },
+    { name = "python-multipart" },
+    { name = "rank-bm25" },
+    { name = "starlette" },
     { name = "trafilatura" },
+    { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
 all = [
     { name = "asyncpg" },
-    { name = "bcrypt" },
-    { name = "pyjwt" },
-    { name = "starlette" },
-    { name = "uvicorn" },
-]
-http = [
-    { name = "bcrypt" },
-    { name = "pyjwt" },
-    { name = "starlette" },
-    { name = "uvicorn" },
 ]
 postgres = [
     { name = "asyncpg" },
 ]
 test = [
-    { name = "bcrypt" },
-    { name = "pyjwt" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
-    { name = "starlette" },
-    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -460,23 +452,24 @@ requires-dist = [
     { name = "aiofiles" },
     { name = "aiosqlite" },
     { name = "asyncpg", marker = "extra == 'postgres'" },
-    { name = "bcrypt", marker = "extra == 'http'" },
+    { name = "bcrypt" },
     { name = "bm25s" },
-    { name = "commamatrix", extras = ["http"], marker = "extra == 'test'" },
-    { name = "commamatrix", extras = ["http", "postgres"], marker = "extra == 'all'" },
+    { name = "commamatrix", extras = ["postgres"], marker = "extra == 'all'" },
     { name = "ddgs", specifier = ">=9.14.4" },
     { name = "httpx" },
-    { name = "matrix-fn-schema", specifier = "==0.1.8" },
+    { name = "matrix-fn-schema", specifier = ">=0.1.9" },
     { name = "pydantic" },
-    { name = "pyjwt", marker = "extra == 'http'" },
+    { name = "pyjwt" },
     { name = "pytest", marker = "extra == 'test'" },
     { name = "pytest-asyncio", marker = "extra == 'test'" },
     { name = "python-dotenv" },
-    { name = "starlette", marker = "extra == 'http'" },
+    { name = "python-multipart" },
+    { name = "rank-bm25", specifier = ">=0.2.2" },
+    { name = "starlette" },
     { name = "trafilatura", specifier = ">=2.1.0" },
-    { name = "uvicorn", marker = "extra == 'http'" },
+    { name = "uvicorn" },
 ]
-provides-extras = ["http", "postgres", "test", "all"]
+provides-extras = ["postgres", "test", "all"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "commamatrix", extras = ["test"] }]
@@ -769,14 +762,14 @@ wheels = [
 
 [[package]]
 name = "matrix-fn-schema"
-version = "0.1.8"
+version = "0.1.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "docstring-parser" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/51/37/40477eb03097298e990b7f6976f88b24d2d5f886c5cfe2c16aa9d49f1b8e/matrix_fn_schema-0.1.8.tar.gz", hash = "sha256:46605a6d093b404a12bfee07eea6e5e72e77171b4eebca11284884cbf3681191", size = 6261, upload-time = "2026-07-27T21:47:02.357Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1a/44/720fe1a0653d9d9825f48ed53c149193016ca1536d683435bf49ce036011/matrix_fn_schema-0.1.9.tar.gz", hash = "sha256:fd6246259ce59cfdae3b15050cde0b35ecf87555b37d92de9d15e973f17cd166", size = 6368, upload-time = "2026-07-29T15:44:55.811Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d3/b5/fd65a6aef9806440e379cbbd98e79dab71c923ca07d56f88d47e4283589d/matrix_fn_schema-0.1.8-py3-none-any.whl", hash = "sha256:75b3c2524308e05de351f670bd1dbf56726e70a79794c69691370b7e5438bc8f", size = 6621, upload-time = "2026-07-27T21:47:01.545Z" },
+    { url = "https://files.pythonhosted.org/packages/56/27/8c85c641a0c412ed1c6ebf65e18252f31061fff52b6e122a4120e13b3080/matrix_fn_schema-0.1.9-py3-none-any.whl", hash = "sha256:0dc7181c17e574741cddfc0cd9f40691532dfac89ed142d8b877d4ae5ce80353", size = 6737, upload-time = "2026-07-29T15:44:54.986Z" },
 ]
 
 [[package]]
@@ -1054,12 +1047,33 @@ wheels = [
 ]
 
 [[package]]
+name = "python-multipart"
+version = "0.0.32"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5b/42/55c32bb9b12693c092ad250a0e82edb5b31ddeda6eb772de5f308b3804ad/python_multipart-0.0.32.tar.gz", hash = "sha256:be54b7f3fa167bb83e4fcd936b887b708f4e57fe75911c02aebf53efaf8d938e", size = 46881, upload-time = "2026-06-04T16:18:58.647Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/04/e8135ebd1ad02c56ec633277529b2602ff99ff634be76cdba5744cf554fd/python_multipart-0.0.32-py3-none-any.whl", hash = "sha256:ff6d3f776f16878c894e52e107296ffc890e913c611b1a4ec6c44e2821fe2e23", size = 30042, upload-time = "2026-06-04T16:18:57.319Z" },
+]
+
+[[package]]
 name = "pytz"
 version = "2026.2"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ff/46/dd499ec9038423421951e4fad73051febaa13d2df82b4064f87af8b8c0c3/pytz-2026.2.tar.gz", hash = "sha256:0e60b47b29f21574376f218fe21abc009894a2321ea16c6754f3cad6eb7cdd6a", size = 320861, upload-time = "2026-05-04T01:35:29.667Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ec/dd/96da98f892250475bdf2328112d7468abdd4acc7b902b6af23f4ed958ea0/pytz-2026.2-py2.py3-none-any.whl", hash = "sha256:04156e608bee23d3792fd45c94ae47fae1036688e75032eea2e3bf0323d1f126", size = 510141, upload-time = "2026-05-04T01:35:27.408Z" },
+]
+
+[[package]]
+name = "rank-bm25"
+version = "0.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fc/0a/f9579384aa017d8b4c15613f86954b92a95a93d641cc849182467cf0bb3b/rank_bm25-0.2.2.tar.gz", hash = "sha256:096ccef76f8188563419aaf384a02f0ea459503fdf77901378d4fd9d87e5e51d", size = 8347, upload-time = "2022-02-16T12:10:52.196Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/21/f691fb2613100a62b3fa91e9988c991e9ca5b89ea31c0d3152a3210344f9/rank_bm25-0.2.2-py3-none-any.whl", hash = "sha256:7bd4a95571adadfc271746fa146a4bcfd89c0cf731e49c3d1ad863290adbe8ae", size = 8584, upload-time = "2022-02-16T12:10:50.626Z" },
 ]
 
 [[package]]

@@ -15,12 +15,14 @@ from httpx import AsyncClient, HTTPError, HTTPStatusError
 from ...components.config import ConfigField
 from ...components.hook import BeforeLlmCallCtx
 from ...components.llm_adapter import (
+    LLM,
     LLMAdapter,
     LLMResponse,
     LLMResponseBlock,
     LLMResponseError,
     StreamDelta,
     StreamEnd,
+    llms,
 )
 from .codec import ApiCodec, ApiProtocol
 
@@ -38,11 +40,6 @@ anthropic_api_key = ConfigField[str](
     name="anthropic_api_key",
     default=lambda: os.getenv("ANTHROPIC_API_KEY", ""),
     description="Anthropic API key",
-)
-
-model = ConfigField[str](
-    name="llm_model",
-    description="Default model name",
 )
 
 api_base = ConfigField[str](
@@ -105,8 +102,11 @@ class LLMHTTPAdapter(LLMAdapter):
         except KeyError:
             raise RuntimeError(f"No codec registered for protocol: {protocol}")
 
-    def _resolve_model(self, ctx: BeforeLlmCallCtx) -> str:
-        return ctx.model or self.config.get(model)
+    @staticmethod
+    def _resolve_model(ctx: BeforeLlmCallCtx) -> LLM | str:
+        if ctx.run.model is None:
+            raise RuntimeError("No LLM selected for the current run")
+        return ctx.run.model
 
     def _resolve_api_base(self, ctx: BeforeLlmCallCtx) -> str:
         return ctx.api_base or self.config.get(api_base)
@@ -119,8 +119,9 @@ class LLMHTTPAdapter(LLMAdapter):
                 pass
         return self._detect_protocol(self._resolve_model(ctx))
 
-    def _detect_protocol(self, model_name: str) -> ApiProtocol:
-        if 'claude' in model_name:
+    def _detect_protocol(self, llm: LLM | str) -> ApiProtocol:
+        model_name = llm if isinstance(llm, str) else llm.model_name
+        if "claude" in model_name:
             return ApiProtocol.ANTHROPIC_MESSAGES
         return ApiProtocol(self.config.get(api_protocol))
 
@@ -146,30 +147,22 @@ class LLMHTTPAdapter(LLMAdapter):
 
         if actual_stream:
             body = codec.enable_streaming(body)
-            # from pprint import pp
-            # pp(body)
             headers["Accept"] = "text/event-stream"
             try:
-                # print(f"[LLM] Connecting stream: POST {url[:100]}...", file=sys.stderr)
                 async with self._client.stream("POST", url, json=body, headers=headers, timeout=self._stream_timeout) as resp:
                     if resp.status_code >= 400:
                         err_body = (await resp.aread()).decode(errors="replace")
                         print(f"[LLM] ERROR: stream failed ({resp.status_code}): {err_body[:500]}", file=sys.stderr)
                         raise LLMResponseError(f"LLM HTTP stream failed ({resp.status_code}): {err_body}")
-                    # print(f"[LLM] Stream connected ({resp.status_code}), reading events...", file=sys.stderr)
                     acc: dict[str, Any] = {}
                     event_count = 0
                     async for etype, data in self._iter_sse_events(resp):
                         event_count += 1
                         result = codec.parse_stream_event(etype, data, acc)
                         if result is not None:
-                            # print(f"[ask_llm] {type(result).__name__}")
                             yield result
-                    # print(f"[ask_llm] SSE ended ({event_count} events), acc keys={list(acc.keys())} reasoning_buf={len(acc.get('reasoning_buf',''))} text_buf={len(acc.get('text_buf',''))}")
                     blocks, end = codec.flush_stream(acc)
-                    # print(f"[ask_llm] flush_stream -> {len(blocks)} blocks, stop={end.stop_reason}")
                     for block in blocks:
-                        # print(f"[ask_llm] yield block {type(block).__name__} len={len(block.content_str())}")
                         yield block
                     yield end
             except LLMResponseError:
@@ -181,7 +174,6 @@ class LLMHTTPAdapter(LLMAdapter):
                 print(f"[LLM] ERROR: unexpected stream error: {type(exc).__name__}: {exc}", file=sys.stderr)
                 raise
         else:
-            print(f"[LLM] Non-streaming request: POST {url[:100]}...", file=sys.stderr)
             try:
                 response = await self._client.post(url, json=body, headers=headers, timeout=self._request_timeout)
                 response.raise_for_status()
@@ -241,12 +233,7 @@ class LLMHTTPAdapter(LLMAdapter):
 
     @property
     def _stream_timeout(self) -> httpx.Timeout:
-        return httpx.Timeout(
-            connect=10.0,
-            read=self.config.get(stream_read_timeout),
-            write=10.0,
-            pool=10.0,
-        )
+        return httpx.Timeout(connect=10.0, read=self.config.get(stream_read_timeout), write=10.0, pool=10.0)
 
     @property
     def _request_timeout(self) -> float:

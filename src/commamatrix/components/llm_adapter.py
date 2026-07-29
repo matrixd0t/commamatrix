@@ -13,7 +13,9 @@ from ..utils import to_jsonable
 from ..core.classes.service import AbstractService
 from ..core.classes.manager import ServiceInstanceManager
 from ..core.classes.source import PythonServiceSource
+from .config import ConfigField
 from .dialog import DialogItem, DialogItemType, DialogRole, DialogOrigin
+from .file_storage import DataType
 
 if TYPE_CHECKING:
     from .hook import BeforeLlmCallCtx
@@ -32,6 +34,45 @@ class LLMResponseError(LLMError):
 
 class LLMTruncatedError(LLMError):
     ...
+
+
+def _normalize_modalities(value: Any) -> set[DataType]:
+    if value is None:
+        return set()
+    if isinstance(value, (DataType, str)):
+        value = (value,)
+    return {
+        modality if isinstance(modality, DataType) else DataType(modality)
+        for modality in value
+    }
+
+
+@dataclass(slots=True, kw_only=True)
+class LLMModalities:
+    input: set[DataType] = field(default_factory=lambda: {DataType.TEXT})
+    output: set[DataType] = field(default_factory=lambda: {DataType.TEXT})
+
+    def __post_init__(self) -> None:
+        self.input = _normalize_modalities(self.input)
+        self.output = _normalize_modalities(self.output)
+
+
+@dataclass(slots=True, kw_only=True)
+class LLM:
+    model_name: str
+    modalities: LLMModalities | dict[str, Any] = field(default_factory=LLMModalities)
+    meta: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if isinstance(self.modalities, dict):
+            self.modalities = LLMModalities(**self.modalities)
+
+
+llms = ConfigField[list[LLM]](
+    name="llms",
+    default=lambda: [],
+    description="Available LLM models; the first agentic model is selected by default",
+)
 
 
 @dataclass(slots=True, kw_only=True)

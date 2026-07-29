@@ -26,6 +26,7 @@ from commamatrix.components.hook import (
     RunCtx,
 )
 from commamatrix.components.llm_adapter import (
+    LLM,
     LLMAdapter,
     LLMAdapterManager,
     LLMResponse,
@@ -181,6 +182,7 @@ def _make_run_ctx(agent: Agent, connector: RecordingConnector | None = None) -> 
         connector=connector,
         origin=stub_origin(),
         user="test_user",
+        model=LLM(model_name="test-model"),
     )
 
 

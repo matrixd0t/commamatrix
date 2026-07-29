@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any
+import json
 
 from ..components.dialog import DialogOrigin, ORIGIN_REGISTRY
 from ..components.hook import AfterSendCtx, BeforeToolCallCtx, after_send
@@ -27,9 +27,9 @@ def describe_dialog_switch(ctx: InstructionCtx) -> str:
     """Explain how to switch dialog origins."""
     return '''
 # Switching dialogs
-Use `dialogs_switch` with the `origin_type` value and identity fields listed by `dialogs_get_origins`.
-The `fields` object must contain only origin identity fields, such as `http_user_id`.
-Never put response text, `message`, or `content` into `fields`. Do not guess user name or id: if unknown, use get_user_info().
+Use `dialogs_switch` with the `origin_type` value and a JSON string in `fields_json` containing the identity fields listed by `dialogs_get_origins`.
+The decoded `fields_json` object must contain only origin identity fields, such as `http_user_id`.
+Never put response text, `message`, or `content` into `fields_json`. Do not guess user name or id: if unknown, use get_user_info().
 After `dialogs_switch` returns `OK`, send the user-facing response normally.
 '''
 
@@ -91,8 +91,7 @@ async def get_origins(platform: str = "any") -> str:
 
 @tool(alias="dialogs")
 async def get_user_info(user_name_or_id: str, ctx: BeforeToolCallCtx) -> dict[str, int | str]:
-    """
-    Get user-related information: id, username and platform."""
+    """Get user-related information: id, username and platform."""
     if not isinstance(user_name_or_id, str) or not user_name_or_id.strip():
         return {"error": "user_name_or_id is required"}
     user_name_or_id = user_name_or_id.strip()
@@ -137,20 +136,24 @@ async def get_user_info(user_name_or_id: str, ctx: BeforeToolCallCtx) -> dict[st
 
 
 @tool(alias="dialogs")
-async def switch(origin_type: str, fields: dict[str, Any], ctx: BeforeToolCallCtx) -> str:
-    """Route the next response; fields must contain only origin identity fields."""
+async def switch(origin_type: str, fields_json: str, ctx: BeforeToolCallCtx) -> str:
+    """Route the next response; fields_json must be a JSON object containing only origin identity fields."""
     origin_cls = _resolve_origin_class(origin_type)
     if origin_cls is None:
         return f"Unknown origin type: {origin_type}\nAvailable origins:\n{get_origins()}"
+    try:
+        fields = json.loads(fields_json)
+    except (json.JSONDecodeError, TypeError):
+        return f"Invalid fields_json for origin type {origin_type!r}; expected a JSON object:\n{_origin_help(origin_cls)}"
     if not isinstance(fields, dict):
-        return f"Invalid fields for origin type {origin_type!r}; expected a dictionary:\n{_origin_help(origin_cls)}"
+        return f"Invalid fields_json for origin type {origin_type!r}; expected a JSON object:\n{_origin_help(origin_cls)}"
     allowed_fields = set(origin_cls.model_fields) - set(DialogOrigin.model_fields)
     unknown_fields = set(fields) - allowed_fields
     if unknown_fields:
         return (
-            f"Invalid fields for origin type {origin_type!r}: {sorted(unknown_fields)}\n"
+            f"Invalid fields_json for origin type {origin_type!r}: {sorted(unknown_fields)}\n"
             f"Expected fields:\n{_origin_help(origin_cls)}\n"
-            "Do not include response text in fields."
+            "Do not include response text in fields_json."
         )
     try:
         origin = origin_cls.model_validate(fields)

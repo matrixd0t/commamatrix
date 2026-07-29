@@ -58,7 +58,8 @@ class SimpleFileStorage(FileStorage):
         path = await self._resolve_path(file_id)
         if path is None:
             return None
-        return await open(path, 'rb').read()
+        async with open(path, 'rb') as file:
+            return await file.read()
 
     async def delete(self, file_id: str) -> bool:
         path = await self._resolve_path(file_id)

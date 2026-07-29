@@ -345,7 +345,7 @@ from commamatrix import BeforeLlmCallCtx, before_llm_call
 async def choose_model(ctx: BeforeLlmCallCtx) -> None:
     """Choose a model for a particular user or conversation."""
     if ctx.run.state.get("use_fast_model"):
-        ctx.model = "openai/gpt-4o-mini"
+        ctx.run.model = "openai/gpt-4o-mini"
 ```
 
 Use the hook context matching the decorator. To inspect exact context fields,

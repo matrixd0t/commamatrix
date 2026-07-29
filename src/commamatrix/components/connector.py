@@ -97,7 +97,6 @@ class Connector(AbstractService, Generic[OrgT]):
     @abstractmethod
     async def send(self, origin: DialogOrigin, item: DialogItem) -> str:
         """Render an item and return its external ID, or an empty string."""
-        ...
 
     async def publish_item(self, origin: DialogOrigin, item: DialogItem) -> None:
         """Publish a persisted item to passive subscribers when supported."""
@@ -125,15 +124,12 @@ class Connector(AbstractService, Generic[OrgT]):
 
 @dataclass(frozen=True, slots=True)
 class ConnectorDescriptor(ServiceDescriptor):
-    """Extends ServiceDescriptor with connector_cls for direct
-    Connector instantiation."""
-
+    """Extends ServiceDescriptor with connector_cls for direct Connector instantiation."""
     connector_cls: type[Connector]
 
 
 class PythonConnectorSource(PythonSource[ConnectorDescriptor]):
-    """Scans scope for concrete Connector subclasses and builds
-    ConnectorDescriptors for each."""
+    """Scans scope for concrete Connector subclasses and builds ConnectorDescriptors for each."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -154,8 +150,10 @@ class PythonConnectorSource(PythonSource[ConnectorDescriptor]):
 
 
 class ConnectorManager(ServiceInstanceManager[Connector]):
-    """Manages connector instances. Wires agent.handle on each connector
-    during creation and provides resolve() to retrieve all active connectors."""
+    """
+    Manages connector instances.
+    Wires agent.handle on each connector during creation and provides resolve() to retrieve all active connectors.
+    """
 
     def __init__(self, agent: Agent, **kwargs: object) -> None:
         super().__init__(agent, source=PythonConnectorSource(), **kwargs)

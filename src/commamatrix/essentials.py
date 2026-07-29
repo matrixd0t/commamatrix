@@ -27,7 +27,7 @@ async def setup(agent: Agent) -> None:
         prefix + ".builtin.codeact",
         prefix + ".builtin.self_extension",
         prefix + ".builtin.web_utils",
-        prefix + ".builtin.io_tools",
+        prefix + ".builtin.data_tools",
         prefix + ".builtin.multi_dialog",
     ]
     try:
@@ -35,6 +35,7 @@ async def setup(agent: Agent) -> None:
         import jwt  # noqa: F401
         import starlette  # noqa: F401
         import uvicorn  # noqa: F401
+        import python_multipart  # noqa: F401
 
         to_add.append(prefix + ".builtin.http_connector")
     except ImportError:
