@@ -3,23 +3,26 @@
 from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
+from pathlib import Path
 import aiosqlite
 
 from .sql_storage import SqlStorage
 from ...components.config import ConfigField
+from ...utils import commamatrix_dir
 
 if TYPE_CHECKING:
     from ...core.agent import Agent
 
-sqlite_path = ConfigField[str](name="sqlite_path", default="db.sqlite", description="Path to SQLite database file")
+sqlite_path = ConfigField[str](name="sqlite_path", default="db.sqlite", description="Database file under commamatrix_dir")
 
 
 class SqliteStorage(SqlStorage):
     def __init__(self, agent: Agent) -> None:
         super().__init__(agent)
-        self._path = self.config.get(sqlite_path)
+        self._path = str(Path(self.config.get(commamatrix_dir)) / self.config.get(sqlite_path))
 
     async def _connect(self) -> aiosqlite.Connection:
+        Path(self._path).parent.mkdir(parents=True, exist_ok=True)
         db = await aiosqlite.connect(self._path)
         db.row_factory = aiosqlite.Row
         return db

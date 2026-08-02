@@ -30,7 +30,7 @@ from ...components.dialog import DialogItem, DialogItemType, DialogOrigin, Dialo
 from ...components.file_storage import normalize_file_id
 from ...components.hook import OnParsedCtx
 from ...components.llm_adapter import StreamDelta
-from ...components.server import SERVER_ROOT, http_external_url
+from ...components.server import http_external_url
 from .auth import AuthError, Authorizer
 
 if TYPE_CHECKING:
@@ -127,6 +127,11 @@ class HttpConnector(Connector[HttpOrigin]):
         return self._request_streaming.get()
 
     @property
+    def app(self) -> Any:
+        """Return the shared Starlette application hosting this connector's routes."""
+        return self.agent.http_server.app
+
+    @property
     def base_url(self) -> str:
         return self.agent.http_server.base_url
 
@@ -135,26 +140,26 @@ class HttpConnector(Connector[HttpOrigin]):
         auth = self.authorizer.requires_auth
         admin = self.authorizer.requires_admin
         self._route_handles.extend([
-            server.register_route(f"{SERVER_ROOT}/", self._index),
-            server.register_route(f"{SERVER_ROOT}/invite", self._index),
-            server.register_route(f"{SERVER_ROOT}/health", self._health),
-            server.register_route(f"{SERVER_ROOT}/api/login", self._login, methods=["POST"]),
-            server.register_route(f"{SERVER_ROOT}/api/register", self._register, methods=["POST"]),
-            server.register_route(f"{SERVER_ROOT}/api/me", auth(self._me)),
-            server.register_route(f"{SERVER_ROOT}/api/status", auth(self._status)),
-            server.register_route(f"{SERVER_ROOT}/api/password", auth(self._change_password), methods=["POST"]),
-            server.register_route(f"{SERVER_ROOT}/api/invite", admin(self._create_invite), methods=["POST"]),
-            server.register_route(f"{SERVER_ROOT}/api/messages", auth(self._handle_message), methods=["POST"]),
-            server.register_route(f"{SERVER_ROOT}/api/messages/{{stream_id:str}}", auth(self._cancel_message), methods=["DELETE"]),
-            server.register_route(f"{SERVER_ROOT}/v1/files", auth(self._handle_file_upload), methods=["POST"]),
-            server.register_route(f"{SERVER_ROOT}/api/files", auth(self._handle_file_upload), methods=["POST"]),
-            server.register_route(f"{SERVER_ROOT}/v1/files/{{file_id:str}}/content", auth(self._handle_file_content)),
-            server.register_route(f"{SERVER_ROOT}/api/files/{{file_id:str}}/content", auth(self._handle_file_content)),
-            server.register_route(f"{SERVER_ROOT}/v1/files/{{file_id:str}}", auth(self._handle_file_metadata)),
-            server.register_route(f"{SERVER_ROOT}/api/files/{{file_id:str}}", auth(self._handle_file_metadata)),
-            server.register_route(f"{SERVER_ROOT}/api/events", auth(self._handle_events)),
-            server.register_route(f"{SERVER_ROOT}/api/history", auth(self._handle_history)),
-            server.register_mount(f"{SERVER_ROOT}/ui", StaticFiles(directory=str(self._ui_path.parent)), name="http-ui"),
+            server.register_route("/", self._index),
+            server.register_route("/invite", self._index),
+            server.register_route("/health", self._health),
+            server.register_route("/api/login", self._login, methods=["POST"]),
+            server.register_route("/api/register", self._register, methods=["POST"]),
+            server.register_route("/api/me", auth(self._me)),
+            server.register_route("/api/status", auth(self._status)),
+            server.register_route("/api/password", auth(self._change_password), methods=["POST"]),
+            server.register_route("/api/invite", admin(self._create_invite), methods=["POST"]),
+            server.register_route("/api/messages", auth(self._handle_message), methods=["POST"]),
+            server.register_route("/api/messages/{stream_id:str}", auth(self._cancel_message), methods=["DELETE"]),
+            server.register_route("/v1/files", auth(self._handle_file_upload), methods=["POST"]),
+            server.register_route("/api/files", auth(self._handle_file_upload), methods=["POST"]),
+            server.register_route("/v1/files/{file_id:str}/content", auth(self._handle_file_content)),
+            server.register_route("/api/files/{file_id:str}/content", auth(self._handle_file_content)),
+            server.register_route("/v1/files/{file_id:str}", auth(self._handle_file_metadata)),
+            server.register_route("/api/files/{file_id:str}", auth(self._handle_file_metadata)),
+            server.register_route("/api/events", auth(self._handle_events)),
+            server.register_route("/api/history", auth(self._handle_history)),
+            server.register_mount("/ui", StaticFiles(directory=str(self._ui_path.parent)), name="http-ui"),
         ])
 
     async def _index(self, _request: Request) -> Response:
@@ -237,9 +242,9 @@ class HttpConnector(Connector[HttpOrigin]):
             return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
         return JSONResponse({"status": "ok"})
 
-    async def _create_invite(self, request: Request) -> Response:
+    async def _create_invite(self, _request: Request) -> Response:
         token = await self.authorizer.create_invite()
-        url = str(request.base_url).rstrip("/") + f"{SERVER_ROOT}/invite?token={token}"
+        url = f"{self.base_url}/invite?token={token}"
         return JSONResponse({"url": url})
 
     async def _cancel_message(self, request: Request) -> Response:

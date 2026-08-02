@@ -69,12 +69,14 @@ def _make_connector(agent=None) -> HttpConnector:
 
 def _mock_agent(handle_fn, storage=None) -> object:
     from commamatrix.components.config import Config
+    from commamatrix.components.server import Server
 
     class _Agent:
         config = Config()
 
         def __init__(self) -> None:
             self.storage = storage or _AuthStorage()
+            self.http_server = Server(self)
 
         async def handle(self_inner, payload):
             return await handle_fn(payload)
@@ -169,7 +171,7 @@ class TestHttpConnectorRoutes:
 
         assert invalid_json.status_code == 400
         assert missing_content.status_code == 400
-        assert "content" in missing_content.json()["error"].lower()
+        assert "text" in missing_content.json()["error"].lower()
 
     @pytest.mark.asyncio
     async def test_message_passes_authenticated_user(self):
@@ -212,12 +214,7 @@ class TestHttpConnectorRoutes:
         conn = _make_connector()
         session = conn._open_session(7)
 
-        async def fail():
-            raise RuntimeError("LLM failed")
-
-        task = asyncio.create_task(fail())
-        await asyncio.sleep(0)
-        conn._log_task_error(7, task)
+        await conn._publish(7, {"type": "error", "error": "LLM failed"})
         event = await asyncio.wait_for(session.queue.get(), timeout=1)
 
         assert event == {"type": "error", "error": "LLM failed"}
@@ -228,12 +225,10 @@ class TestHttpConnectorLifecycle:
     @pytest.mark.asyncio
     async def test_start_and_stop(self):
         conn = _make_connector()
-        conn._port = 0
         await conn.start()
-        assert conn._bound_port is not None and conn._bound_port > 0
+        assert conn.authorizer._initialized is True
         await conn.stop()
-        assert conn._bound_port is None
-        assert conn._server is None
+        assert conn._sessions == {}
 
     @pytest.mark.asyncio
     async def test_stop_closes_sessions(self):

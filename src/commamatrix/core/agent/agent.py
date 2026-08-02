@@ -68,7 +68,7 @@ from ..extensions import (
     ExtensionRuntimeError,
     discover_plugin_targets,
 )
-from ...utils import FP
+from ...utils import FP, commamatrix_dir
 from .runner import AgentRunner
 from .lifecycle import AgentLifecycle
 
@@ -94,8 +94,8 @@ http_timeout = ConfigField[int](
 
 plugins_dir = ConfigField[str](
     name="plugins_dir",
-    default="commamatrix_plugins",
-    description="Directory to load extensions from when auto_load_plugins is True",
+    default="plugins",
+    description="Subdirectory of commamatrix_dir to load extensions from when auto_load_plugins is True",
 )
 
 agentic_model = ConfigField[str](
@@ -157,9 +157,12 @@ class Agent:
         if self._auto_load_plugins:
             self._extension_runtime.apply(self._workspace_plugin_targets(), operation="add")
 
-    @staticmethod
-    def _workspace_plugin_targets() -> list[str]:
-        root = Path.cwd() / "commamatrix_plugins"
+    def _workspace_plugin_targets(self) -> list[str]:
+        root = (
+            Path.cwd()
+            / self.config.get(commamatrix_dir)
+            / self.config.get(plugins_dir)
+        )
         return [str(target) for target in discover_plugin_targets(root)]
 
     @property
@@ -203,8 +206,10 @@ class Agent:
         for target in targets:
             if isinstance(target, (str, types.ModuleType)):
                 normalized.append(target)
-            else:
+            elif isinstance(target, Iterable):
                 normalized.extend(target)
+            else:
+                normalized.append(target)
         return tuple(normalized)
 
     async def _apply_extensions(
@@ -422,6 +427,7 @@ class Agent:
         load_dotenv()
         async with self._start_lock:
             if not self._started:
+                Path(self.config.get(commamatrix_dir)).mkdir(parents=True, exist_ok=True)
                 if self._auto_load_main:
                     await self.add_extensions("__main__")
                 await self.add_extensions(FP + ".components")

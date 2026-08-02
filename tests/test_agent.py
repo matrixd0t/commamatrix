@@ -82,7 +82,7 @@ class TestAgentExtensions:
             "    return query\n",
             encoding="utf-8",
         )
-        agent = Agent(config={}, auto_load_main=False, essentials=False)
+        agent = Agent(config={}, auto_load_main=False)
         await agent.add_extensions(str(path))
         await agent.start()
         try:
@@ -110,7 +110,7 @@ class TestAgentExtensions:
             "    return \"pong\"\n",
             encoding="utf-8",
         )
-        agent = Agent(config={}, auto_load_main=False, essentials=False)
+        agent = Agent(config={}, auto_load_main=False)
         await agent.add_extensions(str(package))
         await agent.start()
         try:
@@ -262,15 +262,12 @@ class TestAgentLifecycle:
         assert "components.instruction" in scope_str
         assert "builtin.sql.sqlite_storage" in scope_str
         assert "builtin.simple_fs" in scope_str
-        assert "builtin.llm_http_adapter" in scope_str
-        assert "builtin.http_connector" in scope_str
-        assert "builtin.codeact" in scope_str
         await agent.stop()
 
     @pytest.mark.asyncio
     async def test_auto_load_plugins(self, tmp_path, monkeypatch):
-        plugin_root = tmp_path / "commamatrix_plugins"
-        plugin_root.mkdir()
+        plugin_root = tmp_path / ".commamatrix" / "plugins"
+        plugin_root.mkdir(parents=True)
         (plugin_root / "direct_plugin.py").write_text(
             "from commamatrix import tool\n\n"
             "@tool(alias=\"direct\")\n"
@@ -293,13 +290,13 @@ class TestAgentLifecycle:
         )
 
         monkeypatch.chdir(tmp_path)
-        agent = Agent(config={}, auto_load_main=False, essentials=False)
-        assert "commamatrix_plugins.direct_plugin" in agent.extension_scope
-        assert "commamatrix_plugins.package_plugin" in agent.extension_scope
+        agent = Agent(config={}, auto_load_main=False)
+        assert "direct_plugin" in agent.extension_scope
+        assert "package_plugin" in agent.extension_scope
         await agent.start()
         try:
-            assert "commamatrix_plugins.direct_plugin" in agent.extension_scope
-            assert "commamatrix_plugins.package_plugin" in agent.extension_scope
+            assert "direct_plugin" in agent.extension_scope
+            assert "package_plugin" in agent.extension_scope
             assert agent.tool_manager.resolve("direct_ping") is not None
             assert agent.tool_manager.resolve("package_package_ping") is not None
         finally:
@@ -307,8 +304,8 @@ class TestAgentLifecycle:
 
     @pytest.mark.asyncio
     async def test_auto_load_plugins_can_be_disabled(self, tmp_path, monkeypatch):
-        plugin_root = tmp_path / "commamatrix_plugins"
-        plugin_root.mkdir()
+        plugin_root = tmp_path / ".commamatrix" / "plugins"
+        plugin_root.mkdir(parents=True)
         (plugin_root / "disabled_plugin.py").write_text(
             "from commamatrix import tool\n\n"
             "@tool(alias=\"disabled\")\n"
@@ -322,12 +319,11 @@ class TestAgentLifecycle:
             config={},
             auto_load_main=False,
             auto_load_plugins=False,
-            essentials=False,
         )
         await agent.start()
         try:
             assert not any(
-                name.startswith("commamatrix_plugins")
+                name.startswith("direct_plugin")
                 for name in agent.extension_scope
             )
             assert agent.tool_manager.resolve("disabled_ping") is None

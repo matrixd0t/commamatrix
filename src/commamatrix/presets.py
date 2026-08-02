@@ -12,9 +12,10 @@ essentials = [
     f"{FP}.builtin.web_utils",
     f"{FP}.builtin.data_tools",
     f"{FP}.builtin.multi_dialog",
+    f"{FP}.builtin.http_connector"
 ]
 
-http_connector = [f"{FP}.builtin.http_connector"]
+__all__ = [
+    "essentials"
+]
 
-
-__all__ = ["essentials", "http_connector"]

@@ -33,11 +33,14 @@ def stub_agent() -> Any:
     from types import SimpleNamespace
     async def _handle(raw):
         pass
-    return SimpleNamespace(
+    agent = SimpleNamespace(
         services=ServiceInstanceRegistry(),
         config=Config(),
         handle=_handle,
     )
+    from commamatrix.components.server import Server
+    agent.http_server = Server(agent)
+    return agent
 
 
 def make_dialog_item(

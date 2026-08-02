@@ -7,7 +7,7 @@ an agent that can modify its own runtime.
 
 The public component API, `Agent`, and `CyclicConstraintError` are re-exported
 from the package root. `Agent(auto_load_plugins=True)` automatically activates
-existing files and package directories in `<CWD>/commamatrix_plugins` at
+existing files and package directories in `<CWD>/.commamatrix/plugins` at
 startup; pass `auto_load_plugins=False` to opt out. For a quick extension, this is supported:
 
 ```python
@@ -34,13 +34,13 @@ The Markdown targets below are relative to this guide file. For example, the too
 ## Runtime Workflow
 
 Keep self-written extensions outside the installed framework. The runtime
-reserves `<CWD>/commamatrix_plugins` for this purpose and creates it from the
+reserves `<CWD>/.commamatrix/plugins` for this purpose and creates it from the
 `before_run` hook supplied by `self_modif` before the first agent run. Do not
 spend a tool call creating this directory.
 
 When a new `Agent` starts, `auto_load_plugins=True` (the default) automatically
 activates every direct `.py` file and every direct package directory in
-`<CWD>/commamatrix_plugins`. A package should import its contribution modules
+`<CWD>/.commamatrix/plugins`. A package should import its contribution modules
 from `__init__.py`; nested implementation files are not imported just because
 they exist. Disable this behavior with `Agent(auto_load_plugins=False)` when
 the host must activate extensions explicitly. Files created during the current
@@ -49,19 +49,20 @@ starts.
 
 ```text
 <CWD>/
-    commamatrix_plugins/
-        response_style.py
-        weather/
-            __init__.py
-            tools.py
+    .commamatrix/
+        plugins/
+            response_style.py
+            weather/
+                __init__.py
+                tools.py
 ```
 
 Prefer the smallest implementation that solves the task:
 
-1. Create one `.py` file in `commamatrix_plugins`, or a package for a genuinely larger extension.
+1. Create one `.py` file in `.commamatrix/plugins`, or a package for a genuinely larger extension.
 2. Put discoverable functions and classes at module level.
 3. Check imports and required third-party packages.
-4. Use `manage_extension(action="add", module_or_path="commamatrix_plugins/response_style.py")` when the current agent must use a newly created file immediately.
+4. Use `manage_extension(action="add", module_or_path=".commamatrix/plugins/response_style.py")` when the current agent must use a newly created file immediately.
 5. Test the new capability. Reload it after editing and remove it when no longer needed.
 
 `module_or_path` accepts either an import name or a relative/absolute Python
@@ -89,20 +90,21 @@ independent subsystems, or a package layout materially improves maintenance.
 Do not create `config.py`, `hooks.py`, `service.py`, and `tools.py` just to wrap
 a small feature.
 
-Default layout. The `commamatrix_plugins` directory is created automatically
+Default layout. The `.commamatrix/plugins` directory is created automatically
 before the first run:
 
 ```text
 <CWD>/
-    commamatrix_plugins/
-        response_style.py
-        weather.py
+    .commamatrix/
+        plugins/
+            response_style.py
+            weather.py
 ```
 
 Optional package layout for a genuinely larger extension:
 
 ```text
-commamatrix_plugins/my_extension/
+.commamatrix/plugins/my_extension/
     __init__.py
     config.py
     service.py
@@ -116,7 +118,7 @@ commamatrix_plugins/my_extension/
 objects:
 
 ```python
-# commamatrix_plugins/my_extension/__init__.py
+# .commamatrix/plugins/my_extension/__init__.py
 
 from . import config, connector, hooks, instructions, service, tools
 ```
@@ -153,13 +155,13 @@ choice, not something to do for every one-off detail:
 
 - A reusable response rule, workflow rule, or always-needed piece of context belongs in an `@instruction`. It returns text that is added to the system prompt before future LLM calls.
 - A reusable action, integration, or capability belongs in an `@tool`. The agent can call it when the capability is needed.
-- Store the implementation in `commamatrix_plugins`, then activate or reload it for the current agent. With `auto_load_plugins=True`, it is also loaded automatically by newly created agents.
+- Store the implementation in `.commamatrix/plugins`, then activate or reload it for the current agent. With `auto_load_plugins=True`, it is also loaded automatically by newly created agents.
 - Do not persist a temporary fact or a rule that only applies to the current request.
 
 Example of a persistent instruction:
 
 ```python
-# commamatrix_plugins/agent_rules.py
+# .commamatrix/plugins/agent_rules.py
 from commamatrix import InstructionCtx, instruction
 
 
@@ -171,7 +173,7 @@ def concise_answers(_ctx: InstructionCtx) -> str:
 Example of a persistent tool:
 
 ```python
-# commamatrix_plugins/project_tools.py
+# .commamatrix/plugins/project_tools.py
 from commamatrix import tool
 
 
@@ -190,7 +192,7 @@ For example, a response style does not need a package, service, configuration
 layer, or LLM parameter hook unless those features are explicitly required:
 
 ```python
-# commamatrix_plugins/response_style.py
+# .commamatrix/plugins/response_style.py
 
 from commamatrix import InstructionCtx, instruction
 
@@ -210,7 +212,7 @@ def response_style(ctx: InstructionCtx) -> str:
 A tool is a top-level function decorated with `@tool`:
 
 ```python
-# commamatrix_plugins/weather.py
+# .commamatrix/plugins/weather.py
 
 from commamatrix import tool
 
@@ -262,12 +264,12 @@ part that appears after `tools.`. The extension module name and the tool alias
 are different things and must not be confused:
 
 ```text
-commamatrix_plugins/filesystem_tools.py  ->  Python module: commamatrix_plugins.filesystem_tools
+.commamatrix/plugins/filesystem_tools.py  ->  Python module: filesystem_tools
 @tool(alias="fs")                      ->  CodeAct import: import tools.fs as fs
 ```
 
-The activation result such as `Extension is active:
-commamatrix_plugins.filesystem_tools` reports only the Python module. It does
+The activation result such as `Extension is active: filesystem_tools` reports
+only the Python module. It does
 not tell you what to write after `tools.`. Read the `@tool(alias="...")` in the
 source or use `list_tools` / `search_tools` to find the alias.
 
@@ -615,7 +617,7 @@ For the CodeAct mode and its integration-specific behavior, read
 
 When adding an integration:
 
-1. Use the automatically created root `commamatrix_plugins` directory.
+1. Use the automatically created root `.commamatrix/plugins` directory.
 2. Prefer one file unless the extension is clearly larger than 500-600 lines or has independent subsystems.
 3. Choose the smallest extension point that solves the task.
 4. Define `ConfigField` values only when configuration is actually needed.

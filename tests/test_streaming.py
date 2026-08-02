@@ -73,7 +73,8 @@ class TestStreamEnd:
 class TestLLMAdapterStreaming:
     def test_ask_llm_raises_not_implemented(self):
         class MinimalAdapter(LLMAdapter):
-            pass
+            async def refresh_llms(self):
+                return []
 
         agent = stub_agent()
         adapter = MinimalAdapter(agent=agent)
@@ -94,10 +95,8 @@ class TestLLMAdapterManagerStreaming:
         mgr = LLMAdapterManager(agent=agent)
         mock_adapter = MagicMock(spec=LLMAdapter)
         mock_adapter.ask_llm = MagicMock(return_value=iter([]))
-        mock_desc_id = "llm_adapter://test/TestAdapter"
-        mgr._instances = {mock_desc_id: mock_adapter}
-        mgr._start_order = [mock_desc_id]
         ctx = MagicMock()
+        ctx.run.adapter = mock_adapter
         mgr.ask_llm(ctx, stream=True)
         mock_adapter.ask_llm.assert_called_once_with(ctx, stream=True)
 

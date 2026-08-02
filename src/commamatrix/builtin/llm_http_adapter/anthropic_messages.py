@@ -140,7 +140,7 @@ class AnthropicMessagesCodec(ApiCodec):
             except (KeyError, TypeError, ValueError):
                 continue
 
-        request = {"llm": self._model_name(model), "messages": messages, **ctx.llm_call_params}
+        request = {"model": self._model_name(model), "messages": messages, **ctx.llm_call_params}
         if system_parts:
             request["system"] = "\n\n".join(system_parts)
         if ctx.tools:

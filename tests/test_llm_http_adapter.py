@@ -9,6 +9,7 @@ import pytest
 from commamatrix.builtin.llm_http_adapter.adapter import LLMHTTPAdapter
 from commamatrix.builtin.llm_http_adapter.codec import ApiProtocol
 from commamatrix.components.hook import BeforeLlmCallCtx, RunCtx
+from commamatrix.components.llm_adapter import LLM
 from commamatrix.components.config import Config, ConfigField
 from commamatrix.core.classes.manager import ServiceInstanceRegistry
 from tests.conftest import stub_agent, stub_origin
@@ -82,7 +83,6 @@ class TestResolveProtocol:
         agent = stub_agent()
         adapter = LLMHTTPAdapter(agent=agent)
         origin = stub_origin()
-        run = RunCtx(agent=agent, origin=origin, user="u")
-        run.model = "claude-3"
+        run = RunCtx(agent=agent, origin=origin, user="u", llm=LLM(model_name="claude-3"))
         ctx = BeforeLlmCallCtx(run=run, dialog=[], tools=[])
         assert adapter._resolve_protocol(ctx) == ApiProtocol.ANTHROPIC_MESSAGES

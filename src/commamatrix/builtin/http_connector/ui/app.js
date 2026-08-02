@@ -106,6 +106,7 @@ const NO_PUBLIC_ADDRESS_MESSAGE="You cannot upload files for LLM: CommaMatrix is
 
 function setAuthLocked(locked){
   document.body.classList.toggle("auth-locked",locked);
+  sendBtn.disabled=locked;
   if(locked){authOverlay.classList.remove("hidden");authOverlay.style.display="flex"}
   else{authOverlay.classList.add("hidden");authOverlay.style.display="none"}
 }
@@ -359,7 +360,7 @@ function clearAuth(){
   if(eventsAbortController)eventsAbortController.abort();
   stopStatusPolling();statusPanelOverride=null;serverStatusMessages=[];fileUploadAllowed=false;uploadFileChoice.disabled=true;renderServerStatusMessages();setStatusPanelVisible(false);serverStatusLight.className="http-server-status-light gray";setHeaderMenuOpen(false);
   eventsTask=null;authToken=null;currentUser=null;historyLoaded=false;activeStreamId=null;
-  sendBtn.textContent="Send";sendBtn.classList.remove("cancel");sendBtn.disabled=false;
+  sendBtn.textContent="Send";sendBtn.classList.remove("cancel");sendBtn.disabled=true;
   localStorage.removeItem("commamatrix_auth_token");
   clearPendingAttachments();
   hideTyping();messagesEl.replaceChildren();itemsById=new Map();childrenByParent=new Map();selectedHeadId=null;newRootSelected=false;selectedLeafByNode=new Map();expandedNodes=new Set();deletedRootIds=new Set();showDeletedBranches=false;activeStreams={};streamingPreviews={};clearPendingMessage();
@@ -815,7 +816,7 @@ function showTyping(){
 function hideTyping(){if(typingIndicator){typingIndicator.remove();typingIndicator=null}}
 
 function setProcessing(on,streamId=null){
-  activeStreamId=on?streamId:null;sendBtn.textContent=on?"Cancel":"Send";sendBtn.classList.toggle("cancel",on);sendBtn.disabled=false;statusEl.textContent=on?"Processing...":"Ready";if(!on)hideTyping();syncActionState();
+  activeStreamId=on?streamId:null;sendBtn.textContent=on?"Cancel":"Send";sendBtn.classList.toggle("cancel",on);sendBtn.disabled=!currentUser;statusEl.textContent=on?"Processing...":"Ready";if(!on)hideTyping();syncActionState();
 }
 
 function syncActionState(){

@@ -57,7 +57,7 @@ class TestChatCompletionsBuildRequest:
         ctx = _make_ctx(dialog)
         req = await codec.build_request(model="gpt-4", ctx=ctx)
 
-        assert req["llm"] == "gpt-4"
+        assert req["model"] == "gpt-4"
         assert len(req["messages"]) == 1
         assert req["messages"][0] == {"role": "user", "content": "Hello"}
 
@@ -190,7 +190,7 @@ class TestResponsesBuildRequest:
         ctx = _make_ctx(dialog)
         req = await codec.build_request(model="o3", ctx=ctx)
 
-        assert req["llm"] == "o3"
+        assert req["model"] == "o3"
         assert len(req["input"]) == 1
         assert req["input"][0] == {"role": "user", "content": "Hello"}
 
@@ -271,7 +271,7 @@ class TestAnthropicBuildRequest:
         ctx = _make_ctx(dialog)
         req = await codec.build_request(model="claude-3", ctx=ctx)
 
-        assert req["llm"] == "claude-3"
+        assert req["model"] == "claude-3"
         assert len(req["messages"]) == 1
         assert req["messages"][0] == {"role": "user", "content": "Hello"}
 

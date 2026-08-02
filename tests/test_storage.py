@@ -118,17 +118,17 @@ class TestSqliteStorage:
 class TestSimpleFileStorage:
     @pytest.mark.asyncio
     async def test_save_and_get(self):
-        from commamatrix.builtin.simple_fs import SimpleFileStorage, files_directory
+        from commamatrix.builtin.simple_fs import SimpleFileStorage, files_dir
 
         with tempfile.TemporaryDirectory() as tmpdir:
             agent = stub_agent()
-            agent.config = Config(overrides={files_directory: tmpdir})
+            agent.config = Config(overrides={files_dir: tmpdir})
             fs = SimpleFileStorage(agent=agent)
             await fs.start()
 
             file_id = await fs.save(b"hello world", ext=".txt")
-            assert file_id.startswith("file_")
-            assert ".txt" in file_id
+            assert len(file_id) == 36
+            assert file_id.endswith(".txt")
 
             data = await fs.get(file_id)
             assert data == b"hello world"
@@ -137,11 +137,11 @@ class TestSimpleFileStorage:
 
     @pytest.mark.asyncio
     async def test_get_nonexistent(self):
-        from commamatrix.builtin.simple_fs import SimpleFileStorage, files_directory
+        from commamatrix.builtin.simple_fs import SimpleFileStorage, files_dir
 
         with tempfile.TemporaryDirectory() as tmpdir:
             agent = stub_agent()
-            agent.config = Config(overrides={files_directory: tmpdir})
+            agent.config = Config(overrides={files_dir: tmpdir})
             fs = SimpleFileStorage(agent=agent)
             await fs.start()
 
@@ -152,11 +152,11 @@ class TestSimpleFileStorage:
 
     @pytest.mark.asyncio
     async def test_delete_existing(self):
-        from commamatrix.builtin.simple_fs import SimpleFileStorage, files_directory
+        from commamatrix.builtin.simple_fs import SimpleFileStorage, files_dir
 
         with tempfile.TemporaryDirectory() as tmpdir:
             agent = stub_agent()
-            agent.config = Config(overrides={files_directory: tmpdir})
+            agent.config = Config(overrides={files_dir: tmpdir})
             fs = SimpleFileStorage(agent=agent)
             await fs.start()
 
@@ -168,11 +168,11 @@ class TestSimpleFileStorage:
 
     @pytest.mark.asyncio
     async def test_delete_nonexistent(self):
-        from commamatrix.builtin.simple_fs import SimpleFileStorage, files_directory
+        from commamatrix.builtin.simple_fs import SimpleFileStorage, files_dir
 
         with tempfile.TemporaryDirectory() as tmpdir:
             agent = stub_agent()
-            agent.config = Config(overrides={files_directory: tmpdir})
+            agent.config = Config(overrides={files_dir: tmpdir})
             fs = SimpleFileStorage(agent=agent)
             await fs.start()
 

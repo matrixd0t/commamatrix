@@ -6,7 +6,7 @@
 <title>CommaMatrix</title>
 <base href="/commamatrix/ui/">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-<link rel="stylesheet" href="styles.css?v=12">
+<link rel="stylesheet" href="styles.css?v=13">
 </head>
 <body>
 <div id="app-shell">
@@ -14,10 +14,10 @@
     <button id="branch-open" class="mobile-only icon-button" type="button" aria-label="Open branches" title="Open branches">☰</button>
     <h1>CommaMatrix</h1>
     <div id="server-status-wrap" class="server-status-wrap">
-      <button id="http_server-status-btn" class="http_server-status-btn" type="button" aria-label="Server status" aria-expanded="false" title="Server status">
-        <span id="http_server-status-light" class="http_server-status-light gray" aria-hidden="true"></span>
+      <button id="http-server-status-btn" class="http-server-status-btn" type="button" aria-label="Server status" aria-expanded="false" title="Server status">
+        <span id="http-server-status-light" class="http-server-status-light gray" aria-hidden="true"></span>
       </button>
-      <div id="http_server-status-panel" class="http_server-status-panel" role="status" aria-live="polite"></div>
+      <div id="http-server-status-panel" class="http-server-status-panel" role="status" aria-live="polite"></div>
     </div>
     <span class="status" id="status">Sign in required</span>
     <button id="header-menu-btn" class="mobile-only icon-button header-menu-btn" type="button" aria-label="Open account menu" aria-expanded="false" title="Open account menu">
@@ -55,7 +55,7 @@
         <div id="drop-overlay" class="drop-overlay" aria-hidden="true">Drop a link or file here</div>
         <button id="attach-btn" class="attach-btn" type="button" title="Add a link or file" aria-label="Add a link or file">+</button>
         <textarea id="input" rows="1" placeholder="Type a message..." autofocus></textarea>
-        <button id="send-btn" type="button">Send</button>
+        <button id="send-btn" type="button" disabled>Send</button>
       </div>
     </main>
   </div>
@@ -83,7 +83,7 @@
     </form>
   </div>
 </div>
-<div class="auth-overlay hidden" id="auth-overlay" style="display:none">
+<div class="auth-overlay hidden" id="auth-overlay">
   <div class="auth-card">
     <h2 id="auth-title">Sign in</h2>
     <p id="auth-description">Use your CommaMatrix account to connect to this agent.</p>
@@ -140,6 +140,6 @@
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" async></script>
-<script src="app.js?v=25" defer></script>
+<script src="app.js?v=27" defer></script>
 </body>
 </html>

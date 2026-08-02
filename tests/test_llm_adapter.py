@@ -7,6 +7,7 @@ from __future__ import annotations
 import pytest
 
 from commamatrix.components.llm_adapter import (
+    LLM,
     LLM_ADAPTER_ATTRIBUTE,
     LLMAdapter,
     LLMAdapterManager,
@@ -133,8 +134,8 @@ class TestLLMAdapterSubclass:
 
 
 class TestLLMAdapterManager:
-    def test_no_adapters_raises(self):
+    def test_no_adapters_yields_nothing(self):
         agent = stub_agent()
         mgr = LLMAdapterManager(agent=agent)
-        with pytest.raises(RuntimeError, match="No LLM adapters"):
-            _ = mgr._active
+        assert list(mgr.iter_llms()) == []
+        assert mgr.resolve_adapter(LLM(model_name="any")) is None

@@ -7,6 +7,8 @@ from dataclasses import fields, is_dataclass
 from enum import Enum
 from typing import Any
 
+from .components.config import ConfigField
+
 
 def framework_prefix() -> str:
     """Return the import prefix used by the framework package."""
@@ -15,6 +17,12 @@ def framework_prefix() -> str:
 
 
 FP = framework_prefix()
+
+commamatrix_dir = ConfigField[str](
+    name="commamatrix_dir",
+    default=".commamatrix",
+    description="Root directory for all Commamatrix data",
+)
 
 
 async def await_if_needed(result: Any) -> Any:

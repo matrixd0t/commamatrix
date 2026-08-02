@@ -175,7 +175,7 @@ class ChatCompletionsCodec(ApiCodec):
                 continue
 
         flush_assistant()
-        request = {"llm": self._model_name(model), "messages": messages, **ctx.llm_call_params}
+        request = {"model": self._model_name(model), "messages": messages, **ctx.llm_call_params}
         if ctx.tools:
             request["tools"] = self.serialize_tools(ctx)
         return request

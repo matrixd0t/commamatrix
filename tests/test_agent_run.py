@@ -121,6 +121,10 @@ class MockLLMAdapter(LLMAdapter):
     def __init__(self, agent: Any, events: list[Any] | None = None) -> None:
         super().__init__(agent)
         self._events = events or []
+        self.llms = [LLM(model_name="test-llm")]
+
+    async def refresh_llms(self) -> list[LLM]:
+        return self.llms
 
     async def ask_llm(self, ctx: BeforeLlmCallCtx, *, stream: bool = False):
         for event in self._events:
@@ -182,7 +186,7 @@ def _make_run_ctx(agent: Agent, connector: RecordingConnector | None = None) -> 
         connector=connector,
         origin=stub_origin(),
         user="test_user",
-        model=LLM(model_name="test-llm"),
+        llm=LLM(model_name="test-llm"),
     )
 
 
@@ -208,7 +212,7 @@ async def _setup_agent(
     hooks: dict[str, list] | None = None,
 ) -> tuple[Agent, RecordingConnector, InMemoryStorage]:
     """Create an agent with mock LLM, recording connector, and in-memory storage."""
-    agent = Agent(config={}, auto_load_main=False, essentials=False)
+    agent = Agent(config={}, auto_load_main=False)
 
     connector = connector_cls(agent=agent)
     llm = MockLLMAdapter(agent, events)
@@ -221,6 +225,12 @@ async def _setup_agent(
 
         def resolve(self):
             return []
+
+        def resolve_adapter(self, model):
+            return llm
+
+        def iter_llms(self):
+            return [(llm, m) for m in llm.llms]
 
         def set_scope(self, scope):
             pass
@@ -394,10 +404,13 @@ class TestAgentRunStreaming:
 
 def _make_multi_call_agent(events_list, connector_cls=RecordingConnector):
     """Create an agent with a multi-call LLM adapter."""
-    agent = Agent(config={}, auto_load_main=False, essentials=False)
+    agent = Agent(config={}, auto_load_main=False)
     call_count = 0
 
     class MultiCallAdapter(LLMAdapter):
+        async def refresh_llms(self) -> list[LLM]:
+            return []
+
         async def ask_llm(self, ctx, *, stream=False):
             nonlocal call_count
             for event in events_list[call_count]:
@@ -415,6 +428,12 @@ def _make_multi_call_agent(events_list, connector_cls=RecordingConnector):
 
         def resolve(self):
             return []
+
+        def resolve_adapter(self, model):
+            return llm
+
+        def iter_llms(self):
+            return [(llm, m) for m in llm.llms]
 
         def set_scope(self, scope):
             pass

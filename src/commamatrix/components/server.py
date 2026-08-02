@@ -52,7 +52,6 @@ class Server(AbstractService):
         self._host = self.config.get(http_host)
         self._port = self.config.get(http_port)
         self._registrations: list[_Registration] = []
-        self._root_app: Any = None
         self._app: Any = None
         self._uvicorn_server: Any = None
         self._listener_task: asyncio.Task | None = None
@@ -65,18 +64,10 @@ class Server(AbstractService):
         return self._app
 
     @property
-    def origin_url(self) -> str:
-        external = self.config.get(http_external_url)
-        if external:
-            return external.rstrip("/")
-        return f"http://{self._host}:{self._bound_port or self._port}"
-
-    @property
     def base_url(self) -> str:
-        base = self.origin_url
-        if base.endswith(SERVER_ROOT):
-            return base
-        return f"{base}{SERVER_ROOT}"
+        external = self.config.get(http_external_url)
+        base = external.rstrip("/") if external else f"http://{self._host}:{self._bound_port or self._port}"
+        return base if base.endswith(SERVER_ROOT) else f"{base}{SERVER_ROOT}"
 
     def url(self, path: str = "") -> str:
         path = "/" + path.lstrip("/") if path else ""
@@ -95,15 +86,15 @@ class Server(AbstractService):
     ) -> _Registration:
         registration = _Registration(
             kind="route",
-            path=self._normalize_path(path),
+            path=self._route_path(path),
             endpoint=endpoint,
             methods=tuple(methods),
             name=name,
         )
         self._registrations.append(registration)
-        if self._root_app is not None:
+        if self._app is not None:
             registration.route = self._make_route(registration)
-            self._root_app.routes.append(registration.route)
+            self._app.routes.append(registration.route)
         return registration
 
     add_route = register_route
@@ -111,14 +102,14 @@ class Server(AbstractService):
     def register_mount(self, path: str, app: Any, *, name: str | None = None) -> _Registration:
         registration = _Registration(
             kind="mount",
-            path=self._normalize_path(path),
+            path=self._route_path(path),
             name=name,
             app=app,
         )
         self._registrations.append(registration)
-        if self._root_app is not None:
+        if self._app is not None:
             registration.route = self._make_mount(registration)
-            self._root_app.routes.append(registration.route)
+            self._app.routes.append(registration.route)
         return registration
 
     add_mount = register_mount
@@ -126,9 +117,9 @@ class Server(AbstractService):
     def unregister(self, registration: _Registration) -> None:
         if registration in self._registrations:
             self._registrations.remove(registration)
-        if self._root_app is not None and registration.route is not None:
+        if self._app is not None and registration.route is not None:
             try:
-                self._root_app.routes.remove(registration.route)
+                self._app.routes.remove(registration.route)
             except ValueError:
                 pass
         registration.route = None
@@ -137,20 +128,21 @@ class Server(AbstractService):
         from starlette.applications import Starlette
         from starlette.routing import Route
 
-        self._root_app = Starlette(routes=[
-            Route(f"{SERVER_ROOT}/handle", self._handle, methods=["POST"], name="handle"),
-            Route(f"{SERVER_ROOT}/files/{{file_id:str}}", self._file, methods=["GET"], name="files"),
-            Route(f"{SERVER_ROOT}/files/{{file_id:str}}/content", self._file, methods=["GET"], name="file-content"),
+        self._app = Starlette(routes=[
+            Route(self._route_path("/handle"), self._handle, methods=["POST"], name="handle"),
+            Route(self._route_path("/files/{file_id:str}"), self._file, methods=["GET"], name="files"),
+            Route(self._route_path("/files/{file_id:str}/content"), self._file, methods=["GET"], name="file-content"),
         ])
-        self._app = self._root_app
         for registration in self._registrations:
             registration.route = self._make_mount(registration) if registration.kind == "mount" else self._make_route(registration)
-            self._root_app.routes.append(registration.route)
+            self._app.routes.append(registration.route)
 
     @staticmethod
-    def _normalize_path(path: str) -> str:
+    def _route_path(path: str) -> str:
         normalized = "/" + str(path).lstrip("/")
-        return normalized or "/"
+        if normalized == SERVER_ROOT or normalized.startswith(f"{SERVER_ROOT}/"):
+            return normalized
+        return f"{SERVER_ROOT}{normalized}"
 
     @staticmethod
     def _make_route(registration: _Registration) -> Any:
