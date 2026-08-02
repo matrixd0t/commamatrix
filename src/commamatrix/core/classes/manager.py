@@ -380,6 +380,10 @@ class ActiveServiceInstanceManager(ServiceInstanceManager[SvcT]):
             raise RuntimeError(f"No active {self.id_prefix}")
         return self._instances[self._active_id]
 
+    @property
+    def active(self) -> SvcT:
+        return self._active
+
 
 class ServiceInstanceRegistry:
     """Typed container for active service instances.

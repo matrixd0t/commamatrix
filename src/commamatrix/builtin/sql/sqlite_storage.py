@@ -33,8 +33,8 @@ class SqliteStorage(SqlStorage):
     async def _fetchall(self, db: aiosqlite.Connection, query: str, params: tuple = ()) -> list:
         return list(await db.execute_fetchall(query, params))
 
-    async def _columns(self, db: aiosqlite.Connection) -> set[str]:
-        rows = await db.execute_fetchall("PRAGMA table_info(commamatrix_dialog)")
+    async def _table_columns(self, db: aiosqlite.Connection, table_name: str) -> set[str]:
+        rows = await db.execute_fetchall(f'PRAGMA table_info("{table_name}")')
         return {row[1] for row in rows}
 
     async def _insert(self, db: aiosqlite.Connection, query: str, params: tuple = ()) -> int | None:

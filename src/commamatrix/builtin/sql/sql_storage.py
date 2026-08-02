@@ -16,6 +16,7 @@ from ...components.dialog import (
     resolve_origin_type,
 )
 from ...components.storage import Storage
+from ...components.table import TableDescriptor
 
 if TYPE_CHECKING:
     from ...core.agent import Agent
@@ -76,8 +77,8 @@ class SqlStorage(Storage):
     async def _close(self) -> None: ...
 
     @abstractmethod
-    async def _columns(self, db: Any) -> set[str]:
-        """Return the current column names for the dialog table."""
+    async def _table_columns(self, db: Any, table_name: str) -> set[str]:
+        """Return the current column names for a table."""
         ...
 
     def _placeholder(self, index: int) -> str:
@@ -128,8 +129,9 @@ class SqlStorage(Storage):
         """,
         )
         await self._commit(db)
+        await self._ensure_schema_versions(db)
 
-        self._known_columns = await self._columns(db)
+        self._known_columns = await self._table_columns(db, "commamatrix_dialog")
 
         await self._migrate_columns(DialogItem, skip={"origin"})
         await self._migrate_columns(DialogOrigin)
@@ -147,7 +149,7 @@ class SqlStorage(Storage):
                 await self._execute(db, f"ALTER TABLE commamatrix_dialog ADD COLUMN {self._quote_ident(name)} {sql_type}")
                 await self._commit(db)
             except Exception as exc:
-                self._known_columns = await self._columns(db)
+                self._known_columns = await self._table_columns(db, "commamatrix_dialog")
                 if name not in self._known_columns:
                     raise RuntimeError(f"Failed to migrate commamatrix_dialog.{name}") from exc
             self._known_columns.add(name)
@@ -291,11 +293,130 @@ class SqlStorage(Storage):
             ))
         return result
 
+    @property
+    def schema_backend(self) -> SqlStorage:
+        return self
+
+    async def _ensure_schema_versions(self, db: Any) -> None:
+        await self._execute(
+            db,
+            """
+            CREATE TABLE IF NOT EXISTS commamatrix_schema_versions (
+                table_id TEXT PRIMARY KEY,
+                table_name TEXT NOT NULL,
+                version INTEGER NOT NULL
+            )
+            """,
+        )
+        await self._commit(db)
+
+    async def _schema_version(self, db: Any, table_id: str) -> int | None:
+        rows = await self._fetchall(
+            db,
+            f"SELECT version FROM commamatrix_schema_versions WHERE table_id = {self._placeholder(1)}",
+            (table_id,),
+        )
+        return int(rows[0]["version"]) if rows else None
+
+    async def _record_schema_version(
+        self,
+        db: Any,
+        table: TableDescriptor,
+    ) -> None:
+        placeholders = ", ".join(self._placeholder(index) for index in range(1, 4))
+        await self._execute(
+            db,
+            f"""
+            INSERT INTO commamatrix_schema_versions (table_id, table_name, version)
+            VALUES ({placeholders})
+            ON CONFLICT (table_id) DO UPDATE SET
+                table_name = EXCLUDED.table_name,
+                version = EXCLUDED.version
+            """,
+            (
+                table.table_cls.resolved_table_id(),
+                table.table_cls.table_name,
+                table.table_cls.version,
+            ),
+        )
+        await self._commit(db)
+
+    def _table_columns_sql(self, table: TableDescriptor) -> list[str]:
+        table_cls = table.table_cls
+        fields = table_cls.row_model.model_fields
+        if not fields:
+            raise ValueError(
+                f"Plugin table {table_cls.resolved_table_id()!r} must define at least one field"
+            )
+
+        columns: list[str] = []
+        for name, field_info in fields.items():
+            column = f"{self._quote_ident(name)} {python_type_to_sql(field_info.annotation)}"
+            if name == table_cls.primary_key:
+                column += " PRIMARY KEY"
+            elif not _field_is_nullable(field_info):
+                column += " NOT NULL"
+            columns.append(column)
+        return columns
+
+    async def _ensure_indexes(self, db: Any, table: TableDescriptor) -> None:
+        table_cls = table.table_cls
+        table_name = self._quote_ident(table_cls.table_name)
+        for index_number, index_fields in enumerate(table_cls.indexes):
+            index_name = self._quote_ident(f"idx_{table_cls.table_name}_{index_number}")
+            index_columns = ", ".join(self._quote_ident(name) for name in index_fields)
+            await self._execute(
+                db,
+                f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({index_columns})",
+            )
+        await self._commit(db)
+
+    async def ensure_table(self, table: TableDescriptor) -> None:
+        db = await self._get_db()
+        table_cls = table.table_cls
+        existing_columns = await self._table_columns(db, table_cls.table_name)
+        if not existing_columns:
+            table_name = self._quote_ident(table_cls.table_name)
+            columns = ", ".join(self._table_columns_sql(table))
+            await self._execute(
+                db,
+                f"CREATE TABLE IF NOT EXISTS {table_name} ({columns})",
+            )
+            await self._commit(db)
+            await self._record_schema_version(db, table)
+        else:
+            table_id = table_cls.resolved_table_id()
+            current_version = await self._schema_version(db, table_id)
+            current_version = 1 if current_version is None else current_version
+            if current_version > table_cls.version:
+                raise RuntimeError(
+                    f"Cannot downgrade table {table_id!r} from "
+                    f"version {current_version} to {table_cls.version}"
+                )
+            if current_version < table_cls.version:
+                await table_cls.migrate(self, current_version)
+                await self._record_schema_version(db, table)
+
+        await self._ensure_indexes(db, table)
+
+    async def add_column(self, table_name: str, column_name: str, sql_type: str, *, nullable: bool = True) -> None:
+        db = await self._get_db()
+        null_sql = "" if nullable else " NOT NULL"
+        await self._execute(
+            db,
+            f"ALTER TABLE {self._quote_ident(table_name)} "
+            f"ADD COLUMN {self._quote_ident(column_name)} {sql_type}{null_sql}",
+        )
+        await self._commit(db)
+
     async def execute(self, query: str, params: tuple = ()) -> list[dict[str, Any]]:
         db = await self._get_db()
         result = await self._fetchall(db, query, params)
         await self._commit(db)
         return result
+
+    async def start(self) -> None:
+        await self._get_db()
 
     async def close(self) -> None:
         await self._close()

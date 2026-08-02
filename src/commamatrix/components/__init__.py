@@ -15,6 +15,14 @@ from .connector import (
     OnRecv,
 )
 from .storage import Storage, STORAGE_ATTRIBUTE, active_storage
+from .table import (
+    TABLE_ATTRIBUTE,
+    BaseTable,
+    TableDescriptor,
+    PythonTableSource,
+    SchemaBackend,
+    TableManager,
+)
 from .file_storage import (
     FileStorage,
     FILE_STORAGE_ATTRIBUTE,
@@ -113,6 +121,12 @@ __all__ = [
     "OnRecv",
     "Storage",
     "STORAGE_ATTRIBUTE",
+    "TABLE_ATTRIBUTE",
+    "BaseTable",
+    "TableDescriptor",
+    "PythonTableSource",
+    "SchemaBackend",
+    "TableManager",
     "FileStorage",
     "FILE_STORAGE_ATTRIBUTE",
     "DataType",

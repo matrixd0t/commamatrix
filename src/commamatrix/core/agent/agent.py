@@ -58,6 +58,7 @@ from ...components.instruction import InstructionManager
 from ...components.connector import ConnectorManager
 from ...components.llm_adapter import LLMAdapterManager
 from ...components.storage import StorageManager, STORAGE_ATTRIBUTE
+from ...components.table import TableManager
 from ...components.file_storage import FileStorageManager, FILE_STORAGE_ATTRIBUTE
 from ...components.server import Server
 from ..classes.manager import ServiceInstanceManager, ServiceInstanceRegistry
@@ -137,6 +138,7 @@ class Agent:
         self.instruction_manager = InstructionManager(agent=self)
         self.llm_adapter = LLMAdapterManager(agent=self)
         self.storage = StorageManager(agent=self)
+        self.table_manager = TableManager(agent=self)
         self.file_storage = FileStorageManager(agent=self)
         self.service_manager: ServiceInstanceManager[AbstractService] = ServiceInstanceManager(agent=self)
         self.connector_manager = ConnectorManager(agent=self)
@@ -148,6 +150,7 @@ class Agent:
             self.instruction_manager,
             self.llm_adapter,
             self.storage,
+            self.table_manager,
             self.file_storage,
             self.service_manager,
             self.connector_manager,

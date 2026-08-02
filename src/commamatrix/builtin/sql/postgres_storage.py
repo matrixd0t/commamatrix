@@ -30,10 +30,10 @@ class PostgresStorage(SqlStorage):
     async def _fetchall(self, db: asyncpg.Connection, query: str, params: tuple = ()) -> list:
         return await db.fetch(query, *params)
 
-    async def _columns(self, db: asyncpg.Connection) -> set[str]:
+    async def _table_columns(self, db: asyncpg.Connection, table_name: str) -> set[str]:
         rows = await db.fetch(
             "SELECT column_name FROM information_schema.columns WHERE table_name = $1",
-            "commamatrix_dialog",
+            table_name,
         )
         return {row["column_name"] for row in rows}
 

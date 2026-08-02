@@ -25,6 +25,7 @@ The Markdown targets below are relative to this guide file. For example, the too
 - [components/connector.py](../../components/connector.py) - platform connectors.
 - [components/dialog.py](../../components/dialog.py) - origins and dialog items.
 - [components/llm_adapter.py](../../components/llm_adapter.py) - LLM blocks and provider adapters.
+- [components/table.py](../../components/table.py) - plugin-owned tables, schema discovery, and migrations.
 - [core/classes/service.py](../../core/classes/service.py) - service lifecycle and discovery.
 - [core/agent/agent.py](../../core/agent/agent.py) - extension activation and the agent run loop.
 
@@ -142,6 +143,7 @@ them in `stop()`.
 - Add an action the agent can call: use one `@tool`.
 - Keep a long-lived external client: add a `Service` only when needed.
 - Integrate a messaging platform: add a `Connector`.
+- Persist structured plugin-owned data: declare a `BaseTable`.
 - Replace persistence or the LLM provider: implement the corresponding provider.
 
 ### Persist Reusable Behavior
@@ -180,8 +182,8 @@ async def current_status() -> str:
     return "..."
 ```
 
-For the current run, use the `self_modif` tools to create the file and then
-call `manage_extension`. The `self_modif` module itself also
+For the current run, use the `self_extension` tools to create the file and then
+call `manage_extension`. The `self_extension` module itself also
 provides this guidance as an instruction, so the option is available without
 reading the guide manually.
 
@@ -544,6 +546,65 @@ Streaming chunks are real-time only; complete blocks still arrive through
 [components/dialog.py](../../components/dialog.py), and the built-in
 [http_connector/connector.py](../http_connector/connector.py).
 
+## Plugin-Owned Tables
+
+A plugin can opt into the active structured storage by declaring a `BaseTable`.
+The row schema is a Pydantic model; the table declaration is a separate class.
+No ORM is required.
+
+```python
+# .commamatrix/plugins/audit.py
+from pydantic import BaseModel
+
+from commamatrix import BaseTable
+
+
+class AuditRow(BaseModel):
+    id: str
+    event: str
+    created_at: str
+
+
+class AuditTable(BaseTable[AuditRow]):
+    table_id = "audit.events"
+    table_name = "audit_events"
+    row_model = AuditRow
+    primary_key = "id"
+    indexes = (("event",),)
+    version = 1
+```
+
+`TableManager` discovers `BaseTable` subclasses from the active extension scope.
+It runs after `StorageManager` selects the active storage and before plugin
+services start. A plugin service can therefore use its table from `start()`.
+SQL storage initializes `commamatrix_schema_versions` automatically, creates
+missing tables and indexes, and records each table's logical ID and version.
+
+Schema changes require an explicit version increase and migration:
+
+```python
+class AuditTable(BaseTable[AuditRow]):
+    table_id = "audit.events"
+    table_name = "audit_events"
+    row_model = AuditRow
+    version = 2
+
+    @classmethod
+    async def migrate(cls, backend, from_version: int) -> None:
+        if from_version < 2:
+            await backend.add_column(cls.table_name, "source", "TEXT")
+```
+
+`ensure_table()` applies the current table version and rejects downgrades. Do
+not rely on Pydantic field changes to infer renames or destructive migrations.
+Removing a plugin does not drop its table or its data. Use a stable explicit
+`table_id`; `table_name` must be a valid SQL identifier and must not collide with
+another active plugin table.
+
+A custom storage that supports plugin tables must expose a `schema_backend` with
+`ensure_table()` and the migration operations required by its table classes.
+A storage without this capability cannot activate extensions that declare tables.
+
 ## Storage, File Storage, and LLM Providers
 
 Only implement a provider when a built-in provider is insufficient.
@@ -555,6 +616,7 @@ class MyStorage(Storage):
     async def save_event(self, entry: DialogItem) -> int | None: ...
     async def get_branch(self, last_item_id: int) -> list[DialogItem]: ...
     async def find_item_id_by_external_id(self, external_id: str, origin: DialogOrigin) -> int | None: ...
+    async def get_history(self, *, origin_type=None, origin_fields=None) -> list[DialogItem]: ...
 ```
 
 A custom `FileStorage` implements `save(data, ext)`, `get(file_id)`, and
