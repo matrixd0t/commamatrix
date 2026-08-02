@@ -5,45 +5,42 @@ an agent that can modify its own runtime.
 
 ## Public API
 
-The public component API, `Agent`, and `CyclicConstraintError` are re-exported
-from the package root. `Agent(auto_load_plugins=True)` automatically activates
-existing files and package directories in `<CWD>/.commamatrix/plugins` at
-startup; pass `auto_load_plugins=False` to opt out. For a quick extension, this is supported:
+The public component API is re-exported from the package root. `Agent(auto_load_plugins=True)` automatically activates existing files and package directories in `<CWD>/.commamatrix/plugins` at startup; pass `auto_load_plugins=False` to opt out. For a quick extension, this is supported:
 
 ```python
 from commamatrix import *
 ```
 
-Explicit imports are also fine. Use the installed `commamatrix` package root.
+Explicit imports are also fine. 
 
 Useful source files for the exact API are:
 
 The Markdown targets below are relative to this guide file. For example, the tool implementation is at
-`<CommaMatrix path>/components/tool.py`.
+`<commamatrix_path>/components/tool.py`.
 
 - [components/tool.py](../../components/tool.py) - tools, schemas, aliases, and tool invocation.
 - [components/hook.py](../../components/hook.py) - hook decorators and every hook context.
 - [components/instruction.py](../../components/instruction.py) - instructions and system prompt assembly.
 - [components/config.py](../../components/config.py) - `ConfigField` and per-agent configuration.
-- [core/classes/service.py](../../core/classes/service.py) - service lifecycle and discovery.
 - [components/connector.py](../../components/connector.py) - platform connectors.
 - [components/dialog.py](../../components/dialog.py) - origins and dialog items.
 - [components/llm_adapter.py](../../components/llm_adapter.py) - LLM blocks and provider adapters.
+- [core/classes/service.py](../../core/classes/service.py) - service lifecycle and discovery.
 - [core/agent/agent.py](../../core/agent/agent.py) - extension activation and the agent run loop.
 
 ## Runtime Workflow
 
-Keep self-written extensions outside the installed framework. The runtime
-reserves `<CWD>/.commamatrix/plugins` for this purpose and creates it from the
-`before_run` hook supplied by `self_modif` before the first agent run. Do not
-spend a tool call creating this directory.
+Keep self-written extensions outside the installed framework. 
+The runtime reserves `<CWD>/.commamatrix/plugins` for this purpose and creates it when an agent starts with `auto_load_plugins=True` (the default). 
+Do not spend a tool call creating this directory.
 
 When a new `Agent` starts, `auto_load_plugins=True` (the default) automatically
 activates every direct `.py` file and every direct package directory in
 `<CWD>/.commamatrix/plugins`. A package should import its contribution modules
 from `__init__.py`; nested implementation files are not imported just because
 they exist. Disable this behavior with `Agent(auto_load_plugins=False)` when
-the host must activate extensions explicitly. Files created during the current
+the host must activate extensions explicitly; with it disabled the plugins
+directory is not created automatically either. Files created during the current
 run still need `manage_extension(action="add")`; automatic discovery applies when an agent
 starts.
 

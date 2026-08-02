@@ -212,11 +212,7 @@ class Agent:
                 normalized.append(target)
         return tuple(normalized)
 
-    async def _apply_extensions(
-            self,
-            *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType],
-            operation: ExtensionOperation,
-    ) -> list[str]:
+    async def _apply_extensions(self, *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType], operation: ExtensionOperation) -> list[str]:
         """Apply an extension operation and refresh active managers."""
         original_scope = list(self._extension_scope)
         targets = self._normalize_extension_targets(module_or_path)
@@ -232,24 +228,16 @@ class Agent:
                 raise
             raise RuntimeError("Failed to refresh extension managers") from exc
 
-    async def add_extensions(
-            self,
-            *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType],
-    ) -> list[str]:
+    async def add_extensions(self, *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType]) -> list[str]:
         """Activate modules, paths, or iterables of them for this agent."""
         return await self._apply_extensions(*module_or_path, operation="add")
 
-    async def remove_extensions(
-            self,
-            *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType],
-    ) -> list[str]:
+    async def remove_extensions(self,  *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType]) -> list[str]:
         """Deactivate modules previously active for this agent."""
         return await self._apply_extensions(*module_or_path, operation="remove")
 
-    async def reload_extensions(
-            self,
-            *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType],
-    ) -> list[str]:
+    async def reload_extensions(self,
+            *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType]) -> list[str]:
         """Reload a module and all currently loaded submodules under its name."""
         return await self._apply_extensions(*module_or_path, operation="reload")
 
@@ -432,6 +420,11 @@ class Agent:
                     await self.add_extensions("__main__")
                 await self.add_extensions(FP + ".components")
                 if self._auto_load_plugins:
+                    (
+                        Path.cwd()
+                        / self.config.get(commamatrix_dir)
+                        / self.config.get(plugins_dir)
+                    ).mkdir(parents=True, exist_ok=True)
                     plugin_targets = self._workspace_plugin_targets()
                     if plugin_targets:
                         await self.add_extensions(*plugin_targets)

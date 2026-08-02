@@ -330,6 +330,30 @@ class TestAgentLifecycle:
         finally:
             await agent.stop()
 
+    @pytest.mark.asyncio
+    async def test_auto_load_plugins_creates_plugins_dir(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        agent = Agent(config={}, auto_load_main=False)
+        await agent.start()
+        try:
+            assert (tmp_path / ".commamatrix" / "plugins").is_dir()
+        finally:
+            await agent.stop()
+
+    @pytest.mark.asyncio
+    async def test_auto_load_plugins_disabled_skips_plugins_dir(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        agent = Agent(
+            config={},
+            auto_load_main=False,
+            auto_load_plugins=False,
+        )
+        await agent.start()
+        try:
+            assert not (tmp_path / ".commamatrix" / "plugins").exists()
+        finally:
+            await agent.stop()
+
 
 class TestAgentSplitRuns:
     def test_single_origin(self):

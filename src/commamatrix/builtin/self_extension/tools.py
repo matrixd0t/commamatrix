@@ -13,11 +13,9 @@ from typing import Literal
 import aiofiles
 
 from ...components.config import ConfigField
-from ...components.hook import BeforeRunCtx, BeforeToolCallCtx, before_run
+from ...components.hook import BeforeToolCallCtx
 from ...components.instruction import InstructionCtx, instruction
 from ...components.tool import tool
-from ...core.agent.agent import plugins_dir
-from ...utils import commamatrix_dir
 
 _GUIDE_PATH = str(Path(__file__).parent / "guide.md")
 
@@ -26,22 +24,6 @@ guide_path = ConfigField[str](
     default=_GUIDE_PATH,
     description="Path to the extension authoring guide file.",
 )
-
-
-def _ensure_plugins_dir(ctx: BeforeRunCtx) -> None:
-    config = ctx.run.agent.config
-    root = (
-        Path.cwd()
-        / config.get(commamatrix_dir)
-        / config.get(plugins_dir)
-    )
-    root.mkdir(parents=True, exist_ok=True)
-
-
-@before_run
-def ensure_plugins_dir(ctx: BeforeRunCtx) -> None:
-    """Ensure the standard workspace for self-written extensions exists."""
-    _ensure_plugins_dir(ctx)
 
 
 @instruction(priority=-200)
