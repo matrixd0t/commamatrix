@@ -13,6 +13,7 @@ import json
 import sys
 import types
 from collections import defaultdict
+from collections.abc import Iterable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from traceback import format_exc
@@ -40,7 +41,6 @@ from ...components.hook import (
     RunCtx,
 )
 from ...components.llm_adapter import (
-    LLM,
     LLMResponse,
     LLMResponseBlock,
     LLMResponseToolCallBlock,
@@ -51,7 +51,6 @@ from ...components.llm_adapter import (
     StreamEnd,
     ToolCall,
     ToolCallResult,
-    llms,
 )
 from ...components.tool import ToolManager
 from ...components.hook import HookManager
@@ -69,6 +68,7 @@ from ..extensions import (
     ExtensionRuntimeError,
     discover_plugin_targets,
 )
+from ...utils import FP
 from .runner import AgentRunner
 from .lifecycle import AgentLifecycle
 
@@ -98,14 +98,11 @@ plugins_dir = ConfigField[str](
     description="Directory to load extensions from when auto_load_plugins is True",
 )
 
-
-def _framework_prefix() -> str:
-    """
-    Package prefix for this framework installation (e.g. 'commamatrix' or 'src.commamatrix').
-    Derived from the Agent module path to avoid double-import issues with the src/ layout.
-    """
-    parts = __name__.split(".")
-    return ".".join(parts[: parts.index("commamatrix") + 1])
+agentic_model = ConfigField[str](
+    name="agentic_model",
+    default="",
+    description="Substring used to select the default agent model; empty selects any model",
+)
 
 
 class Agent:
@@ -120,7 +117,6 @@ class Agent:
             config: dict[ConfigField, Any] | Config = {},
             auto_load_main: bool = True,
             auto_load_plugins: bool = True,
-            essentials: bool = True,
     ):
         load_dotenv()
         if isinstance(config, dict):
@@ -128,7 +124,6 @@ class Agent:
         self.config: Config = config
         self._auto_load_main = auto_load_main
         self._auto_load_plugins = auto_load_plugins
-        self._essentials = essentials
 
         self.services = ServiceInstanceRegistry()
         self.runner = AgentRunner()
@@ -145,7 +140,7 @@ class Agent:
         self.file_storage = FileStorageManager(agent=self)
         self.service_manager: ServiceInstanceManager[AbstractService] = ServiceInstanceManager(agent=self)
         self.connector_manager = ConnectorManager(agent=self)
-        self.server = Server(agent=self)
+        self.http_server = Server(agent=self)
 
         self.manager = AgentLifecycle(registry=self.services, children=[
             self.tool_manager,
@@ -156,7 +151,7 @@ class Agent:
             self.file_storage,
             self.service_manager,
             self.connector_manager,
-            self.server,
+            self.http_server,
         ])
 
         if self._auto_load_plugins:
@@ -200,38 +195,28 @@ class Agent:
         """Resolve an import name or filesystem path to a canonical module name."""
         return ExtensionRuntime.resolve_module_name(module_or_path)
 
-    def add_llms(self, *items: LLM | str) -> None:
-        """Add configured LLMs, creating text-only models from names."""
-        available = list(self.config.get(llms))
-        available.extend(
-            LLM(model_name=item) if isinstance(item, str) else item
-            for item in items
-        )
-        self.config.set(llms, available)
-
-    def remove_llms(self, *items: LLM | str) -> None:
-        """Remove LLMs by value or the first model matching each supplied name."""
-        available = list(self.config.get(llms))
-        for item in items:
-            if isinstance(item, str):
-                index = next(
-                    (index for index, candidate in enumerate(available) if candidate.model_name == item),
-                    None,
-                )
+    @staticmethod
+    def _normalize_extension_targets(
+            targets: Iterable[str | types.ModuleType | Iterable[str | types.ModuleType]],
+    ) -> tuple[str | types.ModuleType, ...]:
+        normalized: list[str | types.ModuleType] = []
+        for target in targets:
+            if isinstance(target, (str, types.ModuleType)):
+                normalized.append(target)
             else:
-                try:
-                    index = available.index(item)
-                except ValueError:
-                    index = None
-            if index is not None:
-                del available[index]
-        self.config.set(llms, available)
+                normalized.extend(target)
+        return tuple(normalized)
 
-    async def _apply_extensions(self, *module_or_path: str | types.ModuleType, operation: ExtensionOperation) -> list[str]:
+    async def _apply_extensions(
+            self,
+            *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType],
+            operation: ExtensionOperation,
+    ) -> list[str]:
         """Apply an extension operation and refresh active managers."""
         original_scope = list(self._extension_scope)
+        targets = self._normalize_extension_targets(module_or_path)
         try:
-            handled = self._extension_runtime.apply(module_or_path, operation)
+            handled = self._extension_runtime.apply(targets, operation)
             if handled and self._started:
                 self.manager.set_scope(self._extension_scope)
                 await self.manager.refresh()
@@ -242,15 +227,24 @@ class Agent:
                 raise
             raise RuntimeError("Failed to refresh extension managers") from exc
 
-    async def add_extensions(self, *module_or_path: str | types.ModuleType) -> list[str]:
-        """Activate modules or importable Python paths for this agent."""
+    async def add_extensions(
+            self,
+            *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType],
+    ) -> list[str]:
+        """Activate modules, paths, or iterables of them for this agent."""
         return await self._apply_extensions(*module_or_path, operation="add")
 
-    async def remove_extensions(self, *module_or_path: str | types.ModuleType) -> list[str]:
+    async def remove_extensions(
+            self,
+            *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType],
+    ) -> list[str]:
         """Deactivate modules previously active for this agent."""
         return await self._apply_extensions(*module_or_path, operation="remove")
 
-    async def reload_extensions(self, *module_or_path: str | types.ModuleType) -> list[str]:
+    async def reload_extensions(
+            self,
+            *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType],
+    ) -> list[str]:
         """Reload a module and all currently loaded submodules under its name."""
         return await self._apply_extensions(*module_or_path, operation="reload")
 
@@ -428,22 +422,17 @@ class Agent:
         load_dotenv()
         async with self._start_lock:
             if not self._started:
-                prefix = _framework_prefix()
                 if self._auto_load_main:
                     await self.add_extensions("__main__")
-                await self.add_extensions(prefix + ".components")
+                await self.add_extensions(FP + ".components")
                 if self._auto_load_plugins:
                     plugin_targets = self._workspace_plugin_targets()
                     if plugin_targets:
                         await self.add_extensions(*plugin_targets)
                 if not self._scope_has_attribute(STORAGE_ATTRIBUTE):
-                    await self.add_extensions(prefix + ".builtin.sql.sqlite_storage")
+                    await self.add_extensions(FP + ".builtin.sql.sqlite_storage")
                 if not self._scope_has_attribute(FILE_STORAGE_ATTRIBUTE):
-                    await self.add_extensions(prefix + ".builtin.simple_fs")
-                if self._essentials:
-                    from ...essentials import setup as _setup_essentials
-
-                    await _setup_essentials(self)
+                    await self.add_extensions(FP + ".builtin.simple_fs")
                 self.manager.set_scope(self._extension_scope)
                 await self.manager.start()
                 await self.hook_manager.fire(
@@ -460,18 +449,38 @@ class Agent:
         return ctx
 
     def _select_model(self, run: RunCtx) -> None:
-        if run.model is not None:
+        if run.adapter is not None and run.llm is not None:
             return
 
-        available = self.config.get(llms)
-        if not available:
-            raise RuntimeError("No LLM models configured")
+        if run.adapter is not None:
+            available = [(run.adapter, llm) for llm in run.adapter.llms]
+        elif run.llm is not None:
+            adapter = self.llm_adapter.resolve_adapter(run.llm)
+            if adapter is None:
+                raise RuntimeError(f"No adapter provides the selected LLM '{run.llm.model_name}'")
+            run.adapter = adapter
+            return
+        else:
+            available = list(self.llm_adapter.iter_llms())
 
-        selected = next((candidate for candidate in available if candidate.meta.get("agentic")), None)
-        if selected is None:
-            selected = available[0]
-            selected.meta["agentic"] = True
-        run.model = selected
+        if not available:
+            raise RuntimeError("No LLM models available")
+
+        model_filter = self.config.get(agentic_model)
+        if model_filter:
+            available = [
+                (adapter, llm)
+                for adapter, llm in available
+                if model_filter in llm.model_name
+            ]
+            if not available:
+                raise RuntimeError(
+                    f"No LLM model matches agentic_model '{model_filter}'"
+                )
+
+        adapter, llm = min(available, key=lambda item: item[1].cost.input_tokens)
+        run.adapter = adapter
+        run.llm = llm
 
     async def _store_history(self, run: RunCtx, history: list[DialogItem] | None) -> int | None:
         """Persist items in a history batch and return the last item_id."""

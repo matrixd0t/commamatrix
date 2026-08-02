@@ -1,4 +1,4 @@
-# components/server.py
+# components/http_server.py
 
 from __future__ import annotations
 
@@ -19,12 +19,12 @@ SERVER_ROOT = "/commamatrix"
 http_port = ConfigField[int](
     name="http_port",
     default=8338,
-    description="HTTP server port",
+    description="HTTP http_server port",
 )
 http_host = ConfigField[str](
     name="http_host",
     default="0.0.0.0",
-    description="HTTP server bind host; use 127.0.0.1 to restrict access from web",
+    description="HTTP http_server bind host; use 127.0.0.1 to restrict access from web",
 )
 http_external_url = ConfigField[str | None](
     name="http_external_url",
@@ -135,14 +135,14 @@ class Server(AbstractService):
 
     def _build_app(self) -> None:
         from starlette.applications import Starlette
-        from starlette.routing import Mount, Route
+        from starlette.routing import Route
 
         self._root_app = Starlette(routes=[
-            Route("/handle", self._handle, methods=["POST"], name="handle"),
-            Route("/files/{file_id:str}", self._file, methods=["GET"], name="files"),
-            Route("/files/{file_id:str}/content", self._file, methods=["GET"], name="file-content"),
+            Route(f"{SERVER_ROOT}/handle", self._handle, methods=["POST"], name="handle"),
+            Route(f"{SERVER_ROOT}/files/{{file_id:str}}", self._file, methods=["GET"], name="files"),
+            Route(f"{SERVER_ROOT}/files/{{file_id:str}}/content", self._file, methods=["GET"], name="file-content"),
         ])
-        self._app = Starlette(routes=[Mount(SERVER_ROOT, app=self._root_app, name="commamatrix")])
+        self._app = self._root_app
         for registration in self._registrations:
             registration.route = self._make_mount(registration) if registration.kind == "mount" else self._make_route(registration)
             self._root_app.routes.append(registration.route)
@@ -218,11 +218,11 @@ class Server(AbstractService):
         while not self._uvicorn_server.started:
             if self._uvicorn_server.should_exit:
                 await asyncio.gather(listener_task, return_exceptions=True)
-                raise RuntimeError(f"HTTP server failed to start on {self._host}:{self._port}")
+                raise RuntimeError(f"HTTP http_server failed to start on {self._host}:{self._port}")
             await asyncio.sleep(0.01)
         if self._uvicorn_server.servers:
             self._bound_port = self._uvicorn_server.servers[0].sockets[0].getsockname()[1]
-        print(f"CommaMatrix web server running on {self.base_url}")
+        print(f"CommaMatrix web http_server running on {self.base_url}")
 
     async def stop(self) -> None:
         server = self._uvicorn_server

@@ -8,6 +8,8 @@ from enum import StrEnum
 from json import loads
 from typing import Any
 
+from httpx import AsyncClient
+
 from ...components.dialog import DialogItem, DialogItemType
 from ...components.file_storage import DataType, FileContext, file_to_context, read_file
 from ...components.hook import BeforeLlmCallCtx
@@ -30,6 +32,12 @@ def wire_meta(kind: str, value: Any, **extra: Any) -> dict[str, Any]:
 class ApiCodec(ABC):
     protocol: ApiProtocol | str
     endpoint: str
+    models_endpoint = "/v1/models"
+    model_endpoints = (
+        "/v1/models/{model_name}",
+        "/v1/model/{model_name}",
+        "/v1/models/{model_name}/endpoints",
+    )
     can_stream: bool = False
 
     registry: dict[str, ApiCodec] = {}
@@ -39,9 +47,115 @@ class ApiCodec(ABC):
         if not getattr(cls, "__abstractmethods__", None):
             cls.registry[cls.protocol] = cls()
 
+    async def get_models(
+        self,
+        *,
+        client: AsyncClient,
+        url: str,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> list[LLM]:
+        response = await client.get(url, headers=headers, timeout=timeout)
+        response.raise_for_status()
+        payload = response.json()
+        raw_models = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(raw_models, list):
+            raise ValueError("LLM models response must contain a data list")
+        return [
+            self.parse_model(model)
+            for model in raw_models
+            if isinstance(model, dict)
+        ]
+
+    async def get_model_info(
+        self,
+        *,
+        client: AsyncClient,
+        url: str,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> LLM | None:
+        response = await client.get(url, headers=headers, timeout=timeout)
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        payload = response.json()
+        model = payload.get("data", payload) if isinstance(payload, dict) else None
+        if not isinstance(model, dict):
+            raise ValueError("LLM model response must contain a model object")
+        return self.parse_model(model)
+
+    def parse_model(self, data: dict[str, Any]) -> LLM:
+        model_name = data.get("id") or data.get("model_id")
+        if not isinstance(model_name, str) or not model_name:
+            raise ValueError("LLM model response does not contain an id")
+
+        architecture = data.get("architecture")
+        modalities: dict[str, set[DataType]] = {}
+        if isinstance(architecture, dict):
+            for field_name in ("input", "output"):
+                source_name = f"{field_name}_modalities"
+                if source_name in architecture:
+                    modalities[field_name] = self._parse_modalities(
+                        architecture[source_name]
+                    )
+
+        pricing = data.get("pricing")
+        if not isinstance(pricing, dict):
+            endpoints = data.get("endpoints")
+            if isinstance(endpoints, list):
+                pricing = next(
+                    (
+                        endpoint.get("pricing")
+                        for endpoint in endpoints
+                        if isinstance(endpoint, dict)
+                        and isinstance(endpoint.get("pricing"), dict)
+                    ),
+                    {},
+                )
+        if not isinstance(pricing, dict):
+            pricing = {}
+
+        return LLM(
+            model_name=model_name,
+            modalities=modalities,
+            cost={
+                "input_tokens": self._price_per_million(pricing.get("prompt")),
+                "output_tokens": self._price_per_million(pricing.get("completion")),
+                "cache_read_tokens": self._price_per_million(
+                    pricing.get("input_cache_read", pricing.get("cache_read"))
+                ),
+                "cache_write_tokens": self._price_per_million(
+                    pricing.get("input_cache_write", pricing.get("cache_write"))
+                ),
+            },
+            meta=dict(data),
+        )
+
+    @staticmethod
+    def _parse_modalities(value: Any) -> set[DataType]:
+        if isinstance(value, str):
+            value = (value,)
+        if not isinstance(value, Iterable):
+            return set()
+        result: set[DataType] = set()
+        for item in value:
+            try:
+                result.add(DataType(item))
+            except (TypeError, ValueError):
+                continue
+        return result
+
+    @staticmethod
+    def _price_per_million(value: Any) -> float:
+        try:
+            return float(value or 0) * 1_000_000
+        except (TypeError, ValueError):
+            return 0.0
+
     @staticmethod
     def _input_modalities(ctx: BeforeLlmCallCtx) -> set[DataType]:
-        model = ctx.run.model
+        model = ctx.run.llm
         return model.modalities.input if isinstance(model, LLM) else set()
 
     async def _file_context(self, ctx: BeforeLlmCallCtx, item: DialogItem, *, modalities: Iterable[DataType | str] | DataType | str | None = None) -> FileContext | None:

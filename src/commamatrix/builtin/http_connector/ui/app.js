@@ -22,9 +22,9 @@ const dropOverlay=document.getElementById("drop-overlay");
 const attachmentPreviewsEl=document.getElementById("attachment-previews");
 const sendBtn=document.getElementById("send-btn");
 const statusEl=document.getElementById("status");
-const serverStatusBtn=document.getElementById("server-status-btn");
-const serverStatusLight=document.getElementById("server-status-light");
-const serverStatusPanel=document.getElementById("server-status-panel");
+const serverStatusBtn=document.getElementById("http-server-status-btn");
+const serverStatusLight=document.getElementById("http-server-status-light");
+const serverStatusPanel=document.getElementById("http-server-status-panel");
 const userLabel=document.getElementById("user-label");
 const headerMenuBtn=document.getElementById("header-menu-btn");
 const passwordBtn=document.getElementById("password-btn");
@@ -126,7 +126,7 @@ function renderServerStatusMessages(){
   const messages=statusPanelOverride?[statusPanelOverride]:serverStatusMessages;
   serverStatusPanel.replaceChildren();
   for(const item of messages){
-    const message=document.createElement("div");message.className="server-status-message "+item.severity;message.textContent=item.message;serverStatusPanel.appendChild(message);
+    const message=document.createElement("div");message.className="http-server-status-message "+item.severity;message.textContent=item.message;serverStatusPanel.appendChild(message);
   }
 }
 
@@ -135,15 +135,15 @@ function updateServerStatus(data){
   serverStatusMessages=messages;
   fileUploadAllowed=data.file_upload_allowed===true;
   uploadFileChoice.disabled=!fileUploadAllowed;
-  uploadFileChoice.title=fileUploadAllowed?"Upload a file":"File uploads require a public server address";
+  uploadFileChoice.title=fileUploadAllowed?"Upload a file":"File uploads require a public http-server address";
   const severity=messages.some(item=>item.severity==="red")?"red":messages.length?"yellow":"green";
-  serverStatusLight.className="server-status-light "+severity;
+  serverStatusLight.className="http-server-status-light "+severity;
   renderServerStatusMessages();
 }
 
 function showTemporaryStatus(message,severity="yellow"){
   statusPanelOverride={message,severity};
-  serverStatusLight.className="server-status-light "+severity;
+  serverStatusLight.className="http-server-status-light "+severity;
   renderServerStatusMessages();setStatusPanelVisible(true);
   if(statusOverrideTimer)clearTimeout(statusOverrideTimer);
   statusOverrideTimer=setTimeout(()=>{statusPanelOverride=null;statusOverrideTimer=null;renderServerStatusMessages();setStatusPanelVisible(false)},5000);
@@ -197,7 +197,7 @@ function parseAttachmentContent(content){
   const kind=data.image?"image":data.file?"file":data.type==="image"?"image":data.type==="file"?"file":null;
   const value=(kind&&data[kind]&&typeof data[kind]==="object")?data[kind]:data;
   const ref=value.ref||value.file_id||value.id||null;
-  const url=value.url||value.content_url||null;
+  const url=value.url||value["content_url"]||null;
   if(!ref&&!url&&!value.name&&!value.filename&&!value.path)return null;
   return {kind:kind||((value.mime_type||"").startsWith("image/")?"image":"file"),ref,name:value.name||value.filename||value.path||ref||"file",mime_type:value.mime_type||"",size:value.size,ext:value.ext||"",url,previewUrl:value.previewUrl||null}
 }
@@ -292,7 +292,7 @@ async function uploadFile(file){
   try{
     const {response,data,unauthorized}=await authJson(serverUrl("/v1/files"),{method:"POST",body:form});
     if(unauthorized)return false
-    if(!response.ok)throw new Error(data.error||data.detail||"Upload failed");
+    if(!response.ok){attachment.status="failed";attachment.error=data.error||data.detail||"Upload failed";renderAttachmentPreviews();return false}
     attachment.file_id=data.id||data.file_id;attachment.name=data.filename||data.name||attachment.name;attachment.mime_type=data.mime_type||attachment.mime_type;attachment.size=data.bytes??data.size_bytes??attachment.size;attachment.kind=attachment.mime_type.startsWith("image/")?"image":attachment.kind;attachment.url=data.content_url||data.url||fileContentUrl(attachment.file_id);attachment.ext=attachment.name.includes(".")?attachment.name.split(".").pop().toLowerCase():"";attachment.status="ready";
   }catch(error){attachment.status="failed";attachment.error=error.message||"Upload failed"}
   renderAttachmentPreviews();return attachment.status==="ready";
@@ -357,7 +357,7 @@ function clearPendingMessage(){pendingBranch=null;pendingMessage=null;pendingRoo
 
 function clearAuth(){
   if(eventsAbortController)eventsAbortController.abort();
-  stopStatusPolling();statusPanelOverride=null;serverStatusMessages=[];fileUploadAllowed=false;uploadFileChoice.disabled=true;renderServerStatusMessages();setStatusPanelVisible(false);serverStatusLight.className="server-status-light gray";setHeaderMenuOpen(false);
+  stopStatusPolling();statusPanelOverride=null;serverStatusMessages=[];fileUploadAllowed=false;uploadFileChoice.disabled=true;renderServerStatusMessages();setStatusPanelVisible(false);serverStatusLight.className="http-server-status-light gray";setHeaderMenuOpen(false);
   eventsTask=null;authToken=null;currentUser=null;historyLoaded=false;activeStreamId=null;
   sendBtn.textContent="Send";sendBtn.classList.remove("cancel");sendBtn.disabled=false;
   localStorage.removeItem("commamatrix_auth_token");

@@ -145,7 +145,7 @@ class ResponsesCodec(ApiCodec):
             except (KeyError, TypeError, ValueError):
                 continue
 
-        request = {"model": self._model_name(model), "input": input_items, **ctx.llm_call_params}
+        request = {"llm": self._model_name(model), "input": input_items, **ctx.llm_call_params}
         if ctx.tools:
             request["tools"] = self.serialize_tools(ctx)
         return request
@@ -231,7 +231,7 @@ class ResponsesCodec(ApiCodec):
         if etype == "response.created":
             response_obj = data.get("response", {})
             acc["response_id"] = response_obj.get("id", "")
-            acc["model"] = response_obj.get("model", "")
+            acc["llm"] = response_obj.get("llm", "")
             return None
 
         if etype == "response.output_text.delta":

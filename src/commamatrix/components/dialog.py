@@ -14,7 +14,7 @@ DEFAULT_USER = 'unknown'
 
 
 class DialogItemType(StrEnum):
-    """Categories of dialog entries: user input, model output,
+    """Categories of dialog entries: user input, llm output,
     tool calls and their results, typed by media type."""
 
     INPUT = "input"
@@ -39,10 +39,11 @@ class DialogRole(StrEnum):
     TOOL = "tool"
 
 
-class DialogOrigin(BaseModel, ABC):
-    """Platform-specific origin descriptor. Subclasses define additional
-    identifying fields (chat_id, session_id, etc.). Auto-registers in
-    ORIGIN_REGISTRY for polymorphic deserialization."""
+class DialogOrigin(BaseModel):
+    """
+    Platform-specific origin descriptor. Subclasses define additional identifying fields (chat_id, session_id, etc.).
+    Auto-registers in ORIGIN_REGISTRY for polymorphic deserialization.
+    """
 
     model_config = {"frozen": True}
     origin_type: str = "unknown"

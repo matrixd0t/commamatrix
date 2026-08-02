@@ -182,7 +182,7 @@ def _make_run_ctx(agent: Agent, connector: RecordingConnector | None = None) -> 
         connector=connector,
         origin=stub_origin(),
         user="test_user",
-        model=LLM(model_name="test-model"),
+        model=LLM(model_name="test-llm"),
     )
 
 

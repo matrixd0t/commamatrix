@@ -20,7 +20,7 @@ class ToolsMethod(StrEnum):
 
 @dataclass(slots=True, kw_only=True)
 class RPCRequest:
-    """Outbound RPC call from client to server."""
+    """Outbound RPC call from client to http_server."""
 
     id: str
     method: str

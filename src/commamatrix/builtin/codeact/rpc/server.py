@@ -1,6 +1,6 @@
-# builtin/codeact/rpc/server.py
+# builtin/codeact/rpc/http_server.py
 
-"""RPC server — dispatches tool requests from the child process."""
+"""RPC http_server — dispatches tool requests from the child process."""
 
 from __future__ import annotations
 

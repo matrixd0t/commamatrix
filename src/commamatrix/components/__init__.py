@@ -30,7 +30,7 @@ from .file_storage import (
 from .llm_adapter import (
     LLM,
     LLMModalities,
-    llms,
+    Cost,
     LLMAdapter,
     LLM_ADAPTER_ATTRIBUTE,
     LLMResponse,
@@ -58,7 +58,7 @@ from .server import (
     http_host,
     http_port
 )
-from ..core.agent.agent import DEFAULT_HTTP_HEADERS, http_default_headers, http_timeout
+from ..core.agent.agent import DEFAULT_HTTP_HEADERS, agentic_model, http_default_headers, http_timeout
 from .tool import tool, ToolSource, ToolDescriptor, DEFAULT_TOOL_SEARCH_AMOUNT
 from .hook import (
     Hook,
@@ -124,7 +124,7 @@ __all__ = [
     "normalize_file_id",
     "LLM",
     "LLMModalities",
-    "llms",
+    "Cost",
     "LLMAdapter",
     "LLM_ADAPTER_ATTRIBUTE",
     "LLMResponse",
@@ -151,6 +151,7 @@ __all__ = [
     "http_host",
     "http_port",
     "DEFAULT_HTTP_HEADERS",
+    "agentic_model",
     "http_default_headers",
     "http_timeout",
     "active_storage",

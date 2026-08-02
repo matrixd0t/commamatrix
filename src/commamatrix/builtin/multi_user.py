@@ -87,7 +87,7 @@ async def add_user_message_headers(ctx: BeforeLlmCallCtx) -> None:
 
 @instruction(priority=-200)
 def describe_user_message_headers(ctx: InstructionCtx) -> str | None:
-    """Tell the model that configured user-message headers are metadata."""
+    """Tell the llm that configured user-message headers are metadata."""
     if not ctx.run.agent.config.get(user_header_template):
         return None
     return '''

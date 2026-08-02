@@ -7,22 +7,20 @@ import os
 import sys
 from collections.abc import AsyncIterator
 from typing import Any, TYPE_CHECKING
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
-from httpx import AsyncClient, HTTPError, HTTPStatusError
+from httpx import HTTPError, HTTPStatusError
 
 from ...components.config import ConfigField
 from ...components.hook import BeforeLlmCallCtx
 from ...components.llm_adapter import (
     LLM,
     LLMAdapter,
-    LLMResponse,
     LLMResponseBlock,
     LLMResponseError,
     StreamDelta,
     StreamEnd,
-    llms,
 )
 from .codec import ApiCodec, ApiProtocol
 
@@ -72,15 +70,44 @@ class LLMHTTPAdapter(LLMAdapter):
 
     def __init__(self, agent: Agent) -> None:
         super().__init__(agent)
-        self._client: AsyncClient | None = None
 
-    async def start(self) -> None:
-        self._client = AsyncClient()
+    @property
+    def codec(self) -> ApiCodec:
+        return self._resolve_codec(self.config.get(api_protocol))
 
-    async def stop(self) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+    @staticmethod
+    def _model_headers() -> dict[str, str]:
+        return {"Accept": "application/json"}
+
+    async def refresh_llms(self) -> list[LLM]:
+        url = self._join_url(
+            self.config.get(api_base),
+            self.codec.models_endpoint,
+        )
+        return await self.codec.get_models(
+            client=self.agent.http_client,
+            url=url,
+            headers=self._model_headers(),
+            timeout=self._request_timeout,
+        )
+
+    async def get_model_info(self, model_name: str) -> LLM | None:
+        encoded_name = quote(model_name, safe="/:@-._~")
+        base = self.config.get(api_base)
+        for endpoint in self.codec.model_endpoints:
+            url = self._join_url(
+                base,
+                endpoint.format(model_name=encoded_name),
+            )
+            info = await self.codec.get_model_info(
+                client=self.agent.http_client,
+                url=url,
+                headers=self._model_headers(),
+                timeout=self._request_timeout,
+            )
+            if info is not None:
+                return info
+        return None
 
     @staticmethod
     def _join_url(base: str, endpoint: str) -> str:
@@ -103,10 +130,10 @@ class LLMHTTPAdapter(LLMAdapter):
             raise RuntimeError(f"No codec registered for protocol: {protocol}")
 
     @staticmethod
-    def _resolve_model(ctx: BeforeLlmCallCtx) -> LLM | str:
-        if ctx.run.model is None:
+    def _resolve_model(ctx: BeforeLlmCallCtx) -> LLM:
+        if ctx.run.llm is None:
             raise RuntimeError("No LLM selected for the current run")
-        return ctx.run.model
+        return ctx.run.llm
 
     def _resolve_api_base(self, ctx: BeforeLlmCallCtx) -> str:
         return ctx.api_base or self.config.get(api_base)
@@ -149,7 +176,7 @@ class LLMHTTPAdapter(LLMAdapter):
             body = codec.enable_streaming(body)
             headers["Accept"] = "text/event-stream"
             try:
-                async with self._client.stream("POST", url, json=body, headers=headers, timeout=self._stream_timeout) as resp:
+                async with self.agent.http_client.stream("POST", url, json=body, headers=headers, timeout=self._stream_timeout) as resp:
                     if resp.status_code >= 400:
                         err_body = (await resp.aread()).decode(errors="replace")
                         print(f"[LLM] ERROR: stream failed ({resp.status_code}): {err_body[:500]}", file=sys.stderr)
@@ -175,7 +202,7 @@ class LLMHTTPAdapter(LLMAdapter):
                 raise
         else:
             try:
-                response = await self._client.post(url, json=body, headers=headers, timeout=self._request_timeout)
+                response = await self.agent.http_client.post(url, json=body, headers=headers, timeout=self._request_timeout)
                 response.raise_for_status()
                 payload = response.json()
             except HTTPStatusError as exc:

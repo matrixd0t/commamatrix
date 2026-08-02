@@ -106,13 +106,13 @@ class TcpServer:
     @property
     def address(self) -> tuple[str, int]:
         if self._server is None or not self._server.sockets:
-            raise RuntimeError("TCP server is not started")
+            raise RuntimeError("TCP http_server is not started")
         host, port = self._server.sockets[0].getsockname()[:2]
         return host, port
 
     async def start(self) -> tuple[str, int]:
         if self._server is not None:
-            raise RuntimeError("TCP server is already started")
+            raise RuntimeError("TCP http_server is already started")
         self._connection = asyncio.get_running_loop().create_future()
         self._server = await asyncio.start_server(self._handle_connection, host=self._host, port=0)
         return self.address
@@ -132,7 +132,7 @@ class TcpServer:
 
     async def accept(self, timeout: float | None = None) -> TcpTransport:
         if self._connection is None:
-            raise RuntimeError("TCP server is not started")
+            raise RuntimeError("TCP http_server is not started")
         if timeout is None:
             return await self._connection
         return await asyncio.wait_for(self._connection, timeout=timeout)

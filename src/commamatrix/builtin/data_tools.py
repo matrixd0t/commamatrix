@@ -230,8 +230,7 @@ async def read(ref: str, max_chars: int = 4000, *, ctx: BeforeToolCallCtx) -> st
     if content_type is DataType.TEXT:
         return _truncate_text(file_to_context(file_data).content, max_chars)
 
-    model = ctx.run.model
-    if model is not None and content_type in model.modalities.input:
+    if ctx.run.llm is not None and content_type in ctx.run.llm.modalities.input:
         _queue_file_input(file_data, ref, ctx)
         return "OK"
 

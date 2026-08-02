@@ -8,6 +8,15 @@ from enum import Enum
 from typing import Any
 
 
+def framework_prefix() -> str:
+    """Return the import prefix used by the framework package."""
+    parts = __name__.split(".")
+    return ".".join(parts[: parts.index("commamatrix") + 1])
+
+
+FP = framework_prefix()
+
+
 async def await_if_needed(result: Any) -> Any:
     if inspect.isawaitable(result):
         return await result

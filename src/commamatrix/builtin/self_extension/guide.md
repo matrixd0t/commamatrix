@@ -343,7 +343,7 @@ from commamatrix import BeforeLlmCallCtx, before_llm_call
 
 @before_llm_call
 async def choose_model(ctx: BeforeLlmCallCtx) -> None:
-    """Choose a model for a particular user or conversation."""
+    """Choose a llm for a particular user or conversation."""
     if ctx.run.state.get("use_fast_model"):
         ctx.run.model = "openai/gpt-4o-mini"
 ```
@@ -390,7 +390,7 @@ from commamatrix import InstructionCtx, instruction
 
 @instruction(priority=10)
 def current_time(ctx: InstructionCtx) -> str:
-    """Give the model the current UTC date."""
+    """Give the llm the current UTC date."""
     now = datetime.now(timezone.utc)
     return f"Current UTC time: {now:%Y-%m-%d %H:%M}"
 ```

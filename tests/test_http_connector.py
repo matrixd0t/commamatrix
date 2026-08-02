@@ -12,7 +12,9 @@ import httpx
 import pytest
 
 from commamatrix.builtin.http_connector.connector import HttpConnector, HttpOrigin
+from commamatrix.components.config import Config
 from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
+from commamatrix.components.server import Server
 from tests.conftest import stub_agent
 
 
@@ -146,7 +148,7 @@ class TestHttpConnectorRoutes:
     async def test_health(self):
         conn = _make_connector()
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=conn.app), base_url="http://test") as client:
-            response = await client.get("/health")
+            response = await client.get("/commamatrix/health")
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
 
@@ -154,7 +156,7 @@ class TestHttpConnectorRoutes:
     async def test_message_requires_authentication(self):
         conn = _make_connector()
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=conn.app), base_url="http://test") as client:
-            response = await client.post("/api/messages", json={"content": "hello"})
+            response = await client.post("/commamatrix/api/messages", json={"content": "hello"})
         assert response.status_code == 401
 
     @pytest.mark.asyncio
@@ -162,8 +164,8 @@ class TestHttpConnectorRoutes:
         conn = _make_connector()
         headers, _ = await _auth(conn)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=conn.app), base_url="http://test") as client:
-            invalid_json = await client.post("/api/messages", content="not json", headers={**headers, "content-type": "application/json"})
-            missing_content = await client.post("/api/messages", json={}, headers=headers)
+            invalid_json = await client.post("/commamatrix/api/messages", content="not json", headers={**headers, "content-type": "application/json"})
+            missing_content = await client.post("/commamatrix/api/messages", json={}, headers=headers)
 
         assert invalid_json.status_code == 400
         assert missing_content.status_code == 400
@@ -180,7 +182,7 @@ class TestHttpConnectorRoutes:
         conn = _make_connector(_mock_agent(handle))
         headers, user_id = await _auth(conn)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=conn.app), base_url="http://test") as client:
-            response = await client.post("/api/messages", json={"content": "hello"}, headers=headers)
+            response = await client.post("/commamatrix/api/messages", json={"content": "hello"}, headers=headers)
 
         assert response.status_code == 200
         assert received["platform"] == "http"
@@ -198,7 +200,7 @@ class TestHttpConnectorRoutes:
         conn = _make_connector(_mock_agent(handle, storage=storage))
         headers, user_id = await _auth(conn)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=conn.app), base_url="http://test") as client:
-            response = await client.get("/api/history", headers=headers)
+            response = await client.get("/commamatrix/api/history", headers=headers)
 
         assert response.status_code == 200
         assert response.json() == {"items": []}
@@ -241,3 +243,34 @@ class TestHttpConnectorLifecycle:
         assert session.closed
         assert conn._sessions == {}
         assert conn._sessions_by_user == {}
+
+
+class TestHttpServerRoutes:
+    @pytest.mark.asyncio
+    async def test_routes_are_namespaced_under_commamatrix(self):
+        class RouteAgent:
+            def __init__(self) -> None:
+                self.config = Config()
+                self.storage = _AuthStorage()
+                self.http_server = Server(self)
+
+            async def handle(self, payload):
+                return []
+
+        agent = RouteAgent()
+        HttpConnector(agent)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=agent.http_server.app), base_url="http://test") as client:
+            health = await client.get("/commamatrix/health")
+            index = await client.get("/commamatrix/")
+            script = await client.get("/commamatrix/ui/app.js")
+            old_health = await client.get("/health")
+            old_index = await client.get("/")
+
+        assert health.status_code == 200
+        assert health.json() == {"status": "ok"}
+        assert index.status_code == 200
+        assert '<base href="/commamatrix/ui/">' in index.text
+        assert script.status_code == 200
+        assert 'const SERVER_ROOT="/commamatrix"' in script.text
+        assert old_health.status_code == 404
+        assert old_index.status_code == 404

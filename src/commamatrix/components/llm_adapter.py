@@ -6,14 +6,13 @@ from abc import ABC, abstractmethod
 from enum import StrEnum
 from dataclasses import dataclass, field
 from json import dumps
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any, TYPE_CHECKING
 
 from ..utils import to_jsonable
 from ..core.classes.service import AbstractService
 from ..core.classes.manager import ServiceInstanceManager
 from ..core.classes.source import PythonServiceSource
-from .config import ConfigField
 from .dialog import DialogItem, DialogItemType, DialogRole, DialogOrigin
 from .file_storage import DataType
 
@@ -58,21 +57,26 @@ class LLMModalities:
 
 
 @dataclass(slots=True, kw_only=True)
+class Cost:
+    """Prices in US dollars per one million tokens."""
+    input_tokens: float = 0.0
+    output_tokens: float = 0.0
+    cache_read_tokens: float = 0.0
+    cache_write_tokens: float = 0.0
+
+
+@dataclass(slots=True, kw_only=True)
 class LLM:
     model_name: str
     modalities: LLMModalities | dict[str, Any] = field(default_factory=LLMModalities)
+    cost: Cost | dict[str, Any] = field(default_factory=Cost)
     meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if isinstance(self.modalities, dict):
             self.modalities = LLMModalities(**self.modalities)
-
-
-llms = ConfigField[list[LLM]](
-    name="llms",
-    default=lambda: [],
-    description="Available LLM models; the first agentic model is selected by default",
-)
+        if isinstance(self.cost, dict):
+            self.cost = Cost(**self.cost)
 
 
 @dataclass(slots=True, kw_only=True)
@@ -227,14 +231,25 @@ class LLMResponse:
 class LLMAdapter(AbstractService):
     """
     Abstract LLM adapter.
-    Subclasses implement ask_llm() as an async generator yielding
-    StreamDelta, LLMResponseBlock, and StreamEnd events.
+    Subclasses provide their models and implement ask_llm() as an async
+    generator yielding StreamDelta, LLMResponseBlock, and StreamEnd events.
     """
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
         if not getattr(cls, "__abstractmethods__", None):
             setattr(cls, LLM_ADAPTER_ATTRIBUTE, True)
+
+    def __init__(self, agent: Agent) -> None:
+        super().__init__(agent)
+        self.llms: list[LLM] = []
+
+    async def start(self) -> None:
+        self.llms = await self.refresh_llms()
+
+    @abstractmethod
+    async def refresh_llms(self) -> list[LLM]:
+        """Return the models currently provided by this adapter."""
 
     def ask_llm(self, ctx: BeforeLlmCallCtx, *, stream: bool = False) -> AsyncIterator[StreamDelta | LLMResponseBlock | StreamEnd]:
         raise NotImplementedError
@@ -246,9 +261,7 @@ class PythonLLMAdapterSource(PythonServiceSource):
 
 
 class LLMAdapterManager(ServiceInstanceManager[LLMAdapter]):
-    """
-    Manages LLM adapter instances. Adapter selection logic is todo
-    """
+    """Manage adapters and resolve models to their owning adapter."""
 
     base_type = LLMAdapter
     marker_attribute = LLM_ADAPTER_ATTRIBUTE
@@ -257,15 +270,33 @@ class LLMAdapterManager(ServiceInstanceManager[LLMAdapter]):
     def __init__(self, agent: Agent, **kwargs: object) -> None:
         super().__init__(agent, source=PythonLLMAdapterSource(), **kwargs)
 
-    @property
-    def _active(self) -> LLMAdapter:
-        instances = self.instances
-        if instances:
-            return instances[0]
-        raise RuntimeError("No LLM adapters registered")
+    def iter_llms(self) -> Iterator[tuple[LLMAdapter, LLM]]:
+        for adapter in self.instances:
+            yield from ((adapter, llm) for llm in adapter.llms)
+
+    def resolve_adapter(self, llm: LLM) -> LLMAdapter | None:
+        identity_matches = [
+            adapter
+            for adapter, candidate in self.iter_llms()
+            if candidate is llm
+        ]
+        if identity_matches:
+            return identity_matches[0]
+
+        name_matches = [
+            adapter
+            for adapter, candidate in self.iter_llms()
+            if candidate.model_name == llm.model_name
+        ]
+        if name_matches:
+            return name_matches[0]
+        return None
 
     def ask_llm(self, ctx: BeforeLlmCallCtx, *, stream: bool = False) -> AsyncIterator[StreamDelta | LLMResponseBlock | StreamEnd]:
-        return self._active.ask_llm(ctx, stream=stream)
+        adapter = ctx.run.adapter
+        if adapter is None:
+            raise RuntimeError("No LLM adapter selected for the current run")
+        return adapter.ask_llm(ctx, stream=stream)
 
 
 

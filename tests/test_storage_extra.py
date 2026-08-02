@@ -48,7 +48,7 @@ class TestSqliteMigrateColumns:
             item = make_dialog_item("hello")
             await storage.save_event(item)
 
-            # Migrate with a model that has extra fields — should not fail
+            # Migrate with a llm that has extra fields — should not fail
             from pydantic import BaseModel
 
             class ExtraModel(BaseModel):

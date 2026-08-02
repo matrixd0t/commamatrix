@@ -140,7 +140,7 @@ class AnthropicMessagesCodec(ApiCodec):
             except (KeyError, TypeError, ValueError):
                 continue
 
-        request = {"model": self._model_name(model), "messages": messages, **ctx.llm_call_params}
+        request = {"llm": self._model_name(model), "messages": messages, **ctx.llm_call_params}
         if system_parts:
             request["system"] = "\n\n".join(system_parts)
         if ctx.tools:
@@ -205,7 +205,7 @@ class AnthropicMessagesCodec(ApiCodec):
         if msg_type == "message_start":
             message = data.get("message", {})
             acc["response_id"] = message.get("id", "")
-            acc["model"] = message.get("model", "")
+            acc["llm"] = message.get("llm", "")
             msg_usage = message.get("usage", {})
             acc["usage"] = Usage(
                 input_tokens=msg_usage.get("input_tokens", 0),

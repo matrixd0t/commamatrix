@@ -8,17 +8,17 @@ header{height:58px;background:var(--surface);border-bottom:1px solid var(--borde
 header h1{font-size:16px;font-weight:600}
 header .status{font-size:12px;color:var(--muted);margin-left:auto}
 .server-status-wrap{position:relative;flex:0 0 auto}
-.server-status-btn{display:grid;place-items:center;width:25px;height:25px;padding:0;border:0;border-radius:50%;background:transparent}
-.server-status-btn:hover{background:rgba(255,255,255,.08)}
-.server-status-light{display:block;width:12px;height:12px;border-radius:50%;background:#6e7681;box-shadow:none}
-.server-status-light.green{background:var(--success);box-shadow:0 0 8px rgba(63,185,80,.8)}
-.server-status-light.yellow{background:#d29922;box-shadow:0 0 8px rgba(210,153,34,.9)}
-.server-status-light.red{background:var(--error);box-shadow:0 0 8px rgba(248,81,73,.9)}
-.server-status-panel{position:absolute;top:calc(100% + 7px);left:0;display:none;flex-direction:column;gap:6px;width:max-content;min-width:250px;max-width:min(380px,calc(100vw - 24px));padding:10px 12px;background:var(--surface-raised);border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.4)}
-.server-status-panel.visible{display:flex}
-.server-status-message{font-size:12px;line-height:1.4;color:var(--text)}
-.server-status-message.yellow{border-left:3px solid #d29922;padding-left:8px}
-.server-status-message.red{border-left:3px solid var(--error);padding-left:8px}
+.http-server-status-btn{display:grid;place-items:center;width:25px;height:25px;padding:0;border:0;border-radius:50%;background:transparent}
+.http-server-status-btn:hover{background:rgba(255,255,255,.08)}
+.http-server-status-light{display:block;width:12px;height:12px;border-radius:50%;background:#6e7681;box-shadow:none}
+.http-server-status-light.green{background:var(--success);box-shadow:0 0 8px rgba(63,185,80,.8)}
+.http-server-status-light.yellow{background:#d29922;box-shadow:0 0 8px rgba(210,153,34,.9)}
+.http-server-status-light.red{background:var(--error);box-shadow:0 0 8px rgba(248,81,73,.9)}
+.http-server-status-panel{position:absolute;top:calc(100% + 7px);left:0;display:none;flex-direction:column;gap:6px;width:max-content;min-width:250px;max-width:min(380px,calc(100vw - 24px));padding:10px 12px;background:var(--surface-raised);border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.4)}
+.http-server-status-panel.visible{display:flex}
+.http-server-status-message{font-size:12px;line-height:1.4;color:var(--text)}
+.http-server-status-message.yellow{border-left:3px solid #d29922;padding-left:8px}
+.http-server-status-message.red{border-left:3px solid var(--error);padding-left:8px}
 .header-actions{display:flex;align-items:center;gap:6px}
 .header-menu-btn{display:none;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:1px solid transparent;border-radius:var(--radius);font-size:24px;line-height:1;color:var(--text)}
 body.header-menu-open .header-menu-btn{border:1px solid var(--accent);color:var(--accent);background:rgba(88,166,255,.08)}
@@ -177,7 +177,7 @@ body.auth-locked #app-shell{filter:blur(6px);pointer-events:none;user-select:non
   .header-actions button{padding:7px 9px;text-align:left}
   .mobile-only{display:block}
   #branch-open{display:block}
-  .server-status-panel{position:fixed;z-index:20;top:52px;left:0;right:0;width:auto;min-width:0;max-width:none;border-radius:0}
+  .http-server-status-panel{position:fixed;z-index:20;top:52px;left:0;right:0;width:auto;min-width:0;max-width:none;border-radius:0}
   #branch-panel{position:fixed;z-index:5;left:0;right:auto;bottom:0;width:100%;max-width:100%;height:min(76vh,620px);border-right:0;border-top:1px solid var(--border);padding:16px 12px;transform:translateY(100%);transition:transform .2s ease;box-shadow:0 -14px 40px rgba(0,0,0,.35)}
   body.branch-panel-open #branch-panel{transform:translateY(0)}
   #branch-backdrop{position:fixed;z-index:4;inset:0;background:rgba(0,0,0,.48);display:none}

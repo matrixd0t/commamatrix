@@ -143,7 +143,7 @@ class TestApiCodecStreaming:
 
     def test_enable_streaming_default(self):
         codec = ChatCompletionsCodec()
-        body = {"model": "gpt-4"}
+        body = {"llm": "gpt-4"}
         result = codec.enable_streaming(body)
         assert result["stream"] is True
 
@@ -189,7 +189,7 @@ class TestChatCompletionsCodecStreaming:
 
     def test_enable_streaming_includes_stream_options(self):
         codec = ChatCompletionsCodec()
-        body = codec.enable_streaming({"model": "gpt-4"})
+        body = codec.enable_streaming({"llm": "gpt-4"})
         assert body["stream"] is True
         assert body["stream_options"] == {"include_usage": True}
 
@@ -275,14 +275,14 @@ class TestChatCompletionsCodecStreaming:
     def test_parse_stores_response_id_and_model(self):
         codec = ChatCompletionsCodec()
         acc: dict = {}
-        data = {"id": "resp-123", "model": "gpt-4", "choices": [{"delta": {"content": "x"}, "finish_reason": None}]}
+        data = {"id": "resp-123", "llm": "gpt-4", "choices": [{"delta": {"content": "x"}, "finish_reason": None}]}
         codec.parse_stream_event(None, data, acc)
         assert acc["response_id"] == "resp-123"
-        assert acc["model"] == "gpt-4"
+        assert acc["llm"] == "gpt-4"
 
     def test_flush_stream(self):
         codec = ChatCompletionsCodec()
-        acc = {"stop_reason": StopReason.TOOL_USE, "usage": Usage(input_tokens=10, output_tokens=5), "model": "gpt-4", "response_id": "r1"}
+        acc = {"stop_reason": StopReason.TOOL_USE, "usage": Usage(input_tokens=10, output_tokens=5), "llm": "gpt-4", "response_id": "r1"}
         blocks, end = codec.flush_stream(acc)
         assert isinstance(end, StreamEnd)
         assert end.stop_reason == StopReason.TOOL_USE
@@ -351,10 +351,10 @@ class TestResponsesCodecStreaming:
     def test_parse_response_created_stores_id(self):
         codec = ResponsesCodec()
         acc: dict = {}
-        data = {"type": "response.created", "response": {"id": "resp-1", "model": "o3"}}
+        data = {"type": "response.created", "response": {"id": "resp-1", "llm": "o3"}}
         codec.parse_stream_event(None, data, acc)
         assert acc["response_id"] == "resp-1"
-        assert acc["model"] == "o3"
+        assert acc["llm"] == "o3"
 
     def test_parse_response_completed_stores_response(self):
         codec = ResponsesCodec()
@@ -366,7 +366,7 @@ class TestResponsesCodecStreaming:
 
     def test_flush_stream_completed(self):
         codec = ResponsesCodec()
-        acc = {"response_id": "r1", "model": "o3", "response": {"status": "completed", "usage": {"input_tokens": 10, "output_tokens": 5}}}
+        acc = {"response_id": "r1", "llm": "o3", "response": {"status": "completed", "usage": {"input_tokens": 10, "output_tokens": 5}}}
         blocks, end = codec.flush_stream(acc)
         assert end.stop_reason == StopReason.END_TURN
         assert end.usage.input_tokens == 10
@@ -392,11 +392,11 @@ class TestAnthropicMessagesCodecStreaming:
     def test_parse_message_start(self):
         codec = AnthropicMessagesCodec()
         acc: dict = {}
-        data = {"type": "message_start", "message": {"id": "msg-1", "model": "claude-3", "usage": {"input_tokens": 50}}}
+        data = {"type": "message_start", "message": {"id": "msg-1", "llm": "claude-3", "usage": {"input_tokens": 50}}}
         result = codec.parse_stream_event(None, data, acc)
         assert result is None
         assert acc["response_id"] == "msg-1"
-        assert acc["model"] == "claude-3"
+        assert acc["llm"] == "claude-3"
         assert acc["usage"].input_tokens == 50
 
     def test_parse_text_delta(self):
@@ -472,7 +472,7 @@ class TestAnthropicMessagesCodecStreaming:
 
     def test_flush_stream(self):
         codec = AnthropicMessagesCodec()
-        acc = {"stop_reason": StopReason.END_TURN, "usage": Usage(input_tokens=10, output_tokens=5), "model": "claude-3", "response_id": "msg-1"}
+        acc = {"stop_reason": StopReason.END_TURN, "usage": Usage(input_tokens=10, output_tokens=5), "llm": "claude-3", "response_id": "msg-1"}
         blocks, end = codec.flush_stream(acc)
         assert end.stop_reason == StopReason.END_TURN
         assert end.usage.input_tokens == 10

@@ -44,7 +44,7 @@ class TestChatCompletionsCodec:
         codec = ChatCompletionsCodec()
         body = {
             "id": "resp1",
-            "model": "gpt-4",
+            "llm": "gpt-4",
             "choices": [{
                 "message": {"role": "assistant", "content": "Hello!"},
                 "finish_reason": "stop",
@@ -63,7 +63,7 @@ class TestChatCompletionsCodec:
         codec = ChatCompletionsCodec()
         body = {
             "id": "resp2",
-            "model": "gpt-4",
+            "llm": "gpt-4",
             "choices": [{
                 "message": {
                     "role": "assistant",
@@ -93,7 +93,7 @@ class TestChatCompletionsCodec:
         codec = ChatCompletionsCodec()
         body = {
             "id": "resp3",
-            "model": "gpt-4",
+            "llm": "gpt-4",
             "choices": [{
                 "message": {"role": "assistant", "content": "truncated"},
                 "finish_reason": "length",
@@ -106,7 +106,7 @@ class TestChatCompletionsCodec:
         codec = ChatCompletionsCodec()
         body = {
             "id": "resp4",
-            "model": "deepseek-r1",
+            "llm": "deepseek-r1",
             "choices": [{
                 "message": {
                     "role": "assistant",
@@ -129,7 +129,7 @@ class TestResponsesCodec:
         codec = ResponsesCodec()
         body = {
             "id": "resp1",
-            "model": "gpt-4",
+            "llm": "gpt-4",
             "output": [{
                 "type": "message",
                 "content": [{"type": "output_text", "text": "Hi!"}],
@@ -145,7 +145,7 @@ class TestResponsesCodec:
         codec = ResponsesCodec()
         body = {
             "id": "resp2",
-            "model": "gpt-4",
+            "llm": "gpt-4",
             "output": [{
                 "type": "function_call",
                 "call_id": "tc1",
@@ -164,7 +164,7 @@ class TestResponsesCodec:
         codec = ResponsesCodec()
         body = {
             "id": "resp3",
-            "model": "o3",
+            "llm": "o3",
             "output": [{
                 "type": "reasoning",
                 "summary": [{"type": "summary_text", "text": "thinking..."}],
@@ -182,7 +182,7 @@ class TestResponsesCodec:
         codec = ResponsesCodec()
         body = {
             "id": "resp4",
-            "model": "gpt-4",
+            "llm": "gpt-4",
             "status": "incomplete",
             "incomplete_details": {"reason": "max_output_tokens"},
             "output": [],
@@ -196,7 +196,7 @@ class TestAnthropicMessagesCodec:
         codec = AnthropicMessagesCodec()
         body = {
             "id": "msg1",
-            "model": "claude-3",
+            "llm": "claude-3",
             "content": [{"type": "text", "text": "Hello!"}],
             "stop_reason": "end_turn",
             "usage": {"input_tokens": 10, "output_tokens": 5},
@@ -211,7 +211,7 @@ class TestAnthropicMessagesCodec:
         codec = AnthropicMessagesCodec()
         body = {
             "id": "msg2",
-            "model": "claude-3",
+            "llm": "claude-3",
             "content": [{
                 "type": "tool_use",
                 "id": "tc1",
@@ -231,7 +231,7 @@ class TestAnthropicMessagesCodec:
         codec = AnthropicMessagesCodec()
         body = {
             "id": "msg3",
-            "model": "claude-3",
+            "llm": "claude-3",
             "content": [
                 {"type": "thinking", "thinking": "reasoning..."},
                 {"type": "text", "text": "answer"},
@@ -247,7 +247,7 @@ class TestAnthropicMessagesCodec:
         codec = AnthropicMessagesCodec()
         body = {
             "id": "msg4",
-            "model": "claude-3",
+            "llm": "claude-3",
             "content": [],
             "stop_reason": "max_tokens",
         }

@@ -67,7 +67,7 @@ class FileStorage(AbstractService):
     async def delete(self, file_id: str) -> bool: ...
 
     def url(self, file_id: str) -> str:
-        return self.agent.server.file_url(file_id)
+        return self.agent.http_server.file_url(file_id)
 
 
 class PythonFileStorageSource(PythonServiceSource):
@@ -94,7 +94,7 @@ class FileStorageManager(ActiveServiceInstanceManager[FileStorage]):
         return await self._active.delete(file_id)
 
     def url(self, file_id: str) -> str:
-        return self.agent.server.file_url(file_id)
+        return self.agent.http_server.file_url(file_id)
 
 
 def ext_to_mime(ext: str) -> str:

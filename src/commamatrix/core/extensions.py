@@ -40,6 +40,18 @@ class ExtensionRuntimeError(RuntimeError):
     """Raised when an extension target cannot be processed."""
 
 
+class MissingExtensionDependencyError(ExtensionRuntimeError):
+    """Raised when an extension imports a package unavailable to the runtime."""
+
+    def __init__(self, extension_module: str, dependency_module: str) -> None:
+        self.extension_module = extension_module
+        self.dependency_module = dependency_module
+        super().__init__(
+            f"Extension '{extension_module}' requires missing dependency "
+            f"'{dependency_module}'. Install it with: pip install {dependency_module}"
+        )
+
+
 class ExtensionRuntime:
     """Resolve extension targets and maintain their active module scope."""
 
@@ -76,6 +88,9 @@ class ExtensionRuntime:
                     continue
                 if handler(module_name):
                     handled.append(module_name)
+            except ExtensionRuntimeError:
+                self._scope = original_scope
+                raise
             except Exception as exc:
                 self._scope = original_scope
                 target = module_name or f"<{type(entry).__name__}>"
@@ -101,9 +116,23 @@ class ExtensionRuntime:
             return target.__name__
         return None
 
+    @staticmethod
+    def _import_extension_module(module_name: str) -> types.ModuleType:
+        try:
+            return importlib.import_module(module_name)
+        except ModuleNotFoundError as exc:
+            missing_name = exc.name
+            if (
+                    missing_name
+                    and missing_name != module_name
+                    and not missing_name.startswith(module_name + ".")
+            ):
+                raise MissingExtensionDependencyError(module_name, missing_name) from exc
+            raise
+
     def _add(self, module_name: str) -> bool:
         if module_name not in sys.modules:
-            importlib.import_module(module_name)
+            self._import_extension_module(module_name)
 
         prefix = module_name + "."
         active = set(self._scope)
@@ -138,7 +167,7 @@ class ExtensionRuntime:
         try:
             for name in module_names:
                 sys.modules.pop(name, None)
-            importlib.import_module(module_name)
+            self._import_extension_module(module_name)
             alive = sorted(
                 name
                 for name in sys.modules

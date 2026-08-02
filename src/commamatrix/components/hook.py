@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from ..core.agent import Agent
     from .connector import Connector
     from .dialog import DialogItem, DialogOrigin
-    from .llm_adapter import LLM, LLMResponse, ToolCallResult, ToolCall
+    from .llm_adapter import LLM, LLMAdapter, LLMResponse, ToolCallResult, ToolCall
     from .tool import ToolDescriptor
 
 CtxT = TypeVar("CtxT")
@@ -58,9 +58,10 @@ class RunCtx:
 
     agent: Agent
     connector: Connector | None = None
+    adapter: LLMAdapter | None = None
     origin: DialogOrigin
     user: str
-    model: LLM | None = None
+    llm: LLM | None = None
     run_id: str = field(default_factory=lambda: uuid4().hex)
     iteration: int = 0
     state: dict[str, Any] = field(default_factory=dict)
@@ -69,7 +70,7 @@ class RunCtx:
 
     Unlike ``state`` (per-run only), ``chain_state`` is serialised into every 
     ``DialogItem.meta["chain"]`` and restored from the last item of the conversation branch when a new run starts.  
-    This lets hooks and tools make cross-message decisions (e.g. enabling CodeAct mode).
+    This lets hooks and tools make cross-message decisions.
     """
     tool_output_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     """Serialises ``send + persist`` of tool-call results.
@@ -77,7 +78,6 @@ class RunCtx:
     This lock ensures that tool-result ``DialogItem`` items are stored one at a time and their ``previous_item_id`` chain is kept consistent.  
     It does NOT impose any ordering on parallel nested tool results — each result carries its own ``tool_call_id`` that links it back to the originating call.
     """
-
     tool_output_tail: int | None = None
     pending_input_items: list[DialogItem] = field(default_factory=list)
 
@@ -346,7 +346,7 @@ Example::
 """
 
 before_llm_call = Hook[BeforeLlmCallCtx](HookEventType.BEFORE_LLM_CALL, BeforeLlmCallCtx)
-"""Fired before the LLM is called.  Mutate ``ctx.dialog``, ``ctx.run.model``,
+"""Fired before the LLM is called.  Mutate ``ctx.dialog``, ``ctx.run.adapter``, ``ctx.run.llm``,
 ``ctx.api_base``, ``ctx.tools``, or ``ctx.llm_call_params`` to influence the call.
 
 The decorated function must accept ``BeforeLlmCallCtx`` and return ``None``.
@@ -356,7 +356,7 @@ Example::
     @before_llm_call
     async def override_model(ctx: BeforeLlmCallCtx) -> None:
         if ctx.run.state.get("use_fast_model"):
-            ctx.run.model = LLM(model_name="gpt-4o-mini")
+            ctx.run.llm = LLM(model_name="gpt-4o-mini")
 
     @before_llm_call(after=override_model)
     async def add_model_specific_instructions(ctx: BeforeLlmCallCtx) -> None:

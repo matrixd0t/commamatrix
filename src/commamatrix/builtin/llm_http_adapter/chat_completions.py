@@ -175,7 +175,7 @@ class ChatCompletionsCodec(ApiCodec):
                 continue
 
         flush_assistant()
-        request = {"model": self._model_name(model), "messages": messages, **ctx.llm_call_params}
+        request = {"llm": self._model_name(model), "messages": messages, **ctx.llm_call_params}
         if ctx.tools:
             request["tools"] = self.serialize_tools(ctx)
         return request
@@ -259,11 +259,11 @@ class ChatCompletionsCodec(ApiCodec):
         choices = data.get("choices")
         usage = data.get("usage")
         response_id = data.get("id")
-        model = data.get("model")
+        model = data.get("llm")
         if response_id:
             acc["response_id"] = response_id
         if model:
-            acc["model"] = model
+            acc["llm"] = model
 
         if not choices and usage is not None:
             acc["usage"] = Usage(
