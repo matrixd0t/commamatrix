@@ -21,8 +21,8 @@ dependencies = [
     "python-multipart",
     "trafilatura>=2.1.0",
     "ddgs>=9.14.4",
-    "matrix-fn-schema>=0.1.9",
     "matrix-planner>=0.2.1",
+    "matrix-fn-schema>=0.1.9",
 ]
 
 [project.optional-dependencies]

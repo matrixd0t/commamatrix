@@ -5,6 +5,7 @@
 from . import connector, hooks, service, tools
 from .connector import InternalConnector, InternalOrigin
 from .service import SubagentService
+from .submit import submit_run
 from .tools import call_agent
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "InternalOrigin",
     "SubagentService",
     "call_agent",
+    "submit_run",
 ]

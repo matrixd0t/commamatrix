@@ -101,6 +101,7 @@ let serverStatusMessages=[];
 let statusPollTimer=null;
 let statusPanelOverride=null;
 let statusOverrideTimer=null;
+let serverConnected=null;
 const STATUS_POLL_INTERVAL_MS=10000;
 const NO_PUBLIC_ADDRESS_MESSAGE="You cannot upload files for LLM: CommaMatrix is not visible from the Internet.";
 
@@ -131,23 +132,29 @@ function renderServerStatusMessages(){
   }
 }
 
+function setUiStatus(text){statusEl.textContent=serverConnected===false?"Disconnected":text}
+function serverStatusSeverity(){return serverStatusMessages.some(item=>item.severity==="red")?"red":serverStatusMessages.length?"yellow":"green"}
+function updateServerStatusLight(){const severity=serverConnected===false?"gray":statusPanelOverride?.severity||serverStatusSeverity();serverStatusLight.className="http-server-status-light "+severity}
+function setServerConnected(connected){
+  const wasDisconnected=serverConnected===false;serverConnected=connected;updateServerStatusLight();
+  if(!connected)statusEl.textContent="Disconnected";else if(wasDisconnected)statusEl.textContent="Ready";
+}
+
 function updateServerStatus(data){
-  const messages=Array.isArray(data.messages)?data.messages.filter(item=>item&&typeof item.message==="string"&&["yellow","red"].includes(item.severity)).map(item=>({message:item.message,severity:item.severity})):[];
-  serverStatusMessages=messages;
+  serverStatusMessages=Array.isArray(data.messages)?data.messages.filter(item=>item&&typeof item.message==="string"&&["yellow","red"].includes(item.severity)).map(item=>({message:item.message,severity:item.severity})):[];
   fileUploadAllowed=data.file_upload_allowed===true;
   uploadFileChoice.disabled=!fileUploadAllowed;
   uploadFileChoice.title=fileUploadAllowed?"Upload a file":"File uploads require a public http-server address";
-  const severity=messages.some(item=>item.severity==="red")?"red":messages.length?"yellow":"green";
-  serverStatusLight.className="http-server-status-light "+severity;
+  setServerConnected(true);
   renderServerStatusMessages();
 }
 
 function showTemporaryStatus(message,severity="yellow"){
   statusPanelOverride={message,severity};
-  serverStatusLight.className="http-server-status-light "+severity;
+  updateServerStatusLight();
   renderServerStatusMessages();setStatusPanelVisible(true);
   if(statusOverrideTimer)clearTimeout(statusOverrideTimer);
-  statusOverrideTimer=setTimeout(()=>{statusPanelOverride=null;statusOverrideTimer=null;renderServerStatusMessages();setStatusPanelVisible(false)},5000);
+  statusOverrideTimer=setTimeout(()=>{statusPanelOverride=null;statusOverrideTimer=null;updateServerStatusLight();renderServerStatusMessages();setStatusPanelVisible(false)},5000);
 }
 
 function showUploadBlocked(){showTemporaryStatus(NO_PUBLIC_ADDRESS_MESSAGE);}
@@ -160,8 +167,8 @@ async function pollServerStatus(){
     const {response,data,unauthorized}=await authJson(serverUrl("/api/status"));
     if(!authToken||unauthorized)return;
     if(response.ok)updateServerStatus(data);
-    else{fileUploadAllowed=false;uploadFileChoice.disabled=true}
-  }catch{fileUploadAllowed=false;uploadFileChoice.disabled=true}
+    else{fileUploadAllowed=false;uploadFileChoice.disabled=true;setServerConnected(false)}
+  }catch{fileUploadAllowed=false;uploadFileChoice.disabled=true;setServerConnected(false)}
 }
 
 function startStatusPolling(){
@@ -283,7 +290,7 @@ function externalLinkAttachment(url){
   return {external:true,url,previewUrl:url,name,mime_type,ext,kind,status:"ready"};
 }
 
-function addExternalLink(url){pendingAttachments.push(externalLinkAttachment(url));renderAttachmentPreviews();statusEl.textContent="Ready"}
+function addExternalLink(url){pendingAttachments.push(externalLinkAttachment(url));renderAttachmentPreviews();setUiStatus("Ready")}
 
 async function uploadFile(file){
   if(!authToken){showAuth();return false}
@@ -359,7 +366,7 @@ function clearPendingMessage(){pendingBranch=null;pendingMessage=null;pendingRoo
 function clearAuth(){
   if(eventsAbortController)eventsAbortController.abort();
   stopStatusPolling();statusPanelOverride=null;serverStatusMessages=[];fileUploadAllowed=false;uploadFileChoice.disabled=true;renderServerStatusMessages();setStatusPanelVisible(false);serverStatusLight.className="http-server-status-light gray";setHeaderMenuOpen(false);
-  eventsTask=null;authToken=null;currentUser=null;historyLoaded=false;activeStreamId=null;
+  eventsTask=null;authToken=null;currentUser=null;historyLoaded=false;activeStreamId=null;serverConnected=null;
   sendBtn.textContent="Send";sendBtn.classList.remove("cancel");sendBtn.disabled=true;
   localStorage.removeItem("commamatrix_auth_token");
   clearPendingAttachments();
@@ -488,14 +495,24 @@ function latestVisibleItemId(startId){
   return latest?latest.item_id:null;
 }
 
-function latestGlobalVisibleId(){
+function latestBranchItemId(startId){
+  const start=itemsById.get(startId);if(!start)return null;
+  let latest=null;const stack=[start];const seen=new Set();
+  while(stack.length){
+    const item=stack.pop();if(seen.has(item.item_id))continue;seen.add(item.item_id);
+    if(!childItems(item.item_id).length&&(!latest||Number(latest.item_id)<Number(item.item_id)))latest=item;
+    stack.push(...childItems(item.item_id));
+  }
+  return latest?latest.item_id:null;
+}
+
+function latestGlobalItemId(){
   const items=[...itemsById.values()].filter(item=>{
-    if(!isVisibleItem(item))return false;
     const rootId=rootIdForItem(item.item_id);
-    return rootId===null||!isRootDeleted(rootId);
+    return (rootId===null||!isRootDeleted(rootId))&&!childItems(item.item_id).length;
   });
   if(!items.length)return null;
-  items.sort(compareItems);return items[items.length-1].item_id;
+  items.sort((a,b)=>Number(a.item_id)-Number(b.item_id));return items[items.length-1].item_id;
 }
 
 function logicalChildren(itemId){
@@ -540,7 +557,7 @@ function expandUserAncestors(itemId){
 function selectBranchNode(itemId){
   const item=itemsById.get(itemId);if(!item)return;
   const preferred=selectedLeafByNode.get(itemId);
-  selectedHeadId=preferred!==undefined&&chainContains(preferred,itemId)?preferred:(latestVisibleItemId(itemId)||itemId);
+  selectedHeadId=preferred!==undefined&&chainContains(preferred,itemId)?preferred:(latestBranchItemId(itemId)||itemId);
   newRootSelected=false;
   clearPendingMessage();expandUserAncestors(itemId);rememberCurrentSelection();renderHistory();closeBranchPanel();
 }
@@ -816,7 +833,7 @@ function showTyping(){
 function hideTyping(){if(typingIndicator){typingIndicator.remove();typingIndicator=null}}
 
 function setProcessing(on,streamId=null){
-  activeStreamId=on?streamId:null;sendBtn.textContent=on?"Cancel":"Send";sendBtn.classList.toggle("cancel",on);sendBtn.disabled=!currentUser;statusEl.textContent=on?"Processing...":"Ready";if(!on)hideTyping();syncActionState();
+  activeStreamId=on?streamId:null;sendBtn.textContent=on?"Cancel":"Send";sendBtn.classList.toggle("cancel",on);sendBtn.disabled=!currentUser;setUiStatus(on?"Processing...":"Ready");if(!on)hideTyping();syncActionState();
 }
 
 function syncActionState(){
@@ -849,7 +866,7 @@ function handleStreamChunk(data){
   hideTyping();const chunkType=data.item_type||"output";
   if(chunkType==="tool_call"&&updateCodeActPreview(data))return;
   const streamId=data.stream_id||chunkType;let stream=activeStreams[streamId];
-  statusEl.textContent="Streaming...";
+  setUiStatus("Streaming...");
   if(!stream){let element;if(chunkType==="reasoning")element=addReasoning("");else if(chunkType==="tool_call"){element=document.createElement("details");element.className="msg tool-call";element.open=true;const summary=document.createElement("summary");summary.textContent="Tool: ...";element.appendChild(summary);const content=document.createElement("div");element.appendChild(content);messagesEl.appendChild(element)}else element=addMessage("assistant","","Assistant");stream={element,item_type:chunkType,previous_item_id:data.previous_item_id,text:""};activeStreams[streamId]=stream}
   stream.text+=(data.content||"");const contentEl=stream.element.querySelector("div:last-child")||stream.element;
   if(chunkType==="output"||chunkType==="reasoning")renderMarkdown(contentEl,stream.text);else contentEl.textContent=stream.text;
@@ -860,7 +877,7 @@ async function submitMessage(text,parentId,branch=null,attachments=[]){
   if(!authToken){showAuth();return false}
   if(activeStreamId)return false;
   const previousItemId=parentId===null||parentId===undefined?null:parentId;
-  pendingBranch=branch;pendingMessage={parentId:previousItemId,content:text,attachments};pendingRoot=!branch&&previousItemId===null;pendingRootContent=pendingRoot?text:"";statusEl.textContent="Sending...";sendBtn.disabled=true;
+  pendingBranch=branch;pendingMessage={parentId:previousItemId,content:text,attachments};pendingRoot=!branch&&previousItemId===null;pendingRootContent=pendingRoot?text:"";setUiStatus("Sending...");sendBtn.disabled=true;
   try{
     const {response,data,unauthorized}=await authJson(serverUrl("/api/messages?stream=1"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({content:text,attachments:attachments.map(attachmentPayload),previous_item_id:previousItemId,timezone:browserTimezone()})});
     if(unauthorized){setProcessing(false);clearPendingMessage();return false}
@@ -871,11 +888,11 @@ async function submitMessage(text,parentId,branch=null,attachments=[]){
 
 async function send(){
   const text=inputEl.value.trim();if(activeStreamId)return;
-  const uploading=pendingAttachments.some(attachment=>attachment.status==="uploading");if(uploading){statusEl.textContent="Wait for uploads to finish";return}
-  const failed=pendingAttachments.some(attachment=>attachment.status!=="ready");if(failed){statusEl.textContent="Remove failed uploads";return}
+  const uploading=pendingAttachments.some(attachment=>attachment.status==="uploading");if(uploading){setUiStatus("Wait for uploads to finish");return}
+  const failed=pendingAttachments.some(attachment=>attachment.status!=="ready");if(failed){setUiStatus("Remove failed uploads");return}
   const attachments=pendingAttachments.filter(attachment=>attachment.status==="ready"&&(attachment.file_id||attachment.external&&attachment.url));
   if(!text&&!attachments.length)return;
-  const fallbackParentId=latestGlobalVisibleId();
+  const fallbackParentId=latestGlobalItemId();
   const parentId=newRootSelected?null:(selectedHeadId??fallbackParentId);
   const sent=await submitMessage(text,parentId,null,attachments);if(sent){inputEl.value="";inputEl.style.height="auto";clearPendingAttachments()}else adjustInputHeight();
 }
@@ -920,7 +937,7 @@ async function handleServerEvent(data){
   if(data.type==="stream_chunk")handleStreamChunk(data);
   else if(data.type==="dialog_item")await applyDialogItem(data);
   else if(data.type==="typing"){
-    if(data.active){showTyping();statusEl.textContent="Processing..."}else hideTyping();
+    if(data.active){showTyping();setUiStatus("Processing...")}else hideTyping();
   }
   else if(data.type==="message_done"){if(!activeStreamId||data.stream_id===activeStreamId)setProcessing(false)}
   else if(data.type==="error")addError(data.content||data.error||"Server error");
@@ -936,7 +953,7 @@ async function loadHistory(preferredHeadId=null){
   const preferredContinuesSelection=Boolean(preferredItem&&((selectedHeadId!==null&&chainContains(preferredItem.item_id,selectedHeadId))||(selectedHeadId===null&&!newRootSelected)));
   const pendingItem=pendingMessage?[...itemsById.values()].filter(item=>!knownItemIds.has(item.item_id)&&pendingItemMatches(item)).sort(compareItems).pop():null;
   const keepSelection=historyLoaded&&!pendingMessage&&previousSelected!==null&&isVisibleItem(itemsById.get(previousSelected));
-  if(pendingItem){selectedHeadId=latestVisibleItemId(pendingItem.item_id)||pendingItem.item_id;clearPendingMessage()}else if(preferredContinuesSelection&&preferredItem)selectedHeadId=latestVisibleItemId(preferredItem.item_id)||preferredItem.item_id;else if(keepSelection)selectedHeadId=previousSelected;else if(!historyLoaded&&!pendingMessage)selectedHeadId=latestGlobalVisibleId();else if(!pendingMessage&&selectedHeadId!==null&&!itemsById.has(selectedHeadId))selectedHeadId=latestGlobalVisibleId();
+  if(pendingItem){selectedHeadId=latestBranchItemId(pendingItem.item_id)||pendingItem.item_id;clearPendingMessage()}else if(preferredContinuesSelection&&preferredItem)selectedHeadId=latestBranchItemId(preferredItem.item_id)||preferredItem.item_id;else if(keepSelection)selectedHeadId=previousSelected;else if(!historyLoaded&&!pendingMessage)selectedHeadId=latestGlobalItemId();else if(!pendingMessage&&selectedHeadId!==null&&!itemsById.has(selectedHeadId))selectedHeadId=latestGlobalItemId();
   historyLoaded=true;rememberCurrentSelection();renderHistory();
 }
 
@@ -954,9 +971,13 @@ async function eventsLoop(){
     try{
       eventsAbortController=new AbortController();const response=await authFetch(serverUrl("/api/events"),{signal:eventsAbortController.signal});
       if(isUnauthorized(response))return
-      if(!response.ok){await new Promise(resolve=>setTimeout(resolve,1000));continue}
-      await loadHistory();await handleEventStream(response);
-    }catch(error){if(!authToken||error.name==="AbortError")return;await new Promise(resolve=>setTimeout(resolve,1000))}
+      if(!response.ok){setServerConnected(false);await new Promise(resolve=>setTimeout(resolve,1000));continue}
+      setServerConnected(true);
+      await loadHistory();await handleEventStream(response);setServerConnected(false);
+    }catch(error){
+      if(!authToken||error.name==="AbortError")return;
+      setServerConnected(false);await new Promise(resolve=>setTimeout(resolve,1000));
+    }
     finally{eventsAbortController=null}
   }
 }

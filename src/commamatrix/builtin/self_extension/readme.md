@@ -1,7 +1,6 @@
 # CommaMatrix Extension Guide
 
-This guide explains how to write an extension or a third-party integration for
-an agent that can modify its own runtime.
+This guide explains how to write an extension or a third-party integration for an agent that can modify its own runtime.
 
 ## Public API
 
@@ -35,15 +34,9 @@ Keep self-written extensions outside the installed framework.
 The runtime reserves `<CWD>/.commamatrix/plugins` for this purpose and creates it when an agent starts with `auto_load_plugins=True` (the default). 
 Do not spend a tool call creating this directory.
 
-When a new `Agent` starts, `auto_load_plugins=True` (the default) automatically
-activates every direct `.py` file and every direct package directory in
-`<CWD>/.commamatrix/plugins`. A package should import its contribution modules
-from `__init__.py`; nested implementation files are not imported just because
-they exist. Disable this behavior with `Agent(auto_load_plugins=False)` when
-the host must activate extensions explicitly; with it disabled the plugins
-directory is not created automatically either. Files created during the current
-run still need `manage_extension(action="add")`; automatic discovery applies when an agent
-starts.
+When a new `Agent` starts, `auto_load_plugins=True` (the default) automatically activates every direct `.py` file and every direct package directory in `<CWD>/.commamatrix/plugins`.
+A package should import its contribution modules from `__init__.py`; nested implementation files are not imported just because they exist. Disable this behavior with `Agent(auto_load_plugins=False)` when the host must activate extensions explicitly.
+Python files created during the current run need `manage_extension(action="add")` call to be used.
 
 ```text
 <CWD>/
@@ -63,33 +56,16 @@ Prefer the smallest implementation that solves the task:
 4. Use `manage_extension(action="add", module_or_path=".commamatrix/plugins/response_style.py")` when the current agent must use a newly created file immediately.
 5. Test the new capability. Reload it after editing and remove it when no longer needed.
 
-`module_or_path` accepts either an import name or a relative/absolute Python
-path. A path is resolved to its canonical import name before activation, so the
-runtime does not create synthetic module names. Use the same target form for
-reloads; the result reports the canonical module name that is active.
+`module_or_path` accepts either an import name or a relative/absolute Python path. A path is resolved to its canonical import name before activation, so the runtime does not create synthetic module names. Use the same target form for reloads; the result reports the canonical module name that is active.
 
-The extension scope belongs to one `Agent`. Activation refreshes all managers
-and starts newly discovered services and connectors. Removing an extension
-removes its descriptors and stops its owned services and connectors. It does
-not delete source files or uninstall dependencies.
-
-All built-in plugins are optional. Core components are part of the framework,
-but a particular built-in plugin may not be active. Do not assume that one is
-loaded unless the current tool set or application configuration confirms it. A
-normal extension should depend only on the core API and on libraries that are
-actually installed.
+The extension scope belongs to one `Agent`. 
+Activation refreshes all managers and starts newly discovered services and connectors. Removing an extension removes its descriptors and stops its owned services and connectors. It does not delete source files or uninstall dependencies.
 
 ## Extension Size and Layout
 
-Keep an extension in one file while it is reasonably understandable. As a
-practical rule, a plugin up to about 500-600 lines should normally remain a
-single file. Split it into a package only when it is clearly larger, has
-independent subsystems, or a package layout materially improves maintenance.
-Do not create `config.py`, `hooks.py`, `service.py`, and `tools.py` just to wrap
-a small feature.
+Keep an extension in one file while it is reasonably understandable. As a practical rule, a plugin up to about 500-600 lines should normally remain a single file. Split it into a package only when it is clearly larger, has independent subsystems, or a package layout materially improves maintenance. Do not create `config.py`, `hooks.py`, `service.py`, or `tools.py` just to wrap a small feature.
 
-Default layout. The `.commamatrix/plugins` directory is created automatically
-before the first run:
+Default layout. The `.commamatrix/plugins` directory is created automatically before the first run:
 
 ```text
 <CWD>/
@@ -121,20 +97,11 @@ objects:
 from . import config, connector, hooks, instructions, service, tools
 ```
 
-Adding a package discovers submodules that have been imported. Merely creating
-`tools.py` is not enough if `__init__.py` never imports it. The source scanner
-ignores private names and ignores re-exports whose `__module__` points to
-another module. Define the actual extension object in its own module and import
-that module from the package initializer.
+Adding a package discovers submodules that have been imported. Merely creating `tools.py` is not enough if `__init__.py` never imports it. The source scanner  ignores private names and ignores re-exports whose `__module__` points to another module. Define the actual extension object in its own module and import that module from the package initializer.
 
-Do not put a discoverable tool inside a class as a method. Python sources scan
-module globals, not arbitrary class members. Define tools, hooks, and
-instructions as top-level functions, and define service and connector classes
-as top-level classes.
+Do not put a discoverable tool inside a class as a method. Define tools, hooks, and instructions as top-level functions, and define service and connector classes as top-level classes.
 
-Do not make network calls, start tasks, or open files at import time. Importing
-an extension only declares it. Allocate resources in `start()` and release
-them in `stop()`.
+Do not make network calls, start tasks, or open files at import time. Importing an extension only declares it. Allocate resources in `YourService.start()` and release them in `YourService.stop()`.
 
 ## Choose the Smallest Extension Point
 
@@ -143,8 +110,8 @@ them in `stop()`.
 - Add an action the agent can call: use one `@tool`.
 - Keep a long-lived external client: add a `Service` only when needed.
 - Integrate a messaging platform: add a `Connector`.
-- Persist structured plugin-owned data: declare a `BaseTable`.
-- Replace persistence or the LLM provider: implement the corresponding provider.
+- Persist structured plugin-owned data: subclass a `BaseTable`.
+- Replace storage implementation or the LLM provider: implement the corresponding provider.
 
 ### Persist Reusable Behavior
 

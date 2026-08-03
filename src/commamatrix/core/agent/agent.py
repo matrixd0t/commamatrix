@@ -61,8 +61,6 @@ from ...components.storage import StorageManager, STORAGE_ATTRIBUTE
 from ...components.table import TableManager
 from ...components.file_storage import FileStorageManager, FILE_STORAGE_ATTRIBUTE
 from ...components.server import Server
-from ...builtin.planner import AgentScheduler
-from ...builtin.subagent import SubagentService
 from ..classes.manager import ServiceInstanceManager, ServiceInstanceRegistry
 from ..classes.service import AbstractService
 from ..extensions import (
@@ -145,7 +143,7 @@ class Agent:
         self.service_manager: ServiceInstanceManager[AbstractService] = ServiceInstanceManager(agent=self)
         self.connector_manager = ConnectorManager(agent=self)
         self.http_server = Server(agent=self)
-        self.scheduler = AgentScheduler(agent=self)
+        self.scheduler: AbstractService | None = None
 
         self.manager = AgentLifecycle(registry=self.services, children=[
             self.tool_manager,
@@ -158,7 +156,6 @@ class Agent:
             self.service_manager,
             self.connector_manager,
             self.http_server,
-            self.scheduler,
         ])
 
         if self._auto_load_plugins:
@@ -226,9 +223,11 @@ class Agent:
         targets = self._normalize_extension_targets(module_or_path)
         try:
             handled = self._extension_runtime.apply(targets, operation)
-            if handled and self._started:
+            if handled:
                 self.manager.set_scope(self._extension_scope)
-                await self.manager.refresh()
+                await self._ensure_optional_managers()
+                if self._started:
+                    await self.manager.refresh()
             return handled
         except Exception as exc:
             self._extension_runtime.replace_scope(original_scope)
@@ -324,103 +323,24 @@ class Agent:
         runner_key: str | None = None,
         on_error: Callable[[Exception], Any] | None = None,
     ) -> AfterLlmCallCtx | str | None:
-        """Submit a 'headless' run through the internal subagent connector."""
-        await self._ensure_started()
-        await self._ensure_subagent_extension()
-        from ...builtin.subagent.policy import validate_allowed_tools
+        """Forward a headless run to the optional subagent extension."""
+        from ...builtin.subagent import submit_run as submit_subagent_run
 
-        try:
-            validate_allowed_tools(tools)
-        except Exception as exc:
-            if not wait_for_result:
-                return f"{type(exc).__name__}: {exc}"
-            raise
-        try:
-            service: SubagentService = self.services.require(SubagentService)
-            task_id = uuid4().hex
-            origin = service.make_origin(task_id, parent_item_id)
-            connector = service.register(origin, wait_for_result=wait_for_result, on_error=on_error)
-        except Exception as exc:
-            if not wait_for_result:
-                return f"{type(exc).__name__}: {exc}"
-            raise
-        items = list(dialog_items or [])
-        if instructions:
-            items.insert(
-                0,
-                DialogItem(
-                    content=instructions,
-                    item_type=DialogItemType.INPUT,
-                    role=DialogRole.SYSTEM,
-                    origin=origin,
-                    user=user,
-                    previous_item_id=parent_item_id,
-                ),
-            )
-
-        if not items and parent_item_id is None:
-            service.unregister(origin)
-            error = ValueError("submit_run requires instructions, dialog_items, or parent_item_id")
-            if not wait_for_result:
-                return f"{type(error).__name__}: {error}"
-            raise error
-
-        for item in items:
-            if item.item_id is None:
-                item.origin = origin
-                item.user = user
-        if items:
-            first = items[0]
-            if first.item_id is None:
-                first.previous_item_id = parent_item_id
-            if meta:
-                first.meta.update(meta)
-
-        run_state = dict(state or {})
-        run_state["subagent"] = True
-        run = RunCtx(
-            agent=self,
-            connector=connector,
-            origin=origin,
+        return await submit_subagent_run(
+            self,
+            parent_item_id=parent_item_id,
+            instructions=instructions,
+            dialog_items=dialog_items,
+            tools=tools,
             user=user,
-            state=run_state,
-            chain_state={"allowed_tools": tools},
-            last_item_id=parent_item_id,
+            meta=meta,
+            state=state,
+            wait_for_result=wait_for_result,
+            conflict_policy=conflict_policy,
+            runner_namespace=runner_namespace,
+            runner_key=runner_key,
+            on_error=on_error,
         )
-        key = runner_key or f"{runner_namespace}:{user}:{parent_item_id}"
-        try:
-            task = await self.runner.submit(
-                key,
-                self.run(run, history=items or None),
-                conflict_policy=conflict_policy,
-            )
-        except Exception as exc:
-            service.unregister(origin)
-            if not wait_for_result:
-                return f"{type(exc).__name__}: {exc}"
-            raise
-        if task is None:
-            service.unregister(origin)
-            return "Subagent run was skipped" if not wait_for_result else None
-
-        async def settle() -> None:
-            try:
-                result = await task
-            except asyncio.CancelledError:
-                await service.complete(origin, None, RuntimeError("Subagent run was cancelled"))
-                raise
-            except Exception as _exc:
-                await service.complete(origin, None, _exc)
-            else:
-                await service.complete(origin, result)
-
-        if not wait_for_result:
-            asyncio.create_task(settle())
-            return "OK"
-
-        waiter = connector.waiter(origin)
-        await settle()
-        return await waiter
 
     @asynccontextmanager
     async def _typing(self, run: RunCtx):
@@ -544,10 +464,23 @@ class Agent:
                     run.dialog_items = []
             await self.hook_manager.fire(HookEventType.AFTER_RUN, AfterRunCtx(run=run, error=error))
 
-    async def _ensure_subagent_extension(self) -> None:
-        target = FP + ".builtin.subagent"
-        if not any(module_name == target or module_name.startswith(target + ".") for module_name in self._extension_scope):
-            await self.add_extensions(target)
+    async def _ensure_optional_managers(self) -> None:
+        planner_prefix = FP + ".builtin.planner"
+        planner_active = any(
+            module_name == planner_prefix or module_name.startswith(planner_prefix + ".")
+            for module_name in self._extension_scope
+        )
+
+        if planner_active and self.scheduler is None:
+            from ...builtin.planner import AgentScheduler
+
+            scheduler = AgentScheduler(agent=self)
+            await self.manager.add_child(scheduler)
+            self.scheduler = scheduler
+        elif not planner_active and self.scheduler is not None:
+            scheduler = self.scheduler
+            await self.manager.remove_child(scheduler)
+            self.scheduler = None
 
     async def _ensure_started(self) -> None:
         """Lazy init: load .env, add defaults, start lifecycle, fire on_agent_start."""
@@ -558,7 +491,6 @@ class Agent:
                 if self._auto_load_main:
                     await self.add_extensions("__main__")
                 await self.add_extensions(FP + ".components")
-                await self.add_extensions(FP + ".builtin.planner")
                 if self._auto_load_plugins:
                     (Path.cwd() / self.config.get(commamatrix_dir) / self.config.get(plugins_dir)).mkdir(parents=True, exist_ok=True)
                     plugin_targets = self._workspace_plugin_targets()
@@ -568,6 +500,7 @@ class Agent:
                     await self.add_extensions(FP + ".builtin.sql.sqlite_storage")
                 if not self._scope_has_attribute(FILE_STORAGE_ATTRIBUTE):
                     await self.add_extensions(FP + ".builtin.simple_fs")
+                await self._ensure_optional_managers()
                 self.manager.set_scope(self._extension_scope)
                 await self.manager.start()
                 await self.hook_manager.fire(

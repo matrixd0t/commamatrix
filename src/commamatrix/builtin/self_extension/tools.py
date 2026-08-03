@@ -17,7 +17,7 @@ from ...components.hook import BeforeToolCallCtx
 from ...components.instruction import InstructionCtx, instruction
 from ...components.tool import tool
 
-_GUIDE_PATH = str(Path(__file__).parent / "guide.md")
+_GUIDE_PATH = str(Path(__file__).parent / "readme.md")
 
 guide_path = ConfigField[str](
     name="self_extension.guide_path",
@@ -27,14 +27,20 @@ guide_path = ConfigField[str](
 
 
 @instruction(priority=-200)
-def self_modification_when_and_why(ctx: InstructionCtx) -> str:
+def self_extension_when_and_why(ctx: InstructionCtx) -> str:
     """Explain how to persist reusable behavior as an extension."""
     return '''
-# Self-modification: when and why
-If some behavior should be reused in future runs, persist it with self-modification instead of using it only in the current task.
-- For a permanent response rule, workflow rule, or piece of context, write an @instruction that returns the text to include in the system prompt.
-- For a reusable action or capability, write a @tool.
-- Use manage_extension after changing the current agent's add-ons. Do not persist one-off task details.
+# Self-extension
+Use this when:
+- User wants stuff you can't or don't know how to do
+- User suggests some behaviour / capability to be reused / persisted for future
+- !!!Do NOT refuse to do stuff until 100% sure you can't make an extension to do it!!!
+How to use:
+- Suggest to write an extension, if user accepts, proceed to following
+- Call readme
+- Steps: layout -> abstractions and contracts -> logic -> implementation
+- Example usage: make @instruction to save a note about specific user, or a @tool for new action / capability
+- Use manage_extension to activate new capabilities
 '''
 
 
@@ -69,8 +75,8 @@ async def list_all(*, ctx: BeforeToolCallCtx) -> str:
 
 
 @tool(alias="self_extension")
-async def guide(ctx: BeforeToolCallCtx) -> str:
-    """Returns self-modification (extension) guide together with runtime and installation information."""
+async def readme(ctx: BeforeToolCallCtx) -> str:
+    """Returns self-modification guide together with runtime and installation information."""
     path = ctx.run.agent.config.get(guide_path)
     version = sys.version_info
     environment = (

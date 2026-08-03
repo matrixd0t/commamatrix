@@ -21,8 +21,6 @@ from matrix_planner import (
 from .decorators import TASK_ATTRIBUTE, task
 from .service import (
     AgentScheduler,
-    InternalConnector,
-    InternalOrigin,
     PythonScheduledTaskSource,
     ScheduledTaskContext,
     ScheduledTaskDescriptor,
@@ -33,8 +31,6 @@ __all__ = [
     "AgentScheduler",
     "CronSchedule",
     "ExecutionTime",
-    "InternalConnector",
-    "InternalOrigin",
     "IntervalSchedule",
     "MonotonicExecutionTime",
     "OnceSchedule",

@@ -12,7 +12,6 @@ from typing import Any, Callable, TYPE_CHECKING, cast
 
 from matrix_planner import Planner, Task as PlannerTask
 
-from ..subagent import InternalConnector, InternalOrigin
 from ...core.classes.descriptor import Descriptor
 from ...core.classes.manager import Manager
 from ...core.classes.source import PythonSource
@@ -222,8 +221,6 @@ class AgentScheduler(Manager[ScheduledTaskDescriptor]):
 
 __all__ = [
     "AgentScheduler",
-    "InternalConnector",
-    "InternalOrigin",
     "PythonScheduledTaskSource",
     "ScheduledTaskContext",
     "ScheduledTaskDescriptor",

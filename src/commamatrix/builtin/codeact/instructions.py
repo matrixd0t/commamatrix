@@ -17,7 +17,6 @@ if TYPE_CHECKING:
 def _format_codeact_guide(codeact: CodeActService) -> str:
     lines = [
         "# CodeAct mode",
-        "",
         "You have access to an `execute` tool that runs Python code on the backend.",
         "Inside execute(), import tools as async functions: `import tools.<name> as <name>`.",
         "All tools are async — top-level await is allowed.",
@@ -26,10 +25,11 @@ def _format_codeact_guide(codeact: CodeActService) -> str:
         "Take advantage of tool parallelization and chaining capabilities.",
         "",
         codeact.backend.environment_description(),
-        "",
-        "Available tools:",
+        # "",
+        # "Available tools:",
     ]
 
+    '''
     descriptors = codeact.searcher.descriptors
     grouped: dict[str, list[str]] = {}
     ungrouped: list[str] = []
@@ -46,7 +46,7 @@ def _format_codeact_guide(codeact: CodeActService) -> str:
         for i, name in enumerate(members):
             connector = "└─" if i == len(members) - 1 else "├─"
             lines.append(f"{connector}{name}")
-
+    '''
     return "\n".join(lines)
 
 

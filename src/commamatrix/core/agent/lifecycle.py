@@ -19,8 +19,8 @@ from commamatrix.utils import await_if_needed
 class AgentLifecycle:
     """Root lifecycle composite. Receives an ordered children list from Agent.
 
-    Order: tool → hook → llm_adapter → storage → table → file_storage → service → connector → http_server → planner.
-    Supports transactional startup with rollback on failure.
+    Order: tool → hook → llm_adapter → storage → table → file_storage → service → connector → http_server.
+    Optional managers can be appended at runtime. Supports transactional startup with rollback on failure.
     """
 
     def __init__(self, children: list[AbstractService], registry: ServiceInstanceRegistry) -> None:
@@ -43,6 +43,32 @@ class AgentLifecycle:
             if isinstance(mgr, cls):
                 return mgr
         return None
+
+    async def add_child(self, child: AbstractService) -> None:
+        if child in self._children:
+            return
+        if isinstance(child, Manager):
+            child.on_change = self._mark_changed
+            child.set_scope(list(self._last_scope))
+        self._children.append(child)
+        if not self._started:
+            return
+        try:
+            await await_if_needed(child.start())
+        except BaseException:
+            self._children.remove(child)
+            if isinstance(child, Manager):
+                child.on_change = None
+            raise
+
+    async def remove_child(self, child: AbstractService) -> None:
+        if child not in self._children:
+            return
+        if self._started:
+            await await_if_needed(child.stop())
+        self._children.remove(child)
+        if isinstance(child, Manager):
+            child.on_change = None
 
     def set_scope(self, scope: list[str]) -> None:
         scope_key = tuple(scope)
