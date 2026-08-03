@@ -1,4 +1,4 @@
-# builtin/sqlite/sqlite_storage.py
+# builtin/sql/sqlite_storage.py
 
 from __future__ import annotations
 

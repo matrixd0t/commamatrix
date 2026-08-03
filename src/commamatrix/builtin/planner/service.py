@@ -90,9 +90,16 @@ class PythonScheduledTaskSource(PythonSource[ScheduledTaskDescriptor]):
         return TASK_ATTRIBUTE
 
     def scan(self) -> list[ScheduledTaskDescriptor]:
-        self._functions.clear()
-        self._options.clear()
-        return super().scan()
+        previous_functions = self._functions
+        previous_options = self._options
+        self._functions = {}
+        self._options = {}
+        try:
+            return super().scan()
+        except BaseException:
+            self._functions = previous_functions
+            self._options = previous_options
+            raise
 
     def build_descriptor(self,  object_name: str, obj: object) -> ScheduledTaskDescriptor | None:
         fn = cast(ScheduledTaskHandler, obj)

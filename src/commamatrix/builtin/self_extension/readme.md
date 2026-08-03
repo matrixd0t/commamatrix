@@ -24,6 +24,9 @@ The Markdown targets below are relative to this guide file. For example, the too
 - [components/connector.py](../../components/connector.py) - platform connectors.
 - [components/dialog.py](../../components/dialog.py) - origins and dialog items.
 - [components/llm_adapter.py](../../components/llm_adapter.py) - LLM blocks and provider adapters.
+- [components/storage.py](../../components/storage.py) - persistence providers (`Storage`).
+- [components/file_storage.py](../../components/file_storage.py) - file storage providers (`FileStorage`).
+- [components/server.py](../../components/server.py) - shared HTTP server for extension webhooks and file serving.
 - [components/table.py](../../components/table.py) - plugin-owned tables, schema discovery, and migrations.
 - [core/classes/service.py](../../core/classes/service.py) - service lifecycle and discovery.
 - [core/agent/agent.py](../../core/agent/agent.py) - extension activation and the agent run loop.
@@ -36,7 +39,7 @@ Do not spend a tool call creating this directory.
 
 When a new `Agent` starts, `auto_load_plugins=True` (the default) automatically activates every direct `.py` file and every direct package directory in `<CWD>/.commamatrix/plugins`.
 A package should import its contribution modules from `__init__.py`; nested implementation files are not imported just because they exist. Disable this behavior with `Agent(auto_load_plugins=False)` when the host must activate extensions explicitly.
-Python files created during the current run need `manage_extension(action="add")` call to be used.
+Python files created during the current run need a `self_extension.manage(action="add")` call to be used.
 
 ```text
 <CWD>/
@@ -53,7 +56,7 @@ Prefer the smallest implementation that solves the task:
 1. Create one `.py` file in `.commamatrix/plugins`, or a package for a genuinely larger extension.
 2. Put discoverable functions and classes at module level.
 3. Check imports and required third-party packages.
-4. Use `manage_extension(action="add", module_or_path=".commamatrix/plugins/response_style.py")` when the current agent must use a newly created file immediately.
+4. Use `self_extension.manage(action="add", module_or_path=".commamatrix/plugins/response_style.py")` when the current agent must use a newly created file immediately.
 5. Test the new capability. Reload it after editing and remove it when no longer needed.
 
 `module_or_path` accepts either an import name or a relative/absolute Python path. A path is resolved to its canonical import name before activation, so the runtime does not create synthetic module names. Use the same target form for reloads; the result reports the canonical module name that is active.
@@ -115,9 +118,7 @@ Do not make network calls, start tasks, or open files at import time. Importing 
 
 ### Persist Reusable Behavior
 
-If a behavior is useful beyond the current task, add it to the agent instead of
-relying on the model to remember it. This is a deliberate self-improvement
-choice, not something to do for every one-off detail:
+If a behavior is useful beyond the current task, add it to the agent instead of relying on the model to remember it. This is a deliberate self-improvement choice, not something to do for every one-off detail:
 
 - A reusable response rule, workflow rule, or always-needed piece of context belongs in an `@instruction`. It returns text that is added to the system prompt before future LLM calls.
 - A reusable action, integration, or capability belongs in an `@tool`. The agent can call it when the capability is needed.
@@ -149,13 +150,9 @@ async def current_status() -> str:
     return "..."
 ```
 
-For the current run, use the `self_extension` tools to create the file and then
-call `manage_extension`. The `self_extension` module itself also
-provides this guidance as an instruction, so the option is available without
-reading the guide manually.
+For the current run, use the `self_extension` tools to create the file and then call `self_extension.manage`. The `self_extension` module itself also provides this guidance as an instruction, so the option is available without reading the guide manually.
 
-For example, a response style does not need a package, service, configuration
-layer, or LLM parameter hook unless those features are explicitly required:
+For example, a response style does not need a package, service, configuration layer, or LLM parameter hook unless those features are explicitly required:
 
 ```python
 # .commamatrix/plugins/response_style.py
@@ -280,6 +277,7 @@ decorators:
 - `before_tool_call`
 - `after_tool_call`
 - `before_send`
+- `after_send`
 - `on_error`
 - `after_run`
 
@@ -287,14 +285,14 @@ They may be synchronous or asynchronous. Prefer asynchronous hooks when they
 perform I/O:
 
 ```python
-from commamatrix import BeforeLlmCallCtx, before_llm_call
+from commamatrix import BeforeLlmCallCtx, LLM, before_llm_call
 
 
 @before_llm_call
 async def choose_model(ctx: BeforeLlmCallCtx) -> None:
-    """Choose a llm for a particular user or conversation."""
+    """Choose an LLM for a particular user or conversation."""
     if ctx.run.state.get("use_fast_model"):
-        ctx.run.model = "openai/gpt-4o-mini"
+        ctx.run.llm = LLM(model_name="openai/gpt-4o-mini")
 ```
 
 Use the hook context matching the decorator. To inspect exact context fields,
@@ -487,12 +485,27 @@ images, files, and tool calls. The connector decides what its platform can
 render. It must return an external ID or an empty string; the agent persists
 the dialog item even when delivery has no external ID.
 
-For live streaming, set `supports_streaming = True` and implement
-`send_stream_chunk(origin, chunk)` when the platform supports partial updates.
-Streaming chunks are real-time only; complete blocks still arrive through
-`send()` and are persisted. See [components/connector.py](../../components/connector.py),
-[components/dialog.py](../../components/dialog.py), and the built-in
-[http_connector/connector.py](../http_connector/connector.py).
+For livestreaming, set `supports_streaming = True` and implement `send_stream_chunk(origin, chunk)` when the platform supports partial updates.  Streaming chunks are real-time only; complete blocks still arrive through `send()` and are persisted. See [components/connector.py](../../components/connector.py), [components/dialog.py](../../components/dialog.py), and the built-in [http_connector/connector.py](../http_connector/connector.py).
+
+## HTTP Server
+
+The agent runs one shared Starlette application, `agent.http_server` ([components/server.py](../../components/server.py)). It serves the built-in `/commamatrix` root, the `/commamatrix/handle` JSON entry point (same contract as `Connector.handle`), and public file URLs. Extensions can register their own routes and mounts:
+
+```python
+# my_extension/http.py
+from commamatrix import SERVER_ROOT
+
+def register(agent) -> None:
+    server = agent.http_server
+
+    async def status(request):
+        from starlette.responses import JSONResponse
+        return JSONResponse({"ok": True})
+
+    server.register_route(f"{SERVER_ROOT}/status", status, methods=["GET"], name="status")
+```
+
+Config fields `http_port` (default 8338), `http_host` (default `0.0.0.0`), and `http_external_url` control binding and public addressing. `server.file_url(file_id)` returns a public URL for a stored file; `server.base_url` and `server.url(path)` expose the configured base. The server starts automatically when its third-party dependencies (`starlette`, `uvicorn`) are importable.
 
 ## Plugin-Owned Tables
 
@@ -522,11 +535,7 @@ class AuditTable(BaseTable[AuditRow]):
     version = 1
 ```
 
-`TableManager` discovers `BaseTable` subclasses from the active extension scope.
-It runs after `StorageManager` selects the active storage and before plugin
-services start. A plugin service can therefore use its table from `start()`.
-SQL storage initializes `commamatrix_schema_versions` automatically, creates
-missing tables and indexes, and records each table's logical ID and version.
+`TableManager` discovers `BaseTable` subclasses from the active extension scope.  It runs after `StorageManager` selects the active storage and before plugin services start. A plugin service can therefore use its table from `start()`. SQL storage initializes `commamatrix_schema_versions` automatically, creates missing tables and indexes, and records each table's logical ID and version.
 
 Schema changes require an explicit version increase and migration:
 
@@ -543,22 +552,16 @@ class AuditTable(BaseTable[AuditRow]):
             await backend.add_column(cls.table_name, "source", "TEXT")
 ```
 
-`ensure_table()` applies the current table version and rejects downgrades. Do
-not rely on Pydantic field changes to infer renames or destructive migrations.
-Removing a plugin does not drop its table or its data. Use a stable explicit
-`table_id`; `table_name` must be a valid SQL identifier and must not collide with
-another active plugin table.
+`ensure_table()` applies the current table version and rejects downgrades. Do not rely on Pydantic field changes to infer renames or destructive migrations.  Removing a plugin does not drop its table or its data. Use a stable explicit `table_id`; `table_name` must be a valid SQL identifier and must not collide with another active plugin table.
 
-A custom storage that supports plugin tables must expose a `schema_backend` with
-`ensure_table()` and the migration operations required by its table classes.
-A storage without this capability cannot activate extensions that declare tables.
+A custom storage that supports plugin tables must expose a `schema_backend` with `ensure_table()` and the migration operations required by its table classes. A storage without this capability is non-compatible with extensions that declare tables.
 
 ## Scheduled Tasks
 
 Declare tasks in a persistent plugin file under `.commamatrix/plugins`:
 
 ```python
-from commamatrix import DialogItem, DialogItemType, DialogRole, InternalOrigin, ScheduledTaskContext, cron, task
+from commamatrix.builtin.planner import ScheduledTaskContext, cron, task
 
 @task(cron("0 12 * * 1"))
 async def weekly_digest(ctx: ScheduledTaskContext) -> None:
@@ -566,13 +569,15 @@ async def weekly_digest(ctx: ScheduledTaskContext) -> None:
 ```
 
 Use `cron(...)`, `every(...)`, or `once(datetime(...))`; these helpers are
-re-exported by `commamatrix.builtin.scheduler`. The task ID is always
+re-exported by `commamatrix.builtin.planner` (which wraps the `matrix_planner`
+package). The task ID is always
 `<module>:<function>`, so function names must be unique within a module.
 Tasks are discovered from active extensions, added and removed on extension
 reload, and recreated after restart. Missed cron/interval runs are skipped;
 a past `once(...)` task runs immediately when the service starts. To continue
-an existing stored branch, call `ctx.submit_run(last_item_id=item_id)` instead
-of passing new `dialog_items`.
+an existing stored branch, forward a sub-run through `Agent.submit_run(...)`
+(`await ctx.agent.submit_run(parent_item_id=item_id, tools=...)`) instead of
+passing new `dialog_items`.
 
 ## Storage, File Storage, and LLM Providers
 
@@ -593,11 +598,15 @@ A custom `FileStorage` implements `save(data, ext)`, `get(file_id)`, and
 the first available provider unless the host selects another provider through
 configuration.
 
-A custom `LLMAdapter` implements `ask_llm(ctx, stream=False)` as an async
-iterator. It yields `LLMResponseBlock` values and finishes with `StreamEnd`.
+A custom `LLMAdapter` implements `refresh_llms()` (returns the adapter's model
+list) and `ask_llm(ctx, stream=False)` as an async
+iterator. `ask_llm` yields `LLMResponseBlock` values and finishes with `StreamEnd`.
 When streaming, it may yield `StreamDelta` values for live content. Use the
-existing text, reasoning, tool-call, image, and file block classes. The manager
-currently calls the first discovered LLM adapter.
+existing text, reasoning, tool-call, image, and file block classes. The model
+for a run is selected by cost: `_select_model` in
+[core/agent/agent.py](../../core/agent/agent.py) picks the model with the
+lowest `cost.input_tokens` among the active adapters (filtered by the
+`agentic_model` ConfigField when set), not a fixed "first" adapter.
 
 Provider classes must be concrete, top-level subclasses of their respective
 provider base classes. The provider marker is applied automatically. Read
@@ -608,8 +617,9 @@ provider.
 
 ## Dialog Data
 
-The core dialog model uses `DialogItemType` for input, output, media,
-reasoning, tool calls, and tool results, and `DialogRole` for system,
+The core dialog model uses `DialogItemType` — `INPUT`, `IMAGE_INPUT`,
+`FILE_INPUT`, `OUTPUT`, `IMAGE_OUTPUT`, `FILE_OUTPUT`, `TOOL_CALL`,
+`TOOL_CALL_RESULT`, and `REASONING` — and `DialogRole` for system,
 developer, user, assistant, and tool messages. A `DialogItem` contains
 content, type, role, origin, history links, external ID, and metadata.
 
@@ -651,6 +661,6 @@ When adding an integration:
 4. Define `ConfigField` values only when configuration is actually needed.
 5. Put external clients and persistent resources in a `Service` only when needed.
 6. Verify imports and dependencies.
-7. Activate the extension with the runtime `manage_extension` tool.
+7. Activate the extension with the runtime `self_extension.manage` tool.
 8. Test it with a harmless input.
 9. Reload it after code changes and remove it when no longer needed.

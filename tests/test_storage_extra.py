@@ -28,7 +28,7 @@ class TestSqliteMigrateColumns:
 
             await storage.get_history(origin_type=HttpOrigin)
 
-            columns = await storage._columns(storage._db)
+            columns = await storage._table_columns(storage._db, "commamatrix_dialog")
             assert "origin_type" in columns
             assert "http_user_id" in columns
             await storage.stop()

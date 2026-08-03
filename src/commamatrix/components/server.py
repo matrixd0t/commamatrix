@@ -1,4 +1,4 @@
-# components/http_server.py
+# components/server.py
 
 from __future__ import annotations
 

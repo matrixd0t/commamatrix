@@ -93,10 +93,12 @@ async def test_user_info_uses_connector_for_platform():
     agent = SimpleNamespace(connector_manager=SimpleNamespace(resolve=lambda: [connector]))
     ctx = SimpleNamespace(run=SimpleNamespace(agent=agent))
 
-    assert await get_user_info("telegram:Елена", ctx) == {
-        "id": 12345,
-        "username": "Елена",
-        "platform": "telegram",
+    assert await get_user_info(["telegram:Елена"], ctx) == {
+        "telegram:Елена": {
+            "id": 12345,
+            "username": "Елена",
+            "platform": "telegram",
+        }
     }
 
 

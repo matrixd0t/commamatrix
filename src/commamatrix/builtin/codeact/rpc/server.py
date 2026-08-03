@@ -1,4 +1,4 @@
-# builtin/codeact/rpc/http_server.py
+# builtin/codeact/rpc/server.py
 
 """RPC http_server — dispatches tool requests from the child process."""
 

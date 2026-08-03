@@ -1,4 +1,4 @@
-# builtin/postgres/postgres_storage.py
+# builtin/sql/postgres_storage.py
 
 from __future__ import annotations
 
