@@ -410,7 +410,7 @@ requires-dist = [
     { name = "ddgs", specifier = ">=9.14.4" },
     { name = "httpx" },
     { name = "matrix-fn-schema", specifier = ">=0.1.9" },
-    { name = "matrix-planner", specifier = ">=0.2.0" },
+    { name = "matrix-planner", specifier = ">=0.2.1" },
     { name = "pydantic" },
     { name = "pyjwt" },
     { name = "pytest", marker = "extra == 'test'" },
