@@ -15,6 +15,7 @@ from ..core.classes.descriptor import Descriptor
 from ..core.classes.source import PythonSource
 from ..core.classes.manager import Manager
 from ..core.classes.ordering import normalize_constraint_refs, ConstraintRef
+from ..utils import await_if_needed
 
 if TYPE_CHECKING:
     from ..core.agent import Agent
@@ -80,6 +81,7 @@ class RunCtx:
     """
     tool_output_tail: int | None = None
     pending_input_items: list[DialogItem] = field(default_factory=list)
+    last_item_id: int | None = None
 
 
 @dataclass(slots=True, kw_only=True)
@@ -233,7 +235,7 @@ class PythonHookSource(PythonSource[HookDescriptor]):
 
     def __init__(self) -> None:
         super().__init__()
-        self._handlers: dict[str, Any] = {}
+        self._handlers: dict[str, Handler[object]] = {}
 
     def scan(self) -> list[HookDescriptor]:
         self._handlers.clear()
@@ -246,7 +248,7 @@ class PythonHookSource(PythonSource[HookDescriptor]):
     def build_descriptor(self, object_name: str, obj: object) -> HookDescriptor | None:
         params = getattr(obj, HOOK_ATTRIBUTE)
         descriptor_id = f"hook://{obj.__module__}/{object_name}"
-        self._handlers[descriptor_id] = cast(Any, obj)
+        self._handlers[descriptor_id] = cast(Handler[object], obj)
         return HookDescriptor(
             id=descriptor_id,
             event=params["event"].value,
@@ -263,10 +265,7 @@ class PythonHookSource(PythonSource[HookDescriptor]):
         handler = self._handlers.get(descriptor.id)
         if handler is None:
             raise RuntimeError(f"Hook {descriptor.id} is not owned by this source")
-        result = handler(ctx)
-        if inspect.isawaitable(result):
-            return await result
-        return result
+        return await await_if_needed(handler(ctx))
 
 
 class HookManager(Manager[HookDescriptor]):

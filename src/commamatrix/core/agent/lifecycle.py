@@ -19,7 +19,7 @@ from commamatrix.utils import await_if_needed
 class AgentLifecycle:
     """Root lifecycle composite. Receives an ordered children list from Agent.
 
-    Order: tool → hook → llm_adapter → storage → table → file_storage → service → connector → http_server.
+    Order: tool → hook → llm_adapter → storage → table → file_storage → service → connector → http_server → planner.
     Supports transactional startup with rollback on failure.
     """
 

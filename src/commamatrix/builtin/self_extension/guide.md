@@ -154,7 +154,7 @@ choice, not something to do for every one-off detail:
 
 - A reusable response rule, workflow rule, or always-needed piece of context belongs in an `@instruction`. It returns text that is added to the system prompt before future LLM calls.
 - A reusable action, integration, or capability belongs in an `@tool`. The agent can call it when the capability is needed.
-- Store the implementation in `.commamatrix/plugins`, then activate or reload it for the current agent. With `auto_load_plugins=True`, it is also loaded automatically by newly created agents.
+- Store the implementation in `.commamatrix/plugins`, then activate or reload it for the current agent. With `auto_load_plugins=True` in parent app, anything from this folder is loaded as extensions on agent startup.
 - Do not persist a temporary fact or a rule that only applies to the current request.
 
 Example of a persistent instruction:
@@ -222,10 +222,7 @@ async def current(city: str, units: str = "metric") -> dict:
     return {"city": city, "units": units, "temperature": 20}
 ```
 
-The signature and type hints become the JSON schema shown to the LLM. The
-function docstring becomes its description. Use `async def` for network,
-filesystem, database, and other I/O. A synchronous tool runs directly on the
-event loop, so blocking synchronous code can stall the whole agent.
+The signature and type hints become the JSON schema shown to the LLM. The function docstring becomes its description. Use `async def` for network, filesystem, database, and other I/O. A synchronous tool runs directly on the event loop, so blocking synchronous code can stall the whole agent.
 
 The framework can inject the current `BeforeToolCallCtx` into a tool parameter.
 Use the annotation when possible:
@@ -243,36 +240,20 @@ async def forecast(city: str, ctx: BeforeToolCallCtx) -> dict:
     return await service.forecast(city)
 ```
 
-For compatibility with small self-written extensions, a parameter named `ctx`
-is also injected when it has no annotation. The exact injection and schema
-rules are implemented in [components/tool.py](../../components/tool.py). The
-`BeforeToolCallCtx` definition and the complete `RunCtx` are in
-[components/hook.py](../../components/hook.py); read those files when the
-extension needs context fields not shown here.
+Parameter is also injected when it is named `ctx` with no annotation. The exact injection and schema rules are implemented in [components/tool.py](../../components/tool.py). The `BeforeToolCallCtx` definition and the complete `RunCtx` are in[components/hook.py](../../components/hook.py); read those files when the extension needs context fields not shown here.
 
-There is no strict JSON-only return requirement for every tool. The framework
-serializes ordinary results for dialog and tool-result transport, while a
-specialized tool may intentionally return bytes or another value for its
-consumer. For a normal LLM-facing tool, prefer a concise string, number,
-boolean, list, dict, or another value with an unambiguous serialization.
+There is no strict JSON-only return requirement for every tool. The framework serializes ordinary results for dialog and tool-result transport, while a specialized tool may intentionally return bytes or another value for its consumer. For a normal LLM-facing tool, prefer a concise string, number, boolean, list, dict, or another value with an unambiguous serialization.
 
 ### Tool Names, Aliases, and CodeAct Imports
 
-`alias` is the tool group's **import name** in the CodeAct worker. It is the
-part that appears after `tools.`. The extension module name and the tool alias
-are different things and must not be confused:
+`alias` is the tool group's **import name** in the CodeAct worker. It is the part that appears after `tools.`. The extension module name and the tool alias are different things and must not be confused:
 
 ```text
 .commamatrix/plugins/filesystem_tools.py  ->  Python module: filesystem_tools
 @tool(alias="fs")                      ->  CodeAct import: import tools.fs as fs
 ```
 
-The activation result such as `Extension is active: filesystem_tools` reports
-only the Python module. It does
-not tell you what to write after `tools.`. Read the `@tool(alias="...")` in the
-source or use `list_tools` / `search_tools` to find the alias.
-
-Use the alias exactly in CodeAct:
+Read the `@tool(alias="...")` in the source or use `list_tools` / `search_tools` to find the alias.
 
 ```python
 import tools.fs as fs
@@ -604,6 +585,37 @@ another active plugin table.
 A custom storage that supports plugin tables must expose a `schema_backend` with
 `ensure_table()` and the migration operations required by its table classes.
 A storage without this capability cannot activate extensions that declare tables.
+
+## Scheduled Tasks
+
+Declare tasks in a persistent plugin file under `.commamatrix/plugins`:
+
+```python
+from commamatrix import DialogItem, DialogItemType, DialogRole, InternalOrigin, ScheduledTaskContext, cron, task
+
+@task(cron("0 12 * * 1"))
+async def weekly_digest(ctx: ScheduledTaskContext) -> None:
+    await ctx.submit_run(
+        dialog_items=[
+            DialogItem(
+                content="Сформируй еженедельный дайджест",
+                item_type=DialogItemType.INPUT,
+                role=DialogRole.USER,
+                origin=InternalOrigin(task_id=ctx.task_id),
+                user="any_identity_alias",
+            )
+        ]
+    )
+```
+
+Use `cron(...)`, `every(...)`, or `once(datetime(...))`; these helpers are
+re-exported by `commamatrix.builtin.scheduler`. The task ID is always
+`<module>:<function>`, so function names must be unique within a module.
+Tasks are discovered from active extensions, added and removed on extension
+reload, and recreated after restart. Missed cron/interval runs are skipped;
+a past `once(...)` task runs immediately when the service starts. To continue
+an existing stored branch, call `ctx.submit_run(last_item_id=item_id)` instead
+of passing new `dialog_items`.
 
 ## Storage, File Storage, and LLM Providers
 

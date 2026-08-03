@@ -12,7 +12,8 @@ essentials = [
     f"{FP}.builtin.web_utils",
     f"{FP}.builtin.data_tools",
     f"{FP}.builtin.multi_dialog",
-    f"{FP}.builtin.http_connector"
+    f"{FP}.builtin.http_connector",
+    f"{FP}.builtin.planner"
 ]
 
 __all__ = [

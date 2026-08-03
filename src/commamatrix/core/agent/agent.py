@@ -2,7 +2,7 @@
 """Agent orchestrator — the top-level entry point for CommaMatrix.
 
 Agent creates all native managers, wires them into AgentLifecycle for lifecycle management,
-and provides the public API: start(), stop(), handle(raw), and run().
+and provides the public API: start(), stop(), handle(raw), run(), and submit_run().
 Extensions are activated per-agent via add_extensions(), with optional workspace plugin auto-discovery.
 """
 
@@ -21,7 +21,7 @@ from uuid import uuid4
 
 from dotenv import load_dotenv
 from httpx import AsyncClient
-from typing import Any
+from typing import Any, Literal, cast
 
 from ...components.config import Config, ConfigField
 from ...components.dialog import DialogItem, DialogItemType, DialogRole
@@ -61,6 +61,7 @@ from ...components.storage import StorageManager, STORAGE_ATTRIBUTE
 from ...components.table import TableManager
 from ...components.file_storage import FileStorageManager, FILE_STORAGE_ATTRIBUTE
 from ...components.server import Server
+from ...builtin.planner import AgentScheduler
 from ..classes.manager import ServiceInstanceManager, ServiceInstanceRegistry
 from ..classes.service import AbstractService
 from ..extensions import (
@@ -143,6 +144,7 @@ class Agent:
         self.service_manager: ServiceInstanceManager[AbstractService] = ServiceInstanceManager(agent=self)
         self.connector_manager = ConnectorManager(agent=self)
         self.http_server = Server(agent=self)
+        self.scheduler = AgentScheduler(agent=self)
 
         self.manager = AgentLifecycle(registry=self.services, children=[
             self.tool_manager,
@@ -155,6 +157,7 @@ class Agent:
             self.service_manager,
             self.connector_manager,
             self.http_server,
+            self.scheduler,
         ])
 
         if self._auto_load_plugins:
@@ -194,6 +197,7 @@ class Agent:
                 follow_redirects=True,
                 timeout=self.config.get(http_timeout),
             )
+        assert self._http_client is not None
         return self._http_client
 
     @staticmethod
@@ -212,7 +216,7 @@ class Agent:
             elif isinstance(target, Iterable):
                 normalized.extend(target)
             else:
-                normalized.append(target)
+                normalized.append(cast(str | types.ModuleType, target))
         return tuple(normalized)
 
     async def _apply_extensions(self, *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType], operation: ExtensionOperation) -> list[str]:
@@ -239,8 +243,10 @@ class Agent:
         """Deactivate modules previously active for this agent."""
         return await self._apply_extensions(*module_or_path, operation="remove")
 
-    async def reload_extensions(self,
-            *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType]) -> list[str]:
+    async def reload_extensions(
+        self,
+        *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType],
+    ) -> list[str]:
         """Reload a module and all currently loaded submodules under its name."""
         return await self._apply_extensions(*module_or_path, operation="reload")
 
@@ -254,9 +260,9 @@ class Agent:
         await self._ensure_started()
 
     async def stop(self) -> None:
-        """Stop listeners, cancel active runs, and close agent-owned services."""
-        await self.runner.stop()
+        """Stop scheduled/listener services, then cancel active runs."""
         await self.manager.stop()
+        await self.runner.stop()
         if self._http_client is not None:
             await self._http_client.aclose()
             self._http_client = None
@@ -295,13 +301,60 @@ class Agent:
         tasks: list[asyncio.Task] = []
         for run, history in self._split_runs(parsed):
             print(f"[Agent DEBUG] submit run origin={run.origin} user={run.user!r} history_ids={[item.item_id for item in history]}", file=sys.stderr)
-            task = await self.runner.submit(
-                self.runner.make_key(run.origin, run.user),
-                self.run(run, history=history),
-            )
-            tasks.append(task)
+            task = await self.runner.submit(self.runner.make_key(run.origin, run.user), self.run(run, history=history))
+            if task is not None:
+                tasks.append(task)
         print(f"[Agent DEBUG] handle submitted tasks={len(tasks)}", file=sys.stderr)
         return tasks
+
+    async def submit_run(
+        self,
+        *,
+        dialog_items: list[DialogItem] | None = None,
+        last_item_id: int | None = None,
+        meta: dict[str, Any] | None = None,
+        state: dict[str, Any] | None = None,
+        conflict_policy: Literal["replace", "skip"] = "skip",
+        runner_namespace: str = "interactive",
+        runner_key: str | None = None,
+    ) -> asyncio.Task | None:
+        """Submit existing dialog items or continue a stored dialog branch."""
+        await self._ensure_started()
+        items = list(dialog_items or [])
+        if not items and last_item_id is None:
+            raise ValueError("submit_run requires dialog_items or last_item_id")
+
+        if items:
+            origin = items[0].origin
+            user = items[0].user
+            if last_item_id is not None and items[0].item_id is None:
+                if items[0].previous_item_id is None:
+                    items[0].previous_item_id = last_item_id
+            if meta:
+                items[0].meta.update(meta)
+        else:
+            assert last_item_id is not None
+            branch = await self.storage.get_branch(last_item_id)
+            if not branch:
+                raise LookupError(f"Dialog item {last_item_id} was not found")
+            origin = branch[-1].origin
+            user = branch[-1].user
+
+        connector = self.connector_manager.resolve_for_origin(origin)
+        run = RunCtx(
+            agent=self,
+            connector=connector,
+            origin=origin,
+            user=user,
+            state=dict(state or {}),
+            last_item_id=last_item_id,
+        )
+        key = runner_key or self.runner.make_key(
+            origin,
+            user,
+            namespace=runner_namespace,
+        )
+        return await self.runner.submit(key, self.run(run, history=items or None), conflict_policy=conflict_policy)
 
     @asynccontextmanager
     async def _typing(self, run: RunCtx):
@@ -328,6 +381,7 @@ class Agent:
 
         try:
             last_item_id = await self._store_history(run, history)
+            run.last_item_id = last_item_id
             await self._restore_chain_state(run, last_item_id)
 
             if (await self._before_run(run)).abort:
@@ -422,6 +476,7 @@ class Agent:
                 if self._auto_load_main:
                     await self.add_extensions("__main__")
                 await self.add_extensions(FP + ".components")
+                await self.add_extensions(FP + ".builtin.planner")
                 if self._auto_load_plugins:
                     (
                         Path.cwd()
@@ -486,11 +541,11 @@ class Agent:
 
     async def _store_history(self, run: RunCtx, history: list[DialogItem] | None) -> int | None:
         """Persist items in a history batch and return the last item_id."""
-        last_item_id: int | None = None
+        last_item_id: int | None = run.last_item_id
         if history is not None:
             for item in history:
                 if item.item_id is None:
-                    if last_item_id is not None:
+                    if last_item_id is not None and item.previous_item_id is None:
                         item.previous_item_id = last_item_id
                     item.meta.setdefault("chain", {}).update(run.chain_state)
                     print(f"[Agent DEBUG] save input item_type={item.item_type.value} previous_item_id={item.previous_item_id} external_id={item.external_id!r} origin={item.origin}", file=sys.stderr)
@@ -498,11 +553,13 @@ class Agent:
                     print(f"[Agent DEBUG] saved input item_id={last_item_id}", file=sys.stderr)
                     if last_item_id is not None:
                         item.item_id = last_item_id
+                        run.last_item_id = last_item_id
                         connector = self.connector_manager.resolve_for_origin(item.origin)
                         print(f"[Agent DEBUG] publish input item_id={item.item_id} connector={type(connector).__name__}", file=sys.stderr)
                         await connector.publish_item(item.origin, item)
                 else:
                     last_item_id = item.item_id
+                    run.last_item_id = last_item_id
         return last_item_id
 
     async def _resolve_previous_item(self, parsed: OnParsedCtx) -> None:
@@ -619,6 +676,7 @@ class Agent:
         print(f"[Agent DEBUG] saved output item_id={saved_id} external_id={dialog_item.external_id!r}", file=sys.stderr)
         if saved_id is not None:
             dialog_item.item_id = saved_id
+            run.last_item_id = saved_id
             await connector.publish_item(dialog_item.origin, dialog_item)
         await self.hook_manager.fire(HookEventType.AFTER_SEND, AfterSendCtx(run=run, dialog_item=dialog_item, external_id=dialog_item.external_id))
         return saved_id if saved_id is not None else last_item_id

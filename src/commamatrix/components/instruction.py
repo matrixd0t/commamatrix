@@ -15,6 +15,7 @@ from ..core.classes.descriptor import Descriptor
 from ..core.classes.source import Source, PythonSource
 from ..core.classes.manager import Manager
 from ..core.classes.ordering import normalize_constraint_refs, ConstraintRef
+from ..utils import await_if_needed
 
 INSTRUCTION_ATTRIBUTE = "__commamatrix_instruction__"
 
@@ -118,10 +119,7 @@ class PythonInstructionSource(PythonSource[InstructionDescriptor]):
         handler = self._handlers.get(descriptor.id)
         if handler is None:
             raise RuntimeError(f"Instruction {descriptor.id} is not owned by this source")
-        result = handler(ctx)
-        if inspect.isawaitable(result):
-            return await result
-        return result
+        return await await_if_needed(handler(ctx))
 
 
 class InstructionManager(Manager[InstructionDescriptor]):

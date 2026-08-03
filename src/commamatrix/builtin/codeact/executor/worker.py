@@ -357,6 +357,7 @@ async def main(host: str, port: int, token: str) -> None:
                 "exec",
                 flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT,
             )
+
             result = eval(compiled, namespace)
             if inspect.isawaitable(result):
                 await result

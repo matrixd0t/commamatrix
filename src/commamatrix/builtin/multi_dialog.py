@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import inspect
 import json
 
 from ..components.dialog import DialogOrigin, ORIGIN_REGISTRY
 from ..components.hook import AfterSendCtx, BeforeToolCallCtx, after_send
 from ..components.instruction import InstructionCtx, instruction
 from ..components.tool import tool
+from ..utils import await_if_needed
 
 
 def _type_name(annotation: object) -> str:
@@ -29,7 +29,7 @@ def describe_dialog_switch(ctx: InstructionCtx) -> str:
 # Switching dialogs
 Use `dialogs_switch` with the `origin_type` value and a JSON string in `fields_json` containing the identity fields listed by `dialogs_get_origins`.
 The decoded `fields_json` object must contain only origin identity fields, such as `http_user_id`.
-Never put response text, `message`, or `content` into `fields_json`. Do not guess user name or id: if unknown, use get_user_info().
+Never put response text, `message`, or `content` into `fields_json`. Do not guess user names or ids: if unknown, use get_user_info().
 After `dialogs_switch` returns `OK`, send the user-facing response normally.
 '''
 
@@ -90,49 +90,84 @@ async def get_origins(platform: str = "any") -> str:
 
 
 @tool(alias="dialogs")
-async def get_user_info(user_name_or_id: str, ctx: BeforeToolCallCtx) -> dict[str, int | str]:
-    """Get user-related information: id, username and platform."""
-    if not isinstance(user_name_or_id, str) or not user_name_or_id.strip():
-        return {"error": "user_name_or_id is required"}
-    user_name_or_id = user_name_or_id.strip()
+async def get_user_info(user_names_or_ids: list[str], ctx: BeforeToolCallCtx) -> dict[str, dict[str, int | str]]:
+    """Get user information keyed by each name or id from the input list.
 
-    platform_filter, user_identifier = None, None
-    if ":" in user_name_or_id:
-        platform_filter, _, user_identifier = user_name_or_id.partition(":")
-        platform_filter = platform_filter.strip()
-        user_identifier = user_identifier.strip()
-    if not user_identifier:
-        user_identifier = user_name_or_id
-
-    try:
-        numeric = int(user_identifier)
-    except (ValueError, TypeError):
-        numeric = None
-
+    Usage: "user_names_or_ids": ["Alice", "http:42", "telegram:bob"]
+    """
+    results: dict[str, dict[str, int | str]] = {}
     connectors = ctx.run.agent.connector_manager.resolve()
-    if platform_filter:
-        connectors = [
-            connector
-            for connector in connectors
-            if platform_filter in {
-                origin_type.model_fields["platform"].default
-                for origin_type in connector.origin_types
-            }
-        ]
-    if not connectors:
-        return {"error": "No connectors found" + (f" for platform {platform_filter!r}" if platform_filter else "")}
 
-    search_key = numeric if numeric is not None else user_identifier
-    for connector in connectors:
-        resolver = getattr(connector, "get_user_info", None)
-        if resolver is None:
+    for user_name_or_id in user_names_or_ids:
+        request_key = str(user_name_or_id)
+        if not isinstance(user_name_or_id, str) or not user_name_or_id.strip():
+            results[request_key] = {"error": "invalid input"}
             continue
-        found = await resolver(search_key)
-        if found is not None:
-            platform = next(iter(connector.origin_types)).model_fields["platform"].default
-            return {"id": found["id"], "username": found["username"], "platform": platform}
+        user_name_or_id = user_name_or_id.strip()
 
-    return {"error": "User not found"}
+        platform_filter = None
+        user_identifier = user_name_or_id
+        if ":" in user_name_or_id:
+            platform_filter, _, user_identifier = user_name_or_id.partition(":")
+            platform_filter = platform_filter.strip()
+            user_identifier = user_identifier.strip()
+        if not user_identifier:
+            results[request_key] = {"error": "invalid input"}
+            continue
+
+        try:
+            numeric = int(user_identifier)
+        except (ValueError, TypeError):
+            numeric = None
+
+        candidate_connectors = connectors
+        if platform_filter:
+            candidate_connectors = [
+                connector
+                for connector in connectors
+                if platform_filter in {
+                    origin_type.model_fields["platform"].default
+                    for origin_type in connector.origin_types
+                }
+            ]
+        if not candidate_connectors:
+            results[request_key] = {
+                "error": "No connectors found"
+                + (f" for platform {platform_filter!r}" if platform_filter else "")
+            }
+            continue
+
+        search_key = numeric if numeric is not None else user_identifier
+        result: dict[str, int | str] | None = None
+        for connector in candidate_connectors:
+            found = await await_if_needed(connector.get_user_info(search_key))
+            if not isinstance(found, dict):
+                continue
+            found_id = found.get("id")
+            if not isinstance(found_id, (int, str)):
+                continue
+            username = found.get("username")
+            if not isinstance(username, str):
+                username = str(found_id)
+            platform = platform_filter or str(
+                next(
+                    (
+                        origin_type.model_fields["platform"].default
+                        for origin_type in connector.origin_types
+                    ),
+                    "unknown",
+                )
+            )
+            result = {
+                "id": found_id,
+                "username": username,
+                "platform": platform,
+            }
+            break
+
+        results[request_key] = result or {"error": "User not found"}
+
+    return results
 
 
 @tool(alias="dialogs")
@@ -140,7 +175,7 @@ async def switch(origin_type: str, fields_json: str, ctx: BeforeToolCallCtx) -> 
     """Route the next response; fields_json must be a JSON object containing only origin identity fields."""
     origin_cls = _resolve_origin_class(origin_type)
     if origin_cls is None:
-        return f"Unknown origin type: {origin_type}\nAvailable origins:\n{get_origins()}"
+        return f"Unknown origin type: {origin_type}\nAvailable origins:\n{await get_origins()}"
     try:
         fields = json.loads(fields_json)
     except (json.JSONDecodeError, TypeError):
@@ -172,21 +207,30 @@ async def apply_new_origin(ctx: AfterSendCtx) -> None:
         return
 
     ctx.run.origin = new_origin
-    identity_fields = set(type(new_origin).model_fields) - set(DialogOrigin.model_fields)
-    if len(identity_fields) != 1:
+    identity_fields = tuple(sorted(set(type(new_origin).model_fields) - set(DialogOrigin.model_fields)))
+    if not identity_fields:
+        ctx.run.user = f"{new_origin.platform}:unknown"
         return
-
-    identity = getattr(new_origin, next(iter(identity_fields)))
-    connector = ctx.run.agent.connector_manager.resolve_for_origin(new_origin)
-    resolver = getattr(connector, "get_user_info", None)
-    if resolver is None:
+    if len(identity_fields) != 1:
+        identity = json.dumps(
+            {
+                field_name: getattr(new_origin, field_name)
+                for field_name in identity_fields
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
         ctx.run.user = f"{new_origin.platform}:{identity}"
         return
 
-    user_info = resolver(identity)
-    if inspect.isawaitable(user_info):
-        user_info = await user_info
-    resolved_id = user_info.get("id", identity) if isinstance(user_info, dict) else identity
+    identity = getattr(new_origin, identity_fields[0])
+    connector = ctx.run.agent.connector_manager.resolve_for_origin(new_origin)
+    user_info = await await_if_needed(connector.get_user_info(identity))
+
+    resolved_id = user_info.get("id") if isinstance(user_info, dict) else None
+    if resolved_id is None:
+        resolved_id = identity
     ctx.run.user = f"{new_origin.platform}:{resolved_id}"
 
 

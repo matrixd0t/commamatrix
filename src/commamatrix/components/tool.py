@@ -77,12 +77,7 @@ class ToolSource(Source[ToolDescriptor]):
     control back to the event loop at await points.
     """
 
-    async def invoke(
-        self,
-        descriptor: ToolDescriptor,
-        kwargs: dict[str, Any],
-        ctx: BeforeToolCallCtx | None = None,
-    ) -> object:
+    async def invoke(self, descriptor: ToolDescriptor, kwargs: dict[str, Any], ctx: BeforeToolCallCtx | None = None) -> object:
         raise NotImplementedError
 
 
@@ -164,12 +159,7 @@ class PythonToolSource(PythonSource[ToolDescriptor], ToolSource):
         )
         return descriptor
 
-    async def invoke(
-        self,
-        descriptor: ToolDescriptor,
-        kwargs: dict[str, Any],
-        ctx: BeforeToolCallCtx | None = None,
-    ) -> object:
+    async def invoke(self, descriptor: ToolDescriptor, kwargs: dict[str, Any], ctx: BeforeToolCallCtx | None = None) -> object:
         fn = self._functions.get(descriptor.id)
         if fn is None:
             raise RuntimeError(f"Tool {descriptor.id} is not owned by this source")
@@ -331,12 +321,7 @@ class ToolManager(Manager[ToolDescriptor]):
     def find_alias(self, alias: str) -> list[ToolDescriptor]:
         return self._by_alias.get(alias, [])
 
-    async def invoke(
-        self,
-        descriptor: ToolDescriptor,
-        kwargs: dict[str, Any],
-        ctx: BeforeToolCallCtx | None = None,
-    ) -> Any:
+    async def invoke(self, descriptor: ToolDescriptor, kwargs: dict[str, Any], ctx: BeforeToolCallCtx | None = None) -> Any:
         return await self._source_of(descriptor).invoke(descriptor, kwargs, ctx=ctx)
 
     async def call(
