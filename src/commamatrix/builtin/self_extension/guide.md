@@ -595,17 +595,7 @@ from commamatrix import DialogItem, DialogItemType, DialogRole, InternalOrigin, 
 
 @task(cron("0 12 * * 1"))
 async def weekly_digest(ctx: ScheduledTaskContext) -> None:
-    await ctx.submit_run(
-        dialog_items=[
-            DialogItem(
-                content="Сформируй еженедельный дайджест",
-                item_type=DialogItemType.INPUT,
-                role=DialogRole.USER,
-                origin=InternalOrigin(task_id=ctx.task_id),
-                user="any_identity_alias",
-            )
-        ]
-    )
+    ...
 ```
 
 Use `cron(...)`, `every(...)`, or `once(datetime(...))`; these helpers are

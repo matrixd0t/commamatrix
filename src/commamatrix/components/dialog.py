@@ -90,15 +90,24 @@ def resolve_origin_type(data: Mapping[str, Any]) -> type[DialogOrigin]:
     populated_fields = {
         name for name in all_origin_fields if data.get(name) is not None
     }
-    candidates = [
-        origin_cls
-        for origin_cls, fields in origin_field_sets.items()
-        if origin_cls.model_fields.get("origin_type") is not None
-        and origin_cls.model_fields["origin_type"].default == origin_type
-        and origin_cls.model_fields.get("platform") is not None
-        and origin_cls.model_fields["platform"].default == platform
-        and fields == populated_fields
-    ]
+    candidates = []
+    for origin_cls, fields in origin_field_sets.items():
+        origin_type_field = origin_cls.model_fields.get("origin_type")
+        platform_field = origin_cls.model_fields.get("platform")
+        if origin_type_field is None or origin_type_field.default != origin_type:
+            continue
+        if platform_field is None or platform_field.default != platform:
+            continue
+        if not populated_fields <= fields:
+            continue
+        required_fields = {
+            name
+            for name in fields
+            if origin_cls.model_fields[name].is_required()
+        }
+        if required_fields - populated_fields:
+            continue
+        candidates.append(origin_cls)
 
     if not candidates:
         if (

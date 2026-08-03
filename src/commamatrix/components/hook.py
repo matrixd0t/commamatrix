@@ -69,10 +69,12 @@ class RunCtx:
     chain_state: dict[str, Any] = field(default_factory=dict)
     """Persistent state that carries across messages in the conversation chain.
 
-    Unlike ``state`` (per-run only), ``chain_state`` is serialised into every 
-    ``DialogItem.meta["chain"]`` and restored from the last item of the conversation branch when a new run starts.  
+    Unlike ``state`` (per-run only), ``chain_state`` is serialised into every
+    ``DialogItem.meta["chain"]`` and restored from the last item of the conversation branch when a new run starts.
     This lets hooks and tools make cross-message decisions.
     """
+    dialog_items: list[DialogItem] = field(default_factory=list)
+    """Items in the branch visible to the completed run."""
     tool_output_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     """Serialises ``send + persist`` of tool-call results.
     
@@ -118,6 +120,16 @@ class BeforeLlmCallCtx(BaseEventCtx):
 class AfterLlmCallCtx(BaseEventCtx):
     run: RunCtx
     response: LLMResponse
+
+    @property
+    def final_answer(self) -> str | None:
+        """Return text blocks from the final model response."""
+        parts = [
+            block.content_str()
+            for block in self.response.content
+            if block.item_type().value == "output"
+        ]
+        return "\n\n".join(parts) or None
 
 
 @dataclass(slots=True, kw_only=True)

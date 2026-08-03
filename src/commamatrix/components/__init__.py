@@ -66,7 +66,7 @@ from .server import (
     http_host,
     http_port
 )
-from ..core.agent.agent import DEFAULT_HTTP_HEADERS, agentic_model, http_default_headers, http_timeout
+from ..core.agent.agent import HTTP_BASE_HEADERS, agentic_model, http_default_headers, http_timeout
 from .tool import tool, ToolSource, ToolDescriptor, DEFAULT_TOOL_SEARCH_AMOUNT
 from .hook import (
     Hook,
@@ -164,7 +164,7 @@ __all__ = [
     "http_external_url",
     "http_host",
     "http_port",
-    "DEFAULT_HTTP_HEADERS",
+    "HTTP_BASE_HEADERS",
     "agentic_model",
     "http_default_headers",
     "http_timeout",

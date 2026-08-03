@@ -116,6 +116,9 @@ class CodeActService(Service):
     def rebuild_index(self, tools: list[ToolDescriptor], run: RunCtx) -> None:
         fingerprint = run.agent.tool_manager.fingerprint
         if fingerprint is not None:
+            allowed = run.chain_state.get("allowed_tools", "all")
+            if allowed != "all":
+                fingerprint = f"{fingerprint}|allowed_tools={allowed!r}"
             self.searcher.rebuild_index(fingerprint, tools)
 
     async def execute(self, code: str, ctx: BeforeToolCallCtx) -> ExecutionResult:

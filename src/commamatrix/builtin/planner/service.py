@@ -12,9 +12,7 @@ from typing import Any, Callable, TYPE_CHECKING, cast
 
 from matrix_planner import Planner, Task as PlannerTask
 
-from ...components.connector import Connector
-from ...components.dialog import DialogItem, DialogOrigin
-from ...components.hook import OnParsedCtx
+from ..subagent import InternalConnector, InternalOrigin
 from ...core.classes.descriptor import Descriptor
 from ...core.classes.manager import Manager
 from ...core.classes.source import PythonSource
@@ -55,43 +53,6 @@ class ScheduledTaskContext:
     agent: Agent
     task_id: str
     scheduled_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-
-    async def submit_run(
-        self,
-        *,
-        dialog_items: list[DialogItem] | None = None,
-        last_item_id: int | None = None,
-        meta: dict[str, Any] | None = None,
-        state: dict[str, Any] | None = None,
-        conflict_policy: Literal["replace", "skip"] = "skip",
-    ) -> Any:
-        """Submit a normal Agent run without manufacturing an external event."""
-        items = list(dialog_items or [])
-        if items:
-            items[0].meta.update(
-                {
-                    "scheduled": True,
-                    "scheduled_task_id": self.task_id,
-                    "scheduled_at": self.scheduled_at.isoformat(),
-                    **(meta or {}),
-                }
-            )
-        run_state = {
-            "trigger": "schedule",
-            "scheduled_task_id": self.task_id,
-            "scheduled_at": self.scheduled_at.isoformat(),
-            **(state or {}),
-        }
-        run_task = await self.agent.submit_run(
-            dialog_items=items or None,
-            last_item_id=last_item_id,
-            state=run_state,
-            conflict_policy=conflict_policy,
-            runner_namespace=f"scheduled:{self.task_id}",
-        )
-        if run_task is None:
-            return None
-        return await run_task
 
 
 ScheduledTaskHandler = Callable[..., Any]
@@ -188,7 +149,7 @@ class PythonScheduledTaskSource(PythonSource[ScheduledTaskDescriptor]):
     def make_planner_task(self, descriptor: ScheduledTaskDescriptor, agent: Agent) -> PlannerTask:
         params = self._options[descriptor.id]
 
-        async def invoke() -> Any:
+        async def _invoke() -> Any:
             return await self.invoke(descriptor, agent)
 
         async def on_error(error: Exception) -> None:
@@ -200,7 +161,7 @@ class PythonScheduledTaskSource(PythonSource[ScheduledTaskDescriptor]):
 
         return PlannerTask(
             task_id=descriptor.task_id,
-            func=invoke,
+            func=_invoke,
             schedule=params["schedule"],
             name=params.get("name") or descriptor.name,
             max_retries=params.get("max_retries", 0),
@@ -257,24 +218,6 @@ class AgentScheduler(Manager[ScheduledTaskDescriptor]):
             source = cast(PythonScheduledTaskSource, self._source_of(descriptor))
             self._planner.add(source.make_planner_task(descriptor, self.agent))
             self._registered[descriptor.id] = descriptor.fingerprint
-
-
-class InternalOrigin(DialogOrigin):
-    """Origin for scheduled runs that have no external platform."""
-
-    origin_type: str = "internal"
-    platform: str = "internal"
-    task_id: str
-
-
-class InternalConnector(Connector[InternalOrigin]):
-    """Persists internal responses without delivering them externally."""
-
-    async def parse(self, data: dict) -> OnParsedCtx | None:
-        return None
-
-    async def send(self, origin: DialogOrigin, item: DialogItem) -> str:
-        return ""
 
 
 __all__ = [

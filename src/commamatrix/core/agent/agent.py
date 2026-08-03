@@ -21,7 +21,7 @@ from uuid import uuid4
 
 from dotenv import load_dotenv
 from httpx import AsyncClient
-from typing import Any, Literal, cast
+from typing import Any, Callable, Literal, cast
 
 from ...components.config import Config, ConfigField
 from ...components.dialog import DialogItem, DialogItemType, DialogRole
@@ -62,6 +62,7 @@ from ...components.table import TableManager
 from ...components.file_storage import FileStorageManager, FILE_STORAGE_ATTRIBUTE
 from ...components.server import Server
 from ...builtin.planner import AgentScheduler
+from ...builtin.subagent import SubagentService
 from ..classes.manager import ServiceInstanceManager, ServiceInstanceRegistry
 from ..classes.service import AbstractService
 from ..extensions import (
@@ -74,7 +75,7 @@ from ...utils import FP, commamatrix_dir
 from .runner import AgentRunner
 from .lifecycle import AgentLifecycle
 
-DEFAULT_HTTP_HEADERS: dict[str, str] = {
+HTTP_BASE_HEADERS: dict[str, str] = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
     "Accept": "*/*",
     "Accept-Language": "en-US;q=0.8,en;q=0.7",
@@ -184,11 +185,11 @@ class Agent:
     def http_client(self) -> AsyncClient:
         """Shared HTTP client with browser-like defaults. Lazy-created on first access.
 
-        Extra headers from ``http_default_headers`` config are merged on top of ``DEFAULT_HTTP_HEADERS``.
+        Extra headers from ``http_default_headers`` config are merged on top of ``HTTP_BASE_HEADERS``.
         Timeout is controlled by the ``http_timeout`` config field (default 120 s).
         """
         if self._http_client is None:
-            headers = dict(DEFAULT_HTTP_HEADERS)
+            headers = dict(HTTP_BASE_HEADERS)
             extra = self.config.get(http_default_headers)
             if extra:
                 headers.update(extra)
@@ -310,51 +311,116 @@ class Agent:
     async def submit_run(
         self,
         *,
+        parent_item_id: int | None = None,
+        instructions: str | None = None,
         dialog_items: list[DialogItem] | None = None,
-        last_item_id: int | None = None,
+        tools: str | None,
+        user: str = "agent",
         meta: dict[str, Any] | None = None,
         state: dict[str, Any] | None = None,
+        wait_for_result: bool = True,
         conflict_policy: Literal["replace", "skip"] = "skip",
-        runner_namespace: str = "interactive",
+        runner_namespace: str = "subagent",
         runner_key: str | None = None,
-    ) -> asyncio.Task | None:
-        """Submit existing dialog items or continue a stored dialog branch."""
+        on_error: Callable[[Exception], Any] | None = None,
+    ) -> AfterLlmCallCtx | str | None:
+        """Submit a 'headless' run through the internal subagent connector."""
         await self._ensure_started()
+        await self._ensure_subagent_extension()
+        from ...builtin.subagent.policy import validate_allowed_tools
+
+        try:
+            validate_allowed_tools(tools)
+        except Exception as exc:
+            if not wait_for_result:
+                return f"{type(exc).__name__}: {exc}"
+            raise
+        try:
+            service: SubagentService = self.services.require(SubagentService)
+            task_id = uuid4().hex
+            origin = service.make_origin(task_id, parent_item_id)
+            connector = service.register(origin, wait_for_result=wait_for_result, on_error=on_error)
+        except Exception as exc:
+            if not wait_for_result:
+                return f"{type(exc).__name__}: {exc}"
+            raise
         items = list(dialog_items or [])
-        if not items and last_item_id is None:
-            raise ValueError("submit_run requires dialog_items or last_item_id")
+        if instructions:
+            items.insert(
+                0,
+                DialogItem(
+                    content=instructions,
+                    item_type=DialogItemType.INPUT,
+                    role=DialogRole.SYSTEM,
+                    origin=origin,
+                    user=user,
+                    previous_item_id=parent_item_id,
+                ),
+            )
 
+        if not items and parent_item_id is None:
+            service.unregister(origin)
+            error = ValueError("submit_run requires instructions, dialog_items, or parent_item_id")
+            if not wait_for_result:
+                return f"{type(error).__name__}: {error}"
+            raise error
+
+        for item in items:
+            if item.item_id is None:
+                item.origin = origin
+                item.user = user
         if items:
-            origin = items[0].origin
-            user = items[0].user
-            if last_item_id is not None and items[0].item_id is None:
-                if items[0].previous_item_id is None:
-                    items[0].previous_item_id = last_item_id
+            first = items[0]
+            if first.item_id is None:
+                first.previous_item_id = parent_item_id
             if meta:
-                items[0].meta.update(meta)
-        else:
-            assert last_item_id is not None
-            branch = await self.storage.get_branch(last_item_id)
-            if not branch:
-                raise LookupError(f"Dialog item {last_item_id} was not found")
-            origin = branch[-1].origin
-            user = branch[-1].user
+                first.meta.update(meta)
 
-        connector = self.connector_manager.resolve_for_origin(origin)
+        run_state = dict(state or {})
+        run_state["subagent"] = True
         run = RunCtx(
             agent=self,
             connector=connector,
             origin=origin,
             user=user,
-            state=dict(state or {}),
-            last_item_id=last_item_id,
+            state=run_state,
+            chain_state={"allowed_tools": tools},
+            last_item_id=parent_item_id,
         )
-        key = runner_key or self.runner.make_key(
-            origin,
-            user,
-            namespace=runner_namespace,
-        )
-        return await self.runner.submit(key, self.run(run, history=items or None), conflict_policy=conflict_policy)
+        key = runner_key or f"{runner_namespace}:{user}:{parent_item_id}"
+        try:
+            task = await self.runner.submit(
+                key,
+                self.run(run, history=items or None),
+                conflict_policy=conflict_policy,
+            )
+        except Exception as exc:
+            service.unregister(origin)
+            if not wait_for_result:
+                return f"{type(exc).__name__}: {exc}"
+            raise
+        if task is None:
+            service.unregister(origin)
+            return "Subagent run was skipped" if not wait_for_result else None
+
+        async def settle() -> None:
+            try:
+                result = await task
+            except asyncio.CancelledError:
+                await service.complete(origin, None, RuntimeError("Subagent run was cancelled"))
+                raise
+            except Exception as _exc:
+                await service.complete(origin, None, _exc)
+            else:
+                await service.complete(origin, result)
+
+        if not wait_for_result:
+            asyncio.create_task(settle())
+            return "OK"
+
+        waiter = connector.waiter(origin)
+        await settle()
+        return await waiter
 
     @asynccontextmanager
     async def _typing(self, run: RunCtx):
@@ -383,6 +449,8 @@ class Agent:
             last_item_id = await self._store_history(run, history)
             run.last_item_id = last_item_id
             await self._restore_chain_state(run, last_item_id)
+            if run.state.get("subagent"):
+                run.chain_state["allowed_tools"] = run.state["allowed_tools"]
 
             if (await self._before_run(run)).abort:
                 return None
@@ -403,6 +471,7 @@ class Agent:
                     stream = connector.supports_streaming
                     blocks: list[LLMResponseBlock] = []
                     tool_calls: list[LLMResponseToolCallBlock] = []
+                    tool_parent_item_ids: list[int | None] = []
                     llm_response: LLMResponse | None = None
                     stream_ids: dict[str, str] = {}
 
@@ -430,21 +499,24 @@ class Agent:
                     ordered_blocks = sorted(blocks, key=lambda _block: isinstance(_block, LLMResponseToolCallBlock))
                     llm_response.content = ordered_blocks
                     for event in ordered_blocks:
+                        previous_item_id = last_item_id
                         dialog_item = event.to_dialog_item(
                             role=DialogRole.ASSISTANT,
                             user=run.user,
                             origin=run.origin,
-                            previous_item_id=last_item_id,
+                            previous_item_id=previous_item_id,
                         )
                         last_item_id = await self._send_and_store_item(run, dialog_item, last_item_id)
                         if isinstance(event, LLMResponseToolCallBlock):
                             tool_calls.append(event)
+                            tool_parent_item_ids.append(previous_item_id)
 
                     after_llm_ctx = AfterLlmCallCtx(run=run, response=llm_response)
                     await self.hook_manager.fire(HookEventType.AFTER_LLM_CALL, after_llm_ctx)
                     self._validate_response(after_llm_ctx.response)
 
-                    for block in tool_calls:
+                    for block, parent_item_id in zip(tool_calls, tool_parent_item_ids):
+                        run.state["child_parent_item_id"] = parent_item_id
                         tool_call = ToolCall(
                             tool_call_id=block.tool_call_id,
                             tool_name=block.tool_name,
@@ -465,7 +537,17 @@ class Agent:
             await self._handle_error(run, exc)
 
         finally:
+            if run.last_item_id is not None:
+                try:
+                    run.dialog_items = await self._load_dialog(run.last_item_id)
+                except Exception:
+                    run.dialog_items = []
             await self.hook_manager.fire(HookEventType.AFTER_RUN, AfterRunCtx(run=run, error=error))
+
+    async def _ensure_subagent_extension(self) -> None:
+        target = FP + ".builtin.subagent"
+        if not any(module_name == target or module_name.startswith(target + ".") for module_name in self._extension_scope):
+            await self.add_extensions(target)
 
     async def _ensure_started(self) -> None:
         """Lazy init: load .env, add defaults, start lifecycle, fire on_agent_start."""
@@ -478,11 +560,7 @@ class Agent:
                 await self.add_extensions(FP + ".components")
                 await self.add_extensions(FP + ".builtin.planner")
                 if self._auto_load_plugins:
-                    (
-                        Path.cwd()
-                        / self.config.get(commamatrix_dir)
-                        / self.config.get(plugins_dir)
-                    ).mkdir(parents=True, exist_ok=True)
+                    (Path.cwd() / self.config.get(commamatrix_dir) / self.config.get(plugins_dir)).mkdir(parents=True, exist_ok=True)
                     plugin_targets = self._workspace_plugin_targets()
                     if plugin_targets:
                         await self.add_extensions(*plugin_targets)
