@@ -544,8 +544,6 @@ class TestIterSSEEvents:
 
 async def _mock_sse_events(lines: list[str]):
     """Helper that feeds raw SSE lines into _iter_sse_events via a mock response."""
-    import httpx
-
     class MockResponse:
         def __init__(self, lines):
             self._lines = lines
@@ -554,7 +552,7 @@ async def _mock_sse_events(lines: list[str]):
             for line in self._lines:
                 yield line
 
-    # We can't easily mock httpx.Response, so we replicate the SSE parsing logic inline
+    # Feed raw SSE lines directly to keep this parser test independent of transports.
     event_type = None
     data_lines = []
 

@@ -9,8 +9,8 @@ from collections.abc import AsyncIterator
 from typing import Any, TYPE_CHECKING
 from urllib.parse import quote, urlparse
 
-import httpx
-from httpx import HTTPError, HTTPStatusError
+import httpx2 as httpx
+from httpx2 import HTTPError, HTTPStatusError
 
 from ...components.config import ConfigField
 from ...components.hook import BeforeLlmCallCtx

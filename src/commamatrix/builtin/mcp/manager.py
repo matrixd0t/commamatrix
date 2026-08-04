@@ -43,12 +43,7 @@ class MCPService(Service):
             for tool in self._tools.get(server_id, ()):
                 yield spec, tool
 
-    async def call_tool(
-        self,
-        server_id: str,
-        remote_name: str,
-        arguments: dict[str, Any],
-    ) -> Any:
+    async def call_tool(self, server_id: str, remote_name: str, arguments: dict[str, Any]) -> Any:
         runtime = self._runtimes.get(server_id)
         if runtime is None:
             raise RuntimeError(f"MCP server {server_id!r} is not configured")

@@ -19,9 +19,15 @@ from pathlib import Path
 from traceback import format_exc
 from uuid import uuid4
 
-from dotenv import load_dotenv
-from httpx import AsyncClient
 from typing import TYPE_CHECKING, Any, Callable, Literal, cast
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv() -> None:
+        """Keep .env loading optional for the core package."""
+
+from httpx2 import AsyncClient
 
 from ...components.config import Config, ConfigField
 from ...components.dialog import DialogItem, DialogItemType, DialogRole
@@ -60,6 +66,7 @@ from ..extensions import (
     ExtensionOperation,
     ExtensionRuntime,
     ExtensionRuntimeError,
+    MissingExtensionDependencyError,
     discover_plugin_targets,
 )
 from ...utils import FP, commamatrix_dir
@@ -438,7 +445,11 @@ class Agent:
                     if plugin_targets:
                         await self.add_extensions(*plugin_targets)
                 if not self._scope_has_attribute(STORAGE_ATTRIBUTE):
-                    await self.add_extensions(FP + ".builtin.sql.sqlite_storage")
+                    try:
+                        await self.add_extensions(FP + ".builtin.sql.sqlite_storage")
+                    except MissingExtensionDependencyError as exc:
+                        if exc.dependency_module != "aiosqlite":
+                            raise
                 if not self._scope_has_attribute(FILE_STORAGE_ATTRIBUTE):
                     await self.add_extensions(FP + ".builtin.simple_fs")
                 await self.lifecycle.sync_registered(self._extension_scope)

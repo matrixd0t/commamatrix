@@ -8,7 +8,7 @@ from enum import StrEnum
 from json import loads
 from typing import Any
 
-from httpx import AsyncClient
+from httpx2 import AsyncClient
 
 from ...components.dialog import DialogItem, DialogItemType
 from ...components.file_storage import DataType, FileContext, file_to_context, read_file

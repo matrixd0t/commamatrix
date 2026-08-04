@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from httpx import AsyncClient
+from httpx2 import AsyncClient
 
 from .config import ConfigField
 from ..core.classes.lifecycle_registry import lifecycle_component

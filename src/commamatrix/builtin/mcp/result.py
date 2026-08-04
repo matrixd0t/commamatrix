@@ -11,7 +11,6 @@ class MCPToolError(RuntimeError):
     """Raised when an MCP server returns an error tool result."""
 
 
-
 def _content_value(content: Any) -> Any:
     content_type = getattr(content, "type", None)
     if content_type == "text" and isinstance(getattr(content, "text", None), str):
@@ -19,7 +18,6 @@ def _content_value(content: Any) -> Any:
     if hasattr(content, "model_dump"):
         return content.model_dump(mode="json", by_alias=True, exclude_none=True)
     return to_jsonable(content)
-
 
 
 def normalize_call_result(result: Any) -> Any:

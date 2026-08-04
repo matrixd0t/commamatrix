@@ -4,13 +4,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import platform
 import sys
 from pathlib import Path
 from typing import Literal
-
-import aiofiles
 
 from ...components.config import ConfigField
 from ...components.hook import BeforeToolCallCtx
@@ -86,7 +85,7 @@ async def readme(ctx: BeforeToolCallCtx) -> str:
         f"CWD: {os.getcwd()}\n\n"
     )
     try:
-        async with aiofiles.open(path, encoding="utf-8") as f:
-            return environment + await f.read()
+        content = await asyncio.to_thread(Path(path).read_text, encoding="utf-8")
+        return environment + content
     except FileNotFoundError:
         return environment + f"Guide file not found: {path}"

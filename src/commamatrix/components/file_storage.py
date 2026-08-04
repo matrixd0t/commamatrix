@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from abc import abstractmethod
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -11,8 +12,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from aiofiles import open as aio_open
-from httpx import HTTPError
+from httpx2 import HTTPError
 
 from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.service import AbstractService

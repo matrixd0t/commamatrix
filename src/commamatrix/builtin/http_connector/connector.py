@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING
 from urllib.parse import quote, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-import aiofiles
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from starlette.staticfiles import StaticFiles
@@ -171,8 +170,8 @@ class HttpConnector(Connector[HttpOrigin]):
 
     async def _index(self, _request: Request) -> Response:
         if self._ui_path.exists():
-            async with aiofiles.open(self._ui_path, encoding="utf-8") as file:
-                return HTMLResponse(await file.read())
+            content = await asyncio.to_thread(self._ui_path.read_text, encoding="utf-8")
+            return HTMLResponse(content)
         return HTMLResponse("<h1>CommaMatrix HTTP UI</h1><p>index.html not found.</p>", status_code=404)
 
     async def _login(self, request: Request) -> Response:

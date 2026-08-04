@@ -434,7 +434,7 @@ retrieves that service:
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 
 from commamatrix import Service
 
@@ -446,10 +446,10 @@ class WeatherService(Service):
         super().__init__(agent)
         self._api_key = self.config.get(api_key)
         self._timeout = self.config.get(request_timeout)
-        self._client: httpx.AsyncClient | None = None
+        self._client: httpx2.AsyncClient | None = None
 
     async def start(self) -> None:
-        self._client = httpx.AsyncClient(timeout=self._timeout)
+        self._client = httpx2.AsyncClient(timeout=self._timeout)
 
     async def stop(self) -> None:
         if self._client is not None:

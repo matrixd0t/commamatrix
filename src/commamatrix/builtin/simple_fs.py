@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
-from aiofiles import open, os
 from pathlib import Path
 
 from typing import TYPE_CHECKING
@@ -27,21 +27,18 @@ class SimpleFileStorage(FileStorage):
         self._directory.mkdir(parents=True, exist_ok=True)
         file_id = uuid.uuid4().hex + (f'.{ext.lstrip(".")}' if ext else '')
         path = self._directory / file_id
-        async with open(path, 'wb') as f:
-            await f.write(data)
+        await asyncio.to_thread(path.write_bytes, data)
         return file_id
 
     async def _resolve_path(self, file_id: str) -> Path | None:
         path = self._directory / file_id
-        try:
-            async with open(path, 'rb'):
-                return path
-        except FileNotFoundError:
-            pass
+        if await asyncio.to_thread(path.is_file):
+            return path
 
         if '.' not in file_id:
             try:
-                for entry in self._directory.iterdir():
+                entries = await asyncio.to_thread(lambda: tuple(self._directory.iterdir()))
+                for entry in entries:
                     if entry.name.startswith(file_id + '.') and entry.is_file():
                         return entry
             except FileNotFoundError:
@@ -53,15 +50,17 @@ class SimpleFileStorage(FileStorage):
         path = await self._resolve_path(file_id)
         if path is None:
             return None
-        async with open(path, 'rb') as file:
-            return await file.read()
+        try:
+            return await asyncio.to_thread(path.read_bytes)
+        except OSError:
+            return None
 
     async def delete(self, file_id: str) -> bool:
         path = await self._resolve_path(file_id)
         if path is None:
             return False
         try:
-            await os.remove(path)
+            await asyncio.to_thread(path.unlink)
         except FileNotFoundError:
             return False
         return True

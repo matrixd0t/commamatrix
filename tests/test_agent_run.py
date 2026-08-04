@@ -193,11 +193,29 @@ def _make_run_ctx(agent: Agent, connector: RecordingConnector | None = None) -> 
 class _NullLifecycle:
     """Replaces AgentLifecycle to prevent refresh from wiping manually-registered hooks."""
 
-    def set_scope(self, scope):
+    def __init__(self, hook_manager):
+        agent = hook_manager.agent
+        self._components = {
+            "hook_manager": hook_manager,
+            "tool_manager": agent.lifecycle.get("tool_manager"),
+        }
+
+    def get(self, key):
+        return self._components.get(key)
+
+    def has_key(self, key):
+        return key in self._components
+
+    async def sync_registered(self, scope):
         pass
 
+    def set_scope(self, scope):
+        for component in self._components.values():
+            if hasattr(component, "set_scope"):
+                component.set_scope(scope)
+
     async def refresh(self):
-        pass
+        await self._components["tool_manager"].refresh()
 
     async def start(self):
         pass
@@ -299,7 +317,7 @@ async def _setup_agent(
     agent.storage = _FixedStorageManager()
     agent.file_storage = _FixedFSManager()
     agent.connector_manager = _FixedConnectorManager()
-    agent.lifecycle = _NullLifecycle()
+    agent.lifecycle = _NullLifecycle(agent.lifecycle.get("hook_manager"))
     agent._started = True
 
     return agent, connector, storage
@@ -502,7 +520,7 @@ def _make_multi_call_agent(events_list, connector_cls=RecordingConnector):
     agent.storage = _FixedStorageManager()
     agent.file_storage = _FixedFSManager()
     agent.connector_manager = _FixedConnectorManager()
-    agent.lifecycle = _NullLifecycle()
+    agent.lifecycle = _NullLifecycle(agent.lifecycle.get("hook_manager"))
     agent._started = True
 
     return agent, connector, storage

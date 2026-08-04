@@ -8,7 +8,7 @@ import asyncio
 from typing import Any
 
 import aiosqlite
-import httpx
+import httpx2 as httpx
 import pytest
 
 from commamatrix.builtin.http_connector.connector import HttpConnector, HttpOrigin

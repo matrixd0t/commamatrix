@@ -8,8 +8,7 @@ from mimetypes import guess_type
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from aiofiles import open as aio_open
-from httpx import HTTPError
+from httpx2 import HTTPError
 
 from ..components.config import ConfigField
 from ..components.dialog import DialogItem, DialogItemType, DialogRole
@@ -267,8 +266,7 @@ async def write(content: str | bytes, dest: str | None = None, ext: str = "", *,
             return "Error: dest must be an HTTP(S) URL, an absolute path, or omitted."
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            async with aio_open(path, "wb") as file:
-                await file.write(data)
+            await asyncio.to_thread(path.write_bytes, data)
         except OSError as exc:
             return f"Error writing file to {path}: {exc}"
         return "OK"
