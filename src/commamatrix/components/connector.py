@@ -10,20 +10,11 @@ from abc import abstractmethod
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import (
-    Any,
-    ClassVar,
-    Generic,
-    TYPE_CHECKING,
-    TypeVar,
-    Union as TypingUnion,
-    cast,
-    get_args,
-    get_origin, Iterable,
-)
+from typing import Any, ClassVar, Generic, TYPE_CHECKING, TypeVar, Union as TypingUnion, cast, get_args, get_origin
 
+from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.service import AbstractService, ServiceDescriptor
-from ..core.classes.source import Source, PythonSource, D
+from ..core.classes.source import PythonSource
 from ..core.classes.manager import ServiceInstanceManager
 from .dialog import DialogItem, DialogOrigin
 from .llm_adapter import LLMModalities, StreamDelta
@@ -150,6 +141,7 @@ class PythonConnectorSource(PythonSource[ConnectorDescriptor]):
         )
 
 
+@lifecycle_component(key="connector_manager", priority=200, after="service_manager")
 class ConnectorManager(ServiceInstanceManager[Connector]):
     """
     Manages connector instances.

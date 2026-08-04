@@ -9,6 +9,7 @@ from collections.abc import Callable, ValuesView
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from .descriptor import Descriptor, StaleDescriptorError
+from .lifecycle_registry import lifecycle_component
 from .service import AbstractService, ServiceDescriptor, SERVICE_ATTRIBUTE
 from .source import (
     Source,
@@ -308,13 +309,15 @@ class InstanceManager(Manager[D], Generic[D, S]):
 
 
 SvcT = TypeVar("SvcT", bound=AbstractService)
+DT = TypeVar("DT", bound=ServiceDescriptor)
 
 
+@lifecycle_component(key="service_manager", priority=300, after="file_storage")
 class ServiceInstanceManager(InstanceManager[ServiceDescriptor, SvcT], Generic[SvcT]):
     """Manages AbstractService instances discovered by PythonServiceSource.
 
     Instances are registered in ServiceInstanceRegistry on creation and deregistered on removal.
-    Used as the generic custom-service manager and for provider-specific managers (Storage, LLM, etc.).
+    Used as the generic custom-service lifecycle and for provider-specific managers (Storage, LLM, etc.).
     """
 
     base_type: type[AbstractService] = AbstractService

@@ -13,6 +13,7 @@ from collections.abc import Awaitable, Callable
 
 from ..core.classes.descriptor import Descriptor
 from ..core.classes.source import PythonSource
+from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.manager import Manager
 from ..core.classes.ordering import normalize_constraint_refs, ConstraintRef
 from ..utils import await_if_needed
@@ -286,6 +287,7 @@ class PythonHookSource(PythonSource[HookDescriptor]):
         return await await_if_needed(handler(ctx))
 
 
+@lifecycle_component(key="hook_manager", priority=900, after="tool_manager")
 class HookManager(Manager[HookDescriptor]):
     """Dispatches hook events respecting before/after constraints,
     falling back to priority (higher first) for unconstrained items."""

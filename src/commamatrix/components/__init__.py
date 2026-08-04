@@ -66,7 +66,8 @@ from .server import (
     http_host,
     http_port
 )
-from ..core.agent.agent import HTTP_BASE_HEADERS, agentic_model, http_default_headers, http_timeout
+from .http_client import HTTP_BASE_HEADERS, HttpClient, http_default_headers, http_timeout
+from ..core.agent.agent import agentic_model
 from .tool import tool, ToolSource, ToolDescriptor, DEFAULT_TOOL_SEARCH_AMOUNT
 from .hook import (
     Hook,
@@ -96,6 +97,7 @@ from .hook import (
     AfterRunCtx,
     after_run,
 )
+from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.ordering import ConstraintRef
 from .instruction import (
     Instruction,
@@ -161,6 +163,7 @@ __all__ = [
     "Config",
     "SERVER_ROOT",
     "Server",
+    "HttpClient",
     "http_external_url",
     "http_host",
     "http_port",
@@ -199,6 +202,7 @@ __all__ = [
     "AfterRunCtx",
     "after_run",
     "ConstraintRef",
+    "lifecycle_component",
     "Instruction",
     "InstructionCtx",
     "InstructionDescriptor",

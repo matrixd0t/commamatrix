@@ -8,7 +8,7 @@ from .config import (
     mcp_servers,
     normalize_server_specs,
 )
-from .manager import MCPManager
+from .manager import MCPService
 from .result import MCPToolError, normalize_call_result
 from .runtime import MCPDependencyError, MCPRuntimeError, MCPToolInfo
 from .source import MCPToolSource
@@ -20,7 +20,7 @@ __all__ = [
     "mcp_client_version",
     "mcp_servers",
     "normalize_server_specs",
-    "MCPManager",
+    "MCPService",
     "MCPToolSource",
     "MCPToolError",
     "normalize_call_result",

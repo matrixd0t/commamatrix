@@ -8,6 +8,7 @@ from typing import Any, Callable, TYPE_CHECKING
 from urllib.parse import quote
 
 from .config import ConfigField
+from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.service import AbstractService
 
 if TYPE_CHECKING:
@@ -44,6 +45,7 @@ class _Registration:
     route: Any = None
 
 
+@lifecycle_component(key="http_server", priority=100, after="connector_manager")
 class Server(AbstractService):
     """One Starlette application shared by all agent extensions."""
 

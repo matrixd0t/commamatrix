@@ -14,6 +14,7 @@ from urllib.parse import unquote, urlparse
 from aiofiles import open as aio_open
 from httpx import HTTPError
 
+from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.service import AbstractService
 from ..core.classes.manager import ActiveServiceInstanceManager
 from ..core.classes.source import PythonServiceSource
@@ -75,6 +76,7 @@ class PythonFileStorageSource(PythonServiceSource):
         super().__init__(base_type=FileStorage, marker_attribute=FILE_STORAGE_ATTRIBUTE, id_prefix="file_storage")
 
 
+@lifecycle_component(key="file_storage", priority=400, after="table_manager")
 class FileStorageManager(ActiveServiceInstanceManager[FileStorage]):
     base_type = FileStorage
     marker_attribute = FILE_STORAGE_ATTRIBUTE

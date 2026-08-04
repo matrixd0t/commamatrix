@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator, Iterator
 from typing import Any, TYPE_CHECKING
 
 from ..utils import to_jsonable
+from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.service import AbstractService
 from ..core.classes.manager import ServiceInstanceManager
 from ..core.classes.source import PythonServiceSource
@@ -260,6 +261,7 @@ class PythonLLMAdapterSource(PythonServiceSource):
         super().__init__(base_type=LLMAdapter, marker_attribute=LLM_ADAPTER_ATTRIBUTE, id_prefix="llm_adapter")
 
 
+@lifecycle_component(key="llm_adapter", priority=700, after="instruction_manager")
 class LLMAdapterManager(ServiceInstanceManager[LLMAdapter]):
     """Manage adapters and resolve models to their owning adapter."""
 

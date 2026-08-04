@@ -1,6 +1,6 @@
 # builtin/codeact/executor/systemd.py
 
-"""Systemd execution backend — reserved for service-manager-isolated CodeAct."""
+"""Systemd execution backend — reserved for service-lifecycle-isolated CodeAct."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 class SystemdBackend(ExecutionBackend):
-    """Reserved for service-manager-isolated CodeAct execution."""
+    """Reserved for service-lifecycle-isolated CodeAct execution."""
 
     async def start(self) -> None:
         pass

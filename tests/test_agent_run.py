@@ -57,7 +57,7 @@ _hook_sources: list = []
 
 
 def _register_hook(agent, event, handler, priority=0, name=None):
-    """Register a hook handler directly in the agent's hook manager."""
+    """Register a hook handler directly in the agent's hook lifecycle."""
     import weakref
     from commamatrix.components.hook import HookDescriptor, PythonHookSource
 
@@ -81,7 +81,7 @@ def _register_hook(agent, event, handler, priority=0, name=None):
 
 
 def _hook(agent, event, priority=0):
-    """Decorator to register a hook in the agent's hook manager."""
+    """Decorator to register a hook in the agent's hook lifecycle."""
 
     def decorator(fn):
         _register_hook(agent, event, fn, priority=priority)
@@ -299,7 +299,7 @@ async def _setup_agent(
     agent.storage = _FixedStorageManager()
     agent.file_storage = _FixedFSManager()
     agent.connector_manager = _FixedConnectorManager()
-    agent.manager = _NullLifecycle()
+    agent.lifecycle = _NullLifecycle()
     agent._started = True
 
     return agent, connector, storage
@@ -502,7 +502,7 @@ def _make_multi_call_agent(events_list, connector_cls=RecordingConnector):
     agent.storage = _FixedStorageManager()
     agent.file_storage = _FixedFSManager()
     agent.connector_manager = _FixedConnectorManager()
-    agent.manager = _NullLifecycle()
+    agent.lifecycle = _NullLifecycle()
     agent._started = True
 
     return agent, connector, storage

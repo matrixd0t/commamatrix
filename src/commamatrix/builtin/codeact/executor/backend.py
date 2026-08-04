@@ -45,7 +45,7 @@ class ExecutionBackend(ABC):
     ``to_thread`` or similar thread-offloading primitives.
 
     Implementations may range from a local subprocess to a container
-    or service-manager-isolated environment.
+    or service-lifecycle-isolated environment.
     """
 
     @abstractmethod

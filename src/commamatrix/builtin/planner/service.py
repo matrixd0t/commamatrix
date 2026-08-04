@@ -13,6 +13,7 @@ from typing import Any, Callable, TYPE_CHECKING, cast
 from matrix_planner import Planner, Task as PlannerTask
 
 from ...core.classes.descriptor import Descriptor
+from ...core.classes.lifecycle_registry import lifecycle_component
 from ...core.classes.manager import Manager
 from ...core.classes.source import PythonSource
 from ...utils import await_if_needed
@@ -177,6 +178,7 @@ class PythonScheduledTaskSource(PythonSource[ScheduledTaskDescriptor]):
         )
 
 
+@lifecycle_component(key="scheduler", priority=50, after="http_server")
 class AgentScheduler(Manager[ScheduledTaskDescriptor]):
     """Owns one Planner and reconciles it with active extension tasks."""
 

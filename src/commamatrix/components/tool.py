@@ -16,6 +16,7 @@ from uuid import uuid4
 from matrix_fn_schema import build_json_schema
 
 from ..core.classes.descriptor import Descriptor
+from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.source import Source
 from ..core.classes.manager import Manager
 from ..core.classes.source import PythonSource
@@ -405,6 +406,7 @@ class _RunToolProxy:
         )
 
 
+@lifecycle_component(key="tool_manager", priority=1000)
 class ToolManager(Manager[ToolDescriptor]):
     """Central tool registry. Maintains alias/name/public_name/id index
     maps for multi-step resolution. The call() method executes a

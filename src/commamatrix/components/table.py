@@ -11,6 +11,7 @@ from typing import Any, ClassVar, Generic, Protocol, TYPE_CHECKING, TypeVar
 from pydantic import BaseModel
 
 from ..core.classes.descriptor import Descriptor
+from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.manager import Manager
 from ..core.classes.source import PythonSource
 
@@ -130,6 +131,7 @@ class SchemaBackend(Protocol):
     async def add_column(self, table_name: str, column_name: str, sql_type: str, *, nullable: bool = True) -> None: ...
 
 
+@lifecycle_component(key="table_manager", priority=500, after="storage")
 class TableManager(Manager[TableDescriptor]):
     """Discovers and applies extension-owned tables to active storage."""
 

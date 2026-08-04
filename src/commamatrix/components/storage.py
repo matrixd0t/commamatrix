@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import Any, Optional, TYPE_CHECKING
 
+from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.service import AbstractService
 from ..core.classes.manager import ActiveServiceInstanceManager
 from ..core.classes.source import PythonServiceSource
@@ -60,6 +61,7 @@ class PythonStorageSource(PythonServiceSource):
         super().__init__(base_type=Storage, marker_attribute=STORAGE_ATTRIBUTE, id_prefix="storage")
 
 
+@lifecycle_component(key="storage", priority=600, after="llm_adapter")
 class StorageManager(ActiveServiceInstanceManager[Storage]):
     base_type = Storage
     marker_attribute = STORAGE_ATTRIBUTE

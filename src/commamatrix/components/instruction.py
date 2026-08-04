@@ -13,6 +13,7 @@ from .hook import before_llm_call, BeforeLlmCallCtx, RunCtx
 from .dialog import DialogItem, DialogItemType, DialogRole
 from .file_storage import DataType
 from ..core.classes.descriptor import Descriptor
+from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.source import Source, PythonSource
 from ..core.classes.manager import Manager
 from ..core.classes.ordering import normalize_constraint_refs, ConstraintRef
@@ -123,6 +124,7 @@ class PythonInstructionSource(PythonSource[InstructionDescriptor]):
         return await await_if_needed(handler(ctx))
 
 
+@lifecycle_component(key="instruction_manager", priority=800, after="hook_manager")
 class InstructionManager(Manager[InstructionDescriptor]):
     """Manages instruction descriptors with before/after ordering."""
 

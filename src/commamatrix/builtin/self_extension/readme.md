@@ -27,8 +27,11 @@ The Markdown targets below are relative to this guide file. For example, the too
 - [components/storage.py](../../components/storage.py) - persistence providers (`Storage`).
 - [components/file_storage.py](../../components/file_storage.py) - file storage providers (`FileStorage`).
 - [components/server.py](../../components/server.py) - shared HTTP server for extension webhooks and file serving.
+- [components/http_client.py](../../components/http_client.py) - shared lifecycle-owned HTTP client and HTTP configuration.
 - [components/table.py](../../components/table.py) - plugin-owned tables, schema discovery, and migrations.
 - [core/classes/service.py](../../core/classes/service.py) - service lifecycle and discovery.
+- [core/classes/lifecycle_registry.py](../../core/classes/lifecycle_registry.py) - lifecycle component registration and ordering.
+- [builtin/mcp/manager.py](../mcp/manager.py) - optional MCPService integration.
 - [core/agent/agent.py](../../core/agent/agent.py) - extension activation and the agent run loop.
 
 ## Runtime Workflow
@@ -471,6 +474,44 @@ class WeatherService(Service):
 - `stop()` releases resources when the extension is removed or the agent stops.
 
 All lifecycle methods should be idempotent where practical. A custom service should subclass `Service`, not `AbstractService`, so the normal service manager discovers it. Access a running service with `ctx.run.agent.services.get(MyService)` or `require(MyService)`. See [core/classes/service.py](../../core/classes/service.py) and [core/classes/manager.py](../../core/classes/manager.py).
+
+The optional MCP integration follows the same service model:
+
+```python
+from commamatrix.builtin.mcp import MCPService
+
+
+mcp = ctx.run.agent.services.require(MCPService)
+result = await mcp.call_tool("server_id", "tool_name", {"value": "..."})
+```
+
+Activate `commamatrix.builtin.mcp` before using `MCPService`. The service owns MCP sessions; its discovered remote tools are mounted into the regular `ToolManager` automatically.
+
+## Lifecycle Components
+
+Use `@lifecycle_component` for one per-agent framework component that must participate in ordered `start()`, `refresh()`, and `stop()` calls. It is not a replacement for `Service`:
+
+```python
+from commamatrix import lifecycle_component
+from commamatrix.core.classes.service import AbstractService
+
+
+@lifecycle_component(
+    key="project_runtime",
+    priority=250,
+    after="http_client",
+)
+class ProjectRuntime(AbstractService):
+    async def start(self) -> None:
+        pass
+
+    async def stop(self) -> None:
+        pass
+```
+
+Lifecycle components defined in `commamatrix.core` or `commamatrix.components` are core components and are instantiated for every agent. Components defined elsewhere are instantiated only when their defining module is present in that agent's extension scope. Their ordering uses `priority`, `before`, and `after` constraints.
+
+Use `Service` instead when the component is an extension-owned service that should be discovered by `ServiceInstanceManager` and available through `agent.services`. For optional lifecycle components, use `getattr(agent, "component_key", None)` when the component may not be active. Core lifecycle components such as `agent.tool_manager`, `agent.http_server`, and the shared `agent.http_client` are exposed through the agent API; `agent.http_client` is a property facade over the lifecycle-owned lazy `HttpClient.client`.
 
 ## Connectors
 

@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
-from ...core.classes.service import AbstractService
+from ...core.classes.service import Service
 from .config import (
     MCPServerSpec,
     mcp_client_name,
@@ -18,10 +18,11 @@ from .runtime import MCPServerRuntime, MCPToolInfo
 
 if TYPE_CHECKING:
     from ...core.agent.agent import Agent
+    from .source import MCPToolSource
 
 
-class MCPManager(AbstractService):
-    """Owns configured MCP sessions and their cached tool definitions."""
+class MCPService(Service):
+    """Owns configured MCP sessions and exposes their tools to ToolManager."""
 
     def __init__(self, agent: Agent) -> None:
         super().__init__(agent)
@@ -30,6 +31,8 @@ class MCPManager(AbstractService):
         self._tools: dict[str, tuple[MCPToolInfo, ...]] = {}
         self._refresh_lock = asyncio.Lock()
         self._started = False
+        self._tool_source: MCPToolSource | None = None
+        self._tool_source_mounted = False
 
     @property
     def servers(self) -> tuple[MCPServerSpec, ...]:
@@ -52,15 +55,18 @@ class MCPManager(AbstractService):
         return await runtime.call_tool(remote_name, arguments)
 
     async def start(self) -> None:
+        self._ensure_tool_source()
         async with self._refresh_lock:
             await self._reconcile(self._configured_specs(), fail_fast=True)
             self._started = True
+        await self.agent.tool_manager.refresh()
 
     async def refresh(self) -> None:
         if not self._started:
             return
         async with self._refresh_lock:
             await self._reconcile(self._configured_specs(), fail_fast=False)
+        await self.agent.tool_manager.refresh()
 
     async def stop(self) -> None:
         async with self._refresh_lock:
@@ -70,6 +76,9 @@ class MCPManager(AbstractService):
             self._specs.clear()
             self._tools.clear()
             self._started = False
+        if self._tool_source is not None and self._tool_source_mounted:
+            self.agent.tool_manager.unmount(self._tool_source)
+            self._tool_source_mounted = False
 
     async def set_servers(self, servers: Any) -> None:
         """Replace server configuration and refresh active MCP tools."""
@@ -77,7 +86,7 @@ class MCPManager(AbstractService):
         if not self._started:
             return
         self._request_refresh()
-        await self.agent.manager.refresh(force=True)
+        await self.agent.lifecycle.refresh(force=True)
 
     async def add_server(self, server: MCPServerSpec | dict[str, Any]) -> None:
         current = list(self._configured_specs())
@@ -95,6 +104,14 @@ class MCPManager(AbstractService):
     async def remove_server(self, server_id: str) -> None:
         remaining = [spec for spec in self._configured_specs() if spec.server_id != server_id]
         await self.set_servers(remaining)
+
+    def _ensure_tool_source(self) -> None:
+        if self._tool_source is None:
+            from .source import MCPToolSource
+
+            self._tool_source = MCPToolSource(self)
+        self.agent.tool_manager.mount(self._tool_source)
+        self._tool_source_mounted = True
 
     def _configured_specs(self) -> tuple[MCPServerSpec, ...]:
         return normalize_server_specs(self.config.get(mcp_servers))
@@ -125,14 +142,13 @@ class MCPManager(AbstractService):
             except Exception:
                 if fail_fast:
                     raise
-                # Keep the last known descriptors during a transient refresh failure.
                 if runtime is not None and spec.server_id in self._runtimes:
                     self._tools[spec.server_id] = runtime.tools
 
     def _request_refresh(self) -> None:
-        manager = getattr(self.agent, "manager", None)
-        if manager is not None:
-            manager._mark_changed()
+        lifecycle = getattr(self.agent, "lifecycle", None)
+        if lifecycle is not None:
+            lifecycle._mark_changed()
 
 
-__all__ = ["MCPManager"]
+__all__ = ["MCPService"]

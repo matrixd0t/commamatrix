@@ -5,11 +5,13 @@ from __future__ import annotations
 import hashlib
 import re
 import weakref
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 from ...components.tool import ToolDescriptor, ToolSource
-from .manager import MCPManager
+
+if TYPE_CHECKING:
+    from .manager import MCPService
 
 
 def _safe_identifier(value: str) -> str:
@@ -27,15 +29,15 @@ def _suffix(value: str) -> str:
 class MCPToolSource(ToolSource):
     """Expose cached MCP tools through the regular ToolManager."""
 
-    def __init__(self, manager: MCPManager) -> None:
+    def __init__(self, service: MCPService) -> None:
         super().__init__()
-        self.manager = manager
+        self.service = service
 
     def scan(self) -> list[ToolDescriptor]:
         descriptors: list[ToolDescriptor] = []
         aliases: dict[str, str] = {}
         names_by_alias: dict[str, set[str]] = {}
-        for spec, tool in self.manager.iter_tools():
+        for spec, tool in self.service.iter_tools():
             alias = self._alias(spec.server_id, aliases)
             remote_name = tool.remote_name
             name = self._name(alias, remote_name, names_by_alias)
@@ -68,7 +70,7 @@ class MCPToolSource(ToolSource):
         metadata = descriptor.meta.get("mcp")
         if not isinstance(metadata, dict):
             raise RuntimeError(f"Tool {descriptor.id!r} has invalid MCP metadata")
-        return await self.manager.call_tool(
+        return await self.service.call_tool(
             metadata["server_id"],
             metadata["remote_name"],
             kwargs,

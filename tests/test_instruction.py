@@ -1,6 +1,6 @@
 # tests/test_instruction.py
 
-"""Tests for the instruction system: decorator, manager, ordering, and hook."""
+"""Tests for the instruction system: decorator, lifecycle, ordering, and hook."""
 
 from __future__ import annotations
 

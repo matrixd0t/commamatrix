@@ -21,7 +21,7 @@ from uuid import uuid4
 
 from dotenv import load_dotenv
 from httpx import AsyncClient
-from typing import Any, Callable, Literal, cast
+from typing import TYPE_CHECKING, Any, Callable, Literal, cast
 
 from ...components.config import Config, ConfigField
 from ...components.dialog import DialogItem, DialogItemType, DialogRole
@@ -52,18 +52,10 @@ from ...components.llm_adapter import (
     ToolCall,
     ToolCallResult,
 )
-from ...components.tool import ToolManager
-from ...components.hook import HookManager
-from ...components.instruction import InstructionManager
-from ...components.connector import ConnectorManager
-from ...components.llm_adapter import LLMAdapterManager
-from ...components.storage import StorageManager, STORAGE_ATTRIBUTE
-from ...components.table import TableManager
-from ...components.file_storage import FileStorageManager, FILE_STORAGE_ATTRIBUTE
-from ...components.server import Server
-from ...builtin.mcp import MCPManager, MCPToolSource
-from ..classes.manager import ServiceInstanceManager, ServiceInstanceRegistry
-from ..classes.service import AbstractService
+from ...components.http_client import HTTP_BASE_HEADERS, http_default_headers, http_timeout
+from ...components.storage import STORAGE_ATTRIBUTE
+from ...components.file_storage import FILE_STORAGE_ATTRIBUTE
+from ..classes.manager import ServiceInstanceRegistry
 from ..extensions import (
     ExtensionOperation,
     ExtensionRuntime,
@@ -74,25 +66,20 @@ from ...utils import FP, commamatrix_dir
 from .runner import AgentRunner
 from .lifecycle import AgentLifecycle
 
-HTTP_BASE_HEADERS: dict[str, str] = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    "Accept": "*/*",
-    "Accept-Language": "en-US;q=0.8,en;q=0.7",
-    "Accept-Encoding": "gzip",
-    "Connection": "keep-alive",
-}
+if TYPE_CHECKING:
+    from ...components.connector import ConnectorManager
+    from ...components.file_storage import FileStorageManager
+    from ...components.hook import HookManager
+    from ...components.http_client import HttpClient
+    from ...components.instruction import InstructionManager
+    from ...components.llm_adapter import LLMAdapterManager
+    from ...components.server import Server
+    from ...components.storage import StorageManager
+    from ...components.table import TableManager
+    from ...components.tool import ToolManager
+    from ..classes.manager import ServiceInstanceManager
+    from ..classes.service import AbstractService
 
-http_default_headers = ConfigField[dict[str, str] | None](
-    name="http_default_headers",
-    default=None,
-    description="Extra headers merged into the agent HTTP client defaults",
-)
-
-http_timeout = ConfigField[int](
-    name="http_timeout",
-    default=120,
-    description="Default timeout in seconds for the agent HTTP client",
-)
 
 plugins_dir = ConfigField[str](
     name="plugins_dir",
@@ -108,10 +95,20 @@ agentic_model = ConfigField[str](
 
 
 class Agent:
-    """Orchestrates the agent lifecycle: parse -> LLM -> tools -> send.
+    """Orchestrates the agent lifecycle: parse -> LLM -> tools -> send."""
 
-    Creates all native managers during __init__, wires them into AgentLifecycle, and exposes convenience properties for direct access.
-    """
+    if TYPE_CHECKING:
+        tool_manager: ToolManager
+        hook_manager: HookManager
+        instruction_manager: InstructionManager
+        llm_adapter: LLMAdapterManager
+        storage: StorageManager
+        table_manager: TableManager
+        file_storage: FileStorageManager
+        service_manager: ServiceInstanceManager[AbstractService]
+        connector_manager: ConnectorManager
+        http_server: Server
+        scheduler: AbstractService | None
 
     def __init__(
             self,
@@ -132,36 +129,8 @@ class Agent:
         self._started = False
         self._start_lock = asyncio.Lock()
         self._extension_runtime = ExtensionRuntime()
-        self._http_client: AsyncClient | None = None
 
-        self.mcp = MCPManager(agent=self)
-        self.tool_manager = ToolManager(agent=self)
-        self.mcp_source = MCPToolSource(self.mcp)
-        self.tool_manager.mount(self.mcp_source)
-        self.hook_manager = HookManager(agent=self)
-        self.instruction_manager = InstructionManager(agent=self)
-        self.llm_adapter = LLMAdapterManager(agent=self)
-        self.storage = StorageManager(agent=self)
-        self.table_manager = TableManager(agent=self)
-        self.file_storage = FileStorageManager(agent=self)
-        self.service_manager: ServiceInstanceManager[AbstractService] = ServiceInstanceManager(agent=self)
-        self.connector_manager = ConnectorManager(agent=self)
-        self.http_server = Server(agent=self)
-        self.scheduler: AbstractService | None = None
-
-        self.manager = AgentLifecycle(registry=self.services, children=[
-            self.mcp,
-            self.tool_manager,
-            self.hook_manager,
-            self.instruction_manager,
-            self.llm_adapter,
-            self.storage,
-            self.table_manager,
-            self.file_storage,
-            self.service_manager,
-            self.connector_manager,
-            self.http_server,
-        ])
+        self.lifecycle = AgentLifecycle(registry=self.services, agent=self, auto_register=True)
 
         if self._auto_load_plugins:
             self._extension_runtime.apply(self._workspace_plugin_targets(), operation="add")
@@ -183,25 +152,16 @@ class Agent:
         """Return the module names currently active for this agent."""
         return self._extension_runtime.scope
 
+    def __getattr__(self, name: str) -> Any:
+        lifecycle = self.__dict__.get("lifecycle")
+        if lifecycle is not None and lifecycle.has_key(name):
+            return lifecycle.get(name)
+        raise AttributeError(f"{type(self).__name__!s} has no attribute {name!r}")
+
     @property
     def http_client(self) -> AsyncClient:
-        """Shared HTTP client with browser-like defaults. Lazy-created on first access.
-
-        Extra headers from ``http_default_headers`` config are merged on top of ``HTTP_BASE_HEADERS``.
-        Timeout is controlled by the ``http_timeout`` config field (default 120 s).
-        """
-        if self._http_client is None:
-            headers = dict(HTTP_BASE_HEADERS)
-            extra = self.config.get(http_default_headers)
-            if extra:
-                headers.update(extra)
-            self._http_client = AsyncClient(
-                headers=headers,
-                follow_redirects=True,
-                timeout=self.config.get(http_timeout),
-            )
-        assert self._http_client is not None
-        return self._http_client
+        """Return the shared HTTP client owned by the lifecycle component."""
+        return cast("HttpClient", self.lifecycle.get("http_client")).client
 
     @staticmethod
     def _resolve_module_name(module_or_path: str | types.ModuleType) -> str | None:
@@ -209,9 +169,7 @@ class Agent:
         return ExtensionRuntime.resolve_module_name(module_or_path)
 
     @staticmethod
-    def _normalize_extension_targets(
-            targets: Iterable[str | types.ModuleType | Iterable[str | types.ModuleType]],
-    ) -> tuple[str | types.ModuleType, ...]:
+    def _normalize_extension_targets(targets: Iterable[str | types.ModuleType | Iterable[str | types.ModuleType]]) -> tuple[str | types.ModuleType, ...]:
         normalized: list[str | types.ModuleType] = []
         for target in targets:
             if isinstance(target, (str, types.ModuleType)):
@@ -229,10 +187,10 @@ class Agent:
         try:
             handled = self._extension_runtime.apply(targets, operation)
             if handled:
-                self.manager.set_scope(self._extension_scope)
-                await self._ensure_optional_managers()
+                await self.lifecycle.sync_registered(self._extension_scope)
+                self.lifecycle.set_scope(self._extension_scope)
                 if self._started:
-                    await self.manager.refresh()
+                    await self.lifecycle.refresh()
             return handled
         except Exception as exc:
             self._extension_runtime.replace_scope(original_scope)
@@ -248,17 +206,15 @@ class Agent:
         """Deactivate modules previously active for this agent."""
         return await self._apply_extensions(*module_or_path, operation="remove")
 
-    async def reload_extensions(
-        self,
-        *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType],
-    ) -> list[str]:
+    async def reload_extensions(self, *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType]) -> list[str]:
         """Reload a module and all currently loaded submodules under its name."""
         return await self._apply_extensions(*module_or_path, operation="reload")
 
     async def refresh_extensions(self) -> None:
         """Propagate scope and refresh all services."""
-        self.manager.set_scope(self._extension_scope)
-        await self.manager.refresh()
+        await self.lifecycle.sync_registered(self._extension_scope)
+        self.lifecycle.set_scope(self._extension_scope)
+        await self.lifecycle.refresh()
 
     async def start(self) -> None:
         """Discover extensions, resolve connectors, and start listener tasks."""
@@ -266,11 +222,8 @@ class Agent:
 
     async def stop(self) -> None:
         """Stop scheduled/listener services, then cancel active runs."""
-        await self.manager.stop()
+        await self.lifecycle.stop()
         await self.runner.stop()
-        if self._http_client is not None:
-            await self._http_client.aclose()
-            self._http_client = None
         self._started = False
 
     async def __aenter__(self) -> Agent:
@@ -299,7 +252,8 @@ class Agent:
 
         print(
             f"[Agent DEBUG] handle parsed items={len(parsed.dialog_items)} previous_external_id={parsed.previous_external_id!r} ids={[item.item_id for item in parsed.dialog_items]}",
-            file=sys.stderr)
+            file=sys.stderr
+        )
         await self._resolve_previous_item(parsed)
         await self.hook_manager.fire(HookEventType.ON_PARSED, parsed)
 
@@ -469,24 +423,6 @@ class Agent:
                     run.dialog_items = []
             await self.hook_manager.fire(HookEventType.AFTER_RUN, AfterRunCtx(run=run, error=error))
 
-    async def _ensure_optional_managers(self) -> None:
-        planner_prefix = FP + ".builtin.planner"
-        planner_active = any(
-            module_name == planner_prefix or module_name.startswith(planner_prefix + ".")
-            for module_name in self._extension_scope
-        )
-
-        if planner_active and self.scheduler is None:
-            from ...builtin.planner import AgentScheduler
-
-            scheduler = AgentScheduler(agent=self)
-            await self.manager.add_child(scheduler)
-            self.scheduler = scheduler
-        elif not planner_active and self.scheduler is not None:
-            scheduler = self.scheduler
-            await self.manager.remove_child(scheduler)
-            self.scheduler = None
-
     async def _ensure_started(self) -> None:
         """Lazy init: load .env, add defaults, start lifecycle, fire on_agent_start."""
         load_dotenv()
@@ -505,9 +441,9 @@ class Agent:
                     await self.add_extensions(FP + ".builtin.sql.sqlite_storage")
                 if not self._scope_has_attribute(FILE_STORAGE_ATTRIBUTE):
                     await self.add_extensions(FP + ".builtin.simple_fs")
-                await self._ensure_optional_managers()
-                self.manager.set_scope(self._extension_scope)
-                await self.manager.start()
+                await self.lifecycle.sync_registered(self._extension_scope)
+                self.lifecycle.set_scope(self._extension_scope)
+                await self.lifecycle.start()
                 await self.hook_manager.fire(
                     HookEventType.ON_AGENT_START,
                     OnAgentStartCtx(agent=self),
