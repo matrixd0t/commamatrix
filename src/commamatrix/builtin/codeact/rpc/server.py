@@ -67,9 +67,7 @@ class RPCServer:
             )
         return _serialize_response(response)
 
-    async def _dispatch(
-        self, request_id: str, method: str, params: dict[str, Any]
-    ) -> Any:
+    async def _dispatch(self, request_id: str, method: str, params: dict[str, Any]) -> Any:
         parts = method.split(".")
         if not parts or not parts[0]:
             raise RPCError(code=-32600, message="Empty method")
@@ -78,9 +76,7 @@ class RPCServer:
                 return await self._dispatch_tools(request_id, parts[1:], params)
         raise RPCError(code=-32601, message=f"Unknown namespace: {parts[0]}")
 
-    async def _dispatch_tools(
-        self, request_id: str, path: list[str], params: dict[str, Any]
-    ) -> Any:
+    async def _dispatch_tools(self, request_id: str, path: list[str], params: dict[str, Any]) -> Any:
         if not path:
             raise RPCError(code=-32600, message="Empty tools method")
         match path[0]:

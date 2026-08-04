@@ -70,6 +70,7 @@ let activeStreamId=null;
 let eventsTask=null;
 let eventsAbortController=null;
 let currentReader=null;
+let eventsReady=false;
 let typingIndicator=null;
 let codeactSpinnerEl=null;
 let codeactActiveEl=null;
@@ -105,9 +106,18 @@ let serverConnected=null;
 const STATUS_POLL_INTERVAL_MS=10000;
 const NO_PUBLIC_ADDRESS_MESSAGE="You cannot upload files for LLM: CommaMatrix is not visible from the Internet.";
 
+function updateSendButton(){
+  sendBtn.disabled=!currentUser||document.body.classList.contains("auth-locked")||(!activeStreamId&&!eventsReady);
+}
+
+function setEventsReady(ready){
+  eventsReady=ready;updateSendButton();
+  if(authToken&&!activeStreamId)setUiStatus(ready?"Ready":"Connecting...");
+}
+
 function setAuthLocked(locked){
   document.body.classList.toggle("auth-locked",locked);
-  sendBtn.disabled=locked;
+  updateSendButton();
   if(locked){authOverlay.classList.remove("hidden");authOverlay.style.display="flex"}
   else{authOverlay.classList.add("hidden");authOverlay.style.display="none"}
 }
@@ -132,12 +142,23 @@ function renderServerStatusMessages(){
   }
 }
 
-function setUiStatus(text){statusEl.textContent=serverConnected===false?"Disconnected":text}
+function statusKind(text){
+  const value=String(text||"").toLowerCase();
+  if(value.includes("disconnect"))return "disconnected";
+  if(value.includes("connect"))return "connecting";
+  if(value.includes("process")||value.includes("stream")||value.includes("send"))return "processing";
+  if(value==="ready")return "ready";
+  return "";
+}
+function setUiStatus(text){
+  const value=serverConnected===false?"Disconnected":text;
+  const kind=statusKind(value);statusEl.textContent=value;statusEl.className="status"+(kind?" status-"+kind:"");
+}
 function serverStatusSeverity(){return serverStatusMessages.some(item=>item.severity==="red")?"red":serverStatusMessages.length?"yellow":"green"}
 function updateServerStatusLight(){const severity=serverConnected===false?"gray":statusPanelOverride?.severity||serverStatusSeverity();serverStatusLight.className="http-server-status-light "+severity}
 function setServerConnected(connected){
   const wasDisconnected=serverConnected===false;serverConnected=connected;updateServerStatusLight();
-  if(!connected)statusEl.textContent="Disconnected";else if(wasDisconnected)statusEl.textContent="Ready";
+  if(!connected)setUiStatus("Disconnected");else if(wasDisconnected)setUiStatus(eventsReady?"Ready":"Connecting...");
 }
 
 function updateServerStatus(data){
@@ -237,19 +258,20 @@ function setResource(element,resource,property,onError){
 function createAttachmentCard(info,{compact=false}={}){
   const card=document.createElement("div");card.className="attachment-card"+(info.kind==="image"?" image-card":"")+(compact?" compact":"");
   const resource=attachmentResourceUrl(info);
-  if(info.kind==="image"){
+  if(info.kind==="image"&&!info.error){
     const image=document.createElement("img");image.alt=info.name||"Image";card.appendChild(image);
     setResource(image,resource,"src",()=>{image.alt="Image unavailable"})
   }else{
-    const icon=document.createElement("span");icon.className="attachment-icon";icon.textContent="FILE";card.appendChild(icon);
+    const icon=document.createElement("span");icon.className="attachment-icon";icon.textContent=info.kind==="image"?"IMAGE":"FILE";card.appendChild(icon);
   }
   const details=document.createElement("span");details.className="attachment-info";
-  if(info.kind!=="image"){
+  if(info.kind!=="image"&&!info.error){
     const link=document.createElement("a");link.className="attachment-name";link.textContent=info.name||"File";link.download=info.name||"file";link.rel="noopener noreferrer";
     setResource(link,resource,"href",()=>{link.textContent=(info.name||"File")+" (unavailable)"})
     details.appendChild(link);
-  }else{const name=document.createElement("span");name.className="attachment-name";name.textContent=info.name||"Image";details.appendChild(name)}
+  }else{const name=document.createElement("span");name.className="attachment-name";name.textContent=info.name||(info.kind==="image"?"Image":"File");details.appendChild(name)}
   if(info.size!==undefined&&info.size!==null){const size=document.createElement("span");size.className="attachment-size";size.textContent=formatFileSize(info.size);details.appendChild(size)}
+  if(info.error){const error=document.createElement("span");error.className="attachment-error";error.textContent=info.error;details.appendChild(error)}
   card.appendChild(details);return card;
 }
 
@@ -257,6 +279,22 @@ function addAttachmentMessage(content,kind){
   const div=document.createElement("div");div.className="msg "+(kind==="image"?"image":"file");const info=parseAttachmentContent(content);
   if(info&&(info.ref||info.url||kind==="file")){info.kind=kind||info.kind;div.appendChild(createAttachmentCard(info))}else div.textContent=kind==="image"?"Image: "+content:"File: "+content;
   messagesEl.appendChild(div);scrollToBottom();return div;
+}
+
+function outputAttachments(item){
+  const attachments=item?.meta?.http?.attachments;
+  return Array.isArray(attachments)?attachments.filter(attachment=>attachment&&typeof attachment==="object"):[];
+}
+
+function addAssistantOutput(item){
+  const wrapper=document.createElement("div");wrapper.className="message-entry assistant-entry";wrapper.dataset.itemId=String(item.item_id??"");
+  const bubble=document.createElement("div");bubble.className="msg assistant";
+  const role=document.createElement("div");role.className="role";role.textContent="Assistant";bubble.appendChild(role);
+  bubble.appendChild(createMessageMeta(item));
+  if(item.content){const content=document.createElement("div");content.className="message-content";renderMarkdown(content,item.content);bubble.appendChild(content)}
+  const attachments=outputAttachments(item);
+  if(attachments.length){const list=document.createElement("div");list.className="message-attachments";for(const attachment of attachments)list.appendChild(createAttachmentCard(attachment));bubble.appendChild(list)}
+  wrapper.appendChild(bubble);messagesEl.appendChild(wrapper);return wrapper;
 }
 
 function attachmentPayload(attachment){
@@ -366,17 +404,17 @@ function clearPendingMessage(){pendingBranch=null;pendingMessage=null;pendingRoo
 function clearAuth(){
   if(eventsAbortController)eventsAbortController.abort();
   stopStatusPolling();statusPanelOverride=null;serverStatusMessages=[];fileUploadAllowed=false;uploadFileChoice.disabled=true;renderServerStatusMessages();setStatusPanelVisible(false);serverStatusLight.className="http-server-status-light gray";setHeaderMenuOpen(false);
-  eventsTask=null;authToken=null;currentUser=null;historyLoaded=false;activeStreamId=null;serverConnected=null;
+  eventsTask=null;authToken=null;currentUser=null;historyLoaded=false;activeStreamId=null;serverConnected=null;eventsReady=false;
   sendBtn.textContent="Send";sendBtn.classList.remove("cancel");sendBtn.disabled=true;
   localStorage.removeItem("commamatrix_auth_token");
   clearPendingAttachments();
   hideTyping();messagesEl.replaceChildren();itemsById=new Map();childrenByParent=new Map();selectedHeadId=null;newRootSelected=false;selectedLeafByNode=new Map();expandedNodes=new Set();deletedRootIds=new Set();showDeletedBranches=false;activeStreams={};streamingPreviews={};clearPendingMessage();
-  passwordBtn.hidden=true;inviteBtn.hidden=true;logoutBtn.hidden=true;userLabel.textContent="";statusEl.textContent="Sign in required";
+  passwordBtn.hidden=true;inviteBtn.hidden=true;logoutBtn.hidden=true;userLabel.textContent="";statusEl.textContent="Sign in required";statusEl.className="status";
   renderBranchPanel();
 }
 
 function applyUser(user){
-  currentUser=user;loadDeletedBranches();showDeletedBranches=false;userLabel.textContent=user.username;passwordBtn.hidden=false;inviteBtn.hidden=!user.is_admin;logoutBtn.hidden=false;statusEl.textContent="Ready";setHeaderMenuOpen(false);setAuthLocked(false);
+  currentUser=user;loadDeletedBranches();showDeletedBranches=false;userLabel.textContent=user.username;passwordBtn.hidden=false;inviteBtn.hidden=!user.is_admin;logoutBtn.hidden=false;setUiStatus(eventsReady?"Ready":"Connecting...");setHeaderMenuOpen(false);setAuthLocked(false);
 }
 
 function deletedBranchesStorageKey(){
@@ -759,6 +797,10 @@ function addMessage(cls,content,role,item=null){
   const c=document.createElement("div");c.className="message-content";if(cls==="assistant")renderMarkdown(c,content);else c.textContent=content;div.appendChild(c);messagesEl.appendChild(div);return div;
 }
 
+function stripOutputMarkers(content){
+  return String(content||"").replace(/\[(image|file):[^\]\r\n]+\]/gi,"").replace(/[ \t]+([,.;:!?])/g,"$1").trim();
+}
+
 function addReasoning(content){
   const details=document.createElement("details");details.className="msg reasoning";details.open=true;const summary=document.createElement("summary");summary.textContent="Reasoning";details.appendChild(summary);const c=document.createElement("div");c.className="message-content";renderMarkdown(c,content);details.appendChild(c);messagesEl.appendChild(details);return details;
 }
@@ -833,7 +875,7 @@ function showTyping(){
 function hideTyping(){if(typingIndicator){typingIndicator.remove();typingIndicator=null}}
 
 function setProcessing(on,streamId=null){
-  activeStreamId=on?streamId:null;sendBtn.textContent=on?"Cancel":"Send";sendBtn.classList.toggle("cancel",on);sendBtn.disabled=!currentUser;setUiStatus(on?"Processing...":"Ready");if(!on)hideTyping();syncActionState();
+  activeStreamId=on?streamId:null;sendBtn.textContent=on?"Cancel":"Send";sendBtn.classList.toggle("cancel",on);updateSendButton();setUiStatus(on?"Processing...":"Ready");if(!on)hideTyping();syncActionState();
 }
 
 function syncActionState(){
@@ -854,7 +896,8 @@ function renderItem(item){
     case "reasoning":addReasoning(item.content);break;
     case "tool_call":try{const toolCall=JSON.parse(item.content);addToolCall(toolCall.tool_name||"unknown",toolCall.tool_args||{})}catch{addToolCall("tool",item.content)}break;
     case "tool_call_result":if(lastWasCodeAct){try{const result=JSON.parse(item.content);finishCodeActSession(result.content)}catch{finishCodeActSession(item.content)}}else{try{const result=JSON.parse(item.content);addToolResult(result.content)}catch{addToolResult(item.content)}}break;
-    case "image_output":addImageOutput(item.content);break;
+    case "output":addAssistantOutput(item);break;
+     case "image_output":addImageOutput(item.content);break;
     case "file_output":addFileOutput(item.content);break;
     default:addMessage("assistant",item.content,"Assistant",item);
   }
@@ -869,12 +912,13 @@ function handleStreamChunk(data){
   setUiStatus("Streaming...");
   if(!stream){let element;if(chunkType==="reasoning")element=addReasoning("");else if(chunkType==="tool_call"){element=document.createElement("details");element.className="msg tool-call";element.open=true;const summary=document.createElement("summary");summary.textContent="Tool: ...";element.appendChild(summary);const content=document.createElement("div");element.appendChild(content);messagesEl.appendChild(element)}else element=addMessage("assistant","","Assistant");stream={element,item_type:chunkType,previous_item_id:data.previous_item_id,text:""};activeStreams[streamId]=stream}
   stream.text+=(data.content||"");const contentEl=stream.element.querySelector("div:last-child")||stream.element;
-  if(chunkType==="output"||chunkType==="reasoning")renderMarkdown(contentEl,stream.text);else contentEl.textContent=stream.text;
+  if(chunkType==="output"||chunkType==="reasoning")renderMarkdown(contentEl,stripOutputMarkers(stream.text));else contentEl.textContent=stream.text;
   scrollToBottom();
 }
 
 async function submitMessage(text,parentId,branch=null,attachments=[]){
   if(!authToken){showAuth();return false}
+  if(!eventsReady){setUiStatus("Connecting...");return false}
   if(activeStreamId)return false;
   const previousItemId=parentId===null||parentId===undefined?null:parentId;
   pendingBranch=branch;pendingMessage={parentId:previousItemId,content:text,attachments};pendingRoot=!branch&&previousItemId===null;pendingRootContent=pendingRoot?text:"";setUiStatus("Sending...");sendBtn.disabled=true;
@@ -887,6 +931,7 @@ async function submitMessage(text,parentId,branch=null,attachments=[]){
 }
 
 async function send(){
+  if(!eventsReady){setUiStatus("Connecting...");return}
   const text=inputEl.value.trim();if(activeStreamId)return;
   const uploading=pendingAttachments.some(attachment=>attachment.status==="uploading");if(uploading){setUiStatus("Wait for uploads to finish");return}
   const failed=pendingAttachments.some(attachment=>attachment.status!=="ready");if(failed){setUiStatus("Remove failed uploads");return}
@@ -968,13 +1013,18 @@ async function handleEventStream(response){
 
 async function eventsLoop(){
   while(authToken){
+    setEventsReady(false);
     try{
       eventsAbortController=new AbortController();const response=await authFetch(serverUrl("/api/events"),{signal:eventsAbortController.signal});
       if(isUnauthorized(response))return
       if(!response.ok){setServerConnected(false);await new Promise(resolve=>setTimeout(resolve,1000));continue}
       setServerConnected(true);
-      await loadHistory();await handleEventStream(response);setServerConnected(false);
+      setEventsReady(true);
+      try{await loadHistory()}catch(error){console.error("[CommaMatrix UI] event history refresh failed",error)}
+      await handleEventStream(response);
+      setEventsReady(false);setServerConnected(false);
     }catch(error){
+      setEventsReady(false);
       if(!authToken||error.name==="AbortError")return;
       setServerConnected(false);await new Promise(resolve=>setTimeout(resolve,1000));
     }

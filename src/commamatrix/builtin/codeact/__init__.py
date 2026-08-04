@@ -17,7 +17,7 @@ from .service import (
     shutdown_timeout,
     max_output_bytes,
     max_search_results,
-    max_list_tools,
+    max_tools_list,
 )
 
 __all__ = [
@@ -33,5 +33,5 @@ __all__ = [
     "shutdown_timeout",
     "max_output_bytes",
     "max_search_results",
-    "max_list_tools",
+    "max_tools_list",
 ]

@@ -183,8 +183,8 @@ async def test_codeact_exposes_only_control_tools():
     controls = []
     for name in (
         "execute",
-        "search_tools",
-        "list_tools",
+        "tool_search",
+        "tools_list",
     ):
         control = _make_desc(name, namespace="commamatrix.builtin.codeact.tools")
         control.meta.update({"codeact": False})
@@ -209,8 +209,8 @@ async def test_codeact_exposes_only_control_tools():
 
     assert {descriptor.name for descriptor in ctx.tools} == {
         "execute",
-        "search_tools",
-        "list_tools",
+        "tool_search",
+        "tools_list",
     }
 
 

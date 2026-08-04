@@ -70,12 +70,12 @@ max_output_bytes = ConfigField[int](
 max_search_results = ConfigField[int](
     name="codeact.max_search_results",
     default=5,
-    description="Maximum number of tools shown in search_tools results",
+    description="Maximum number of tools shown in tool_search results",
 )
-max_list_tools = ConfigField[int](
-    name="codeact.max_list_tools",
+max_tools_list = ConfigField[int](
+    name="codeact.max_tools_list",
     default=50,
-    description="Maximum number of tools shown in list_tools output",
+    description="Maximum number of tools shown in tools_list output",
 )
 
 CODEACT_NESTED_TOOL_KEY = "codeact_nested_tool"
@@ -85,7 +85,7 @@ class CodeActService(Service):
     """Owns the execution backend, tool searcher, and nested tool gateway.
 
     The execution backend is fully async — it manages subprocesses,
-    pipes, and I/O.  The tool searcher (``ToolSearcher`` subclass) is
+    pipes, and I/O. The tool searcher (``ToolSearcher`` subclass) is
     intentionally synchronous and runs directly on the event loop;
     CodeAct does not offload searcher operations to threads.
 

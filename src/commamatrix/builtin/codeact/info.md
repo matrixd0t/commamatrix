@@ -124,7 +124,7 @@ After the TCP handshake, the first message from parent to child is NOT an RPC ca
 ```
 
 - Only **public** tools appear in `tool_tree` — CodeAct-internal tools (those with `visible_in_codeact=True, visible_outside_codeact=False`) are excluded via `is_codeact_internal()`.
-- Control tools (`execute`, `search_tools`, `list_tools`) are never exposed to the worker.
+- Control tools (`execute`, `tool_search`, `tools_list`) are never exposed to the worker.
 - Tools are available both under `tools.<alias>.<name>` and, when the name is a valid identifier, as a callable `tools.<name>` module. This supports `import tools.echo as echo; await echo(...)`.
 - Tool invocation on the worker side uses the descriptor `id` for direct resolution.
 
@@ -427,4 +427,4 @@ await tools.fs.read_file(path="/tmp/data.txt")
 # CodeAct-internal tools are NOT available (filtered by is_codeact_internal)
 ```
 
-CodeAct control tools (\execute\, \search_tools\, \list_tools\, \exit_codeact\) are never exposed to the worker  they have \isible_in_codeact=True, visible_outside_codeact=False\ and are filtered out by \is_codeact_internal()\. Additionally, \enable_codeact\ (with \isible_in_codeact=False\) is also filtered out, preventing the worker from calling it via virtual import.
+CodeAct control tools (\execute\, \tool_search\, \tools_list\, \exit_codeact\) are never exposed to the worker  they have \isible_in_codeact=True, visible_outside_codeact=False\ and are filtered out by \is_codeact_internal()\. Additionally, \enable_codeact\ (with \isible_in_codeact=False\) is also filtered out, preventing the worker from calling it via virtual import.

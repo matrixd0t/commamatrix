@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterable
 
 from .hook import before_llm_call, BeforeLlmCallCtx, RunCtx
 from .dialog import DialogItem, DialogItemType, DialogRole
+from .file_storage import DataType
 from ..core.classes.descriptor import Descriptor
 from ..core.classes.source import Source, PythonSource
 from ..core.classes.manager import Manager
@@ -193,6 +194,27 @@ Examples::
         rules = await fetch_rules(ctx.run.user)
         return "\\n".join(rules)
 """
+
+
+@instruction(priority=-500)
+def connector_modalities(ctx: InstructionCtx) -> str | None:
+    """Describe attachment markers supported by the current connector."""
+    connector = ctx.run.agent.connector_manager.resolve_for_origin(ctx.run.origin)
+
+    attachment_modalities = tuple(
+        modality
+        for modality in DataType
+        if modality is not DataType.TEXT and modality in connector.modalities.output
+    )
+    if not attachment_modalities:
+        return None
+
+    markers = ", ".join(f"[{modality.value}:file_id_or_path]" for modality in attachment_modalities)
+    return (
+        "To attach content from local storage to your response, write a marker "
+        f"using one of these forms: {markers}. "
+        "Use a file ID or a path as the value."
+    )
 
 
 @before_llm_call

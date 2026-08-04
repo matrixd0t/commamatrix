@@ -217,7 +217,7 @@ There is no strict JSON-only return requirement for every tool. The framework se
 @tool(alias="fs")                      ->  CodeAct import: import tools.fs as fs
 ```
 
-Read the `@tool(alias="...")` in the source or use `list_tools` / `search_tools` to find the alias.
+Read the `@tool(alias="...")` in the source or use `tools_list` / `tool_search` to find the alias.
 
 ```python
 import tools.fs as fs
@@ -232,8 +232,8 @@ because the file is named `filesystem_tools.py`.
 The public tool names and imports are computed as follows:
 
 - `@tool` uses the module's last component as the alias, so a tool in `filesystem_tools.py` defaults to `tools.filesystem_tools`.
-- `@tool(alias="weather")` exposes `weather_current` for a function named `current` and imports as `tools.weather`.
-- `@tool(alias="")` exposes the bare function name, such as `current`; it is not imported through a grouped `tools.<alias>` module.
+- `@tool(alias="weather")` imports as `from tools.weather import current`.
+- `@tool(alias="")` exposes the bare function name, such as `current`.
 
 For self-written tools, always choose an explicit stable alias that describes
 the group and use that alias as the CodeAct import name. Two active tools with

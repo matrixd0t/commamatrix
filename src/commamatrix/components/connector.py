@@ -26,7 +26,7 @@ from ..core.classes.service import AbstractService, ServiceDescriptor
 from ..core.classes.source import Source, PythonSource, D
 from ..core.classes.manager import ServiceInstanceManager
 from .dialog import DialogItem, DialogOrigin
-from .llm_adapter import StreamDelta
+from .llm_adapter import LLMModalities, StreamDelta
 
 if TYPE_CHECKING:
     from .hook import OnParsedCtx
@@ -45,6 +45,7 @@ class Connector(AbstractService, Generic[OrgT]):
 
     origin_types: ClassVar[tuple[type[DialogOrigin], ...]] = ()
     supports_streaming: ClassVar[bool] = False
+    modalities: ClassVar[LLMModalities] = LLMModalities()
 
     def __init__(self, agent: Agent) -> None:
         super().__init__(agent)

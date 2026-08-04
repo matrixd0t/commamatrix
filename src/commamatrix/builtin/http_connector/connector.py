@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import secrets
 import time
 import uuid
@@ -27,10 +28,10 @@ from starlette.staticfiles import StaticFiles
 from ...components.config import ConfigField
 from ...components.connector import Connector
 from ...components.dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
-from ...components.file_storage import normalize_file_id
+from ...components.file_storage import DataType, normalize_file_id, read_file
 from ...components.hook import OnParsedCtx
-from ...components.llm_adapter import StreamDelta
-from ...components.server import http_external_url
+from ...components.llm_adapter import LLMModalities, StreamDelta
+from ...components.server import SERVER_ROOT, http_external_url
 from .auth import AuthError, Authorizer
 
 if TYPE_CHECKING:
@@ -104,9 +105,15 @@ class HttpStatusMessage:
 
 
 _NO_PUBLIC_ADDRESS_MESSAGE = "You cannot upload files for LLM: CommaMatrix is not visible from the Internet."
+_OUTPUT_ATTACHMENT_MARKER = re.compile(r"\[(image|file):([^\]\r\n]+)\]", re.IGNORECASE)
 
 
 class HttpConnector(Connector[HttpOrigin]):
+    modalities = LLMModalities(
+        input={DataType.TEXT, DataType.IMAGE, DataType.FILE},
+        output={DataType.TEXT, DataType.IMAGE, DataType.FILE},
+    )
+
     def __init__(self, agent: Agent) -> None:
         super().__init__(agent)
         self._ui_path = Path(self.config.get(http_ui_path))
@@ -344,7 +351,75 @@ class HttpConnector(Connector[HttpOrigin]):
             await session.queue.put(event)
 
     async def send(self, origin: DialogOrigin, item: DialogItem) -> str:
+        if isinstance(origin, HttpOrigin) and item.item_type is DialogItemType.OUTPUT:
+            await self._prepare_output_attachments(item)
         return ""
+
+    async def _prepare_output_attachments(self, item: DialogItem) -> None:
+        matches = tuple(_OUTPUT_ATTACHMENT_MARKER.finditer(item.content))
+        if not matches:
+            return
+
+        attachments = [
+            await self._resolve_output_attachment(
+                DataType(match.group(1).lower()),
+                match.group(2).strip(),
+            )
+            for match in matches
+        ]
+        item.content = re.sub(
+            r"[ \t]+([,.;:!?])",
+            r"\1",
+            _OUTPUT_ATTACHMENT_MARKER.sub("", item.content),
+        ).strip()
+        http_meta = item.meta.get("http")
+        if not isinstance(http_meta, dict):
+            http_meta = {}
+            item.meta["http"] = http_meta
+        http_meta["attachments"] = attachments
+
+    async def _resolve_output_attachment(self, modality: DataType, ref: str) -> dict:
+        attachment: dict = {
+            "kind": modality.value,
+            "name": Path(ref).name or ref,
+        }
+        try:
+            if not ref:
+                raise ValueError("Attachment reference is empty")
+
+            path = Path(ref).expanduser()
+            if path.is_file() or path.is_absolute():
+                source = str(path.resolve())
+            elif normalize_file_id(ref) is not None:
+                source = ref
+                attachment["ref"] = ref
+            else:
+                raise ValueError("Attachment reference must be a file ID or a local path")
+
+            file_data = await read_file(
+                source,
+                file_storage=self.agent.file_storage,
+                http_client=self.agent.http_client,
+                name=path.name,
+                ext=path.suffix,
+                content_type=modality,
+                make_url=True,
+            )
+            if file_data is None:
+                raise FileNotFoundError(f"File not found: {ref}")
+
+            attachment.update(
+                {
+                    "name": file_data.name,
+                    "mime_type": file_data.mime_type,
+                    "size": len(file_data.data),
+                    "url": self._browser_file_url(file_data.url),
+                    "ext": Path(file_data.name).suffix.lstrip("."),
+                }
+            )
+        except Exception as exc:
+            attachment["error"] = str(exc)
+        return attachment
 
     async def publish_item(self, origin: DialogOrigin, item: DialogItem) -> None:
         if isinstance(origin, HttpOrigin):
@@ -430,7 +505,14 @@ class HttpConnector(Connector[HttpOrigin]):
         return result
 
     def _file_content_url(self, file_id: str) -> str:
-        return self.agent.http_server.file_url(file_id)
+        return f"{SERVER_ROOT}/files/{quote(file_id, safe='')}"
+
+    @staticmethod
+    def _browser_file_url(url: str | None) -> str | None:
+        if not url:
+            return None
+        path = urlparse(url).path
+        return path if path.startswith(f"{SERVER_ROOT}/files/") else url
 
     def _file_payload(self, record: HttpFileRecord) -> dict:
         content_url = self._file_content_url(record.file_id)
@@ -729,6 +811,7 @@ class HttpConnector(Connector[HttpOrigin]):
 
 async def _sse_generator(queue: asyncio.Queue[dict | None], on_disconnect=None):
     disconnected = False
+    yield ": connected\n\n"
     try:
         while True:
             try:

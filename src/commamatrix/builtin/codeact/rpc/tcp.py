@@ -1,6 +1,6 @@
 # builtin/codeact/rpc/tcp.py
 
-"""Authenticated length-prefixed JSON transport over loopback TCP."""
+"""Authenticated length-prefixed JSON transport over TCP."""
 
 from __future__ import annotations
 

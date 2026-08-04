@@ -29,16 +29,9 @@ def is_tool_allowed(run: Any, public_name: str) -> bool:
     return re.fullmatch(str(allowed), public_name) is not None
 
 
-def filter_tool_descriptors(
-    run: Any,
-    descriptors: Iterable[ToolDescriptor],
-) -> list[ToolDescriptor]:
+def filter_tool_descriptors(run: Any, descriptors: Iterable[ToolDescriptor]) -> list[ToolDescriptor]:
     manager = run.agent.tool_manager
-    return [
-        descriptor
-        for descriptor in descriptors
-        if is_tool_allowed(run, manager.public_name(descriptor))
-    ]
+    return [d for d in descriptors if is_tool_allowed(run, manager.public_name(d))]
 
 
 __all__ = [
