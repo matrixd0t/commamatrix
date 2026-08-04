@@ -30,6 +30,25 @@ class PostgresStorage(SqlStorage):
     async def _fetchall(self, db: asyncpg.Connection, query: str, params: tuple = ()) -> list:
         return await db.fetch(query, *params)
 
+    async def _schema(self) -> list[str]:
+        columns = await self.execute(
+            """
+            SELECT table_schema, table_name, column_name, data_type
+            FROM information_schema.columns
+            WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+            ORDER BY table_schema, table_name, ordinal_position
+            """
+        )
+        tables: dict[str, list[str]] = {}
+        for column in columns:
+            schema = str(column["table_schema"])
+            table_name = str(column["table_name"])
+            display_name = table_name if schema == "public" else f"{schema}.{table_name}"
+            tables.setdefault(display_name, []).append(
+                f"{column['column_name']} ({column['data_type']})"
+            )
+        return [f"{name}: {', '.join(fields)}" for name, fields in tables.items()]
+
     async def _table_columns(self, db: asyncpg.Connection, table_name: str) -> set[str]:
         rows = await db.fetch(
             "SELECT column_name FROM information_schema.columns WHERE table_name = $1",

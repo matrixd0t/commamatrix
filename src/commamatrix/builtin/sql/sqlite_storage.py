@@ -33,6 +33,27 @@ class SqliteStorage(SqlStorage):
     async def _fetchall(self, db: aiosqlite.Connection, query: str, params: tuple = ()) -> list:
         return list(await db.execute_fetchall(query, params))
 
+    async def _schema(self) -> list[str]:
+        tables = await self.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+            ORDER BY name
+            """
+        )
+        result: list[str] = []
+        for table_row in tables:
+            table_name = str(table_row["name"])
+            quoted_name = f'"{table_name.replace(chr(34), chr(34) * 2)}"'
+            columns = await self.execute(f"PRAGMA table_info({quoted_name})")
+            column_text = ", ".join(
+                f"{column['name']} ({column['type'] or 'unknown'})"
+                for column in columns
+            )
+            result.append(f"{table_name}: {column_text}")
+        return result
+
     async def _table_columns(self, db: aiosqlite.Connection, table_name: str) -> set[str]:
         rows = await db.execute_fetchall(f'PRAGMA table_info("{table_name}")')
         return {row[1] for row in rows}

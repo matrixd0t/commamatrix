@@ -44,6 +44,9 @@ class Storage(AbstractService):
     @abstractmethod
     async def get_history(self, *, origin_type: type[DialogOrigin] | None = None, origin_fields: dict[str, Any] | None = None) -> list[DialogItem]: ...
 
+    async def schema(self) -> list[str]:
+        raise NotImplementedError
+
     async def execute(self, query: str, params: tuple = ()) -> list[dict[str, Any]]:
         raise NotImplementedError
 
@@ -77,6 +80,9 @@ class StorageManager(ActiveServiceInstanceManager[Storage]):
 
     async def get_history(self, *, origin_type: type[DialogOrigin] | None = None, origin_fields: dict[str, Any] | None = None) -> list[DialogItem]:
         return await self._active.get_history(origin_type=origin_type, origin_fields=origin_fields)
+
+    async def schema(self) -> list[str]:
+        return await self._active.schema()
 
     async def execute(self, query: str, params: tuple = ()) -> list[dict[str, Any]]:
         return await self._active.execute(query, params)

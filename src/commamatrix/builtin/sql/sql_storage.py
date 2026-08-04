@@ -409,6 +409,13 @@ class SqlStorage(Storage):
         )
         await self._commit(db)
 
+    async def schema(self) -> list[str]:
+        """Return the current physical schema in a compact addon-friendly form."""
+        return await self._schema()
+
+    async def _schema(self) -> list[str]:
+        raise NotImplementedError
+
     async def execute(self, query: str, params: tuple = ()) -> list[dict[str, Any]]:
         db = await self._get_db()
         result = await self._fetchall(db, query, params)

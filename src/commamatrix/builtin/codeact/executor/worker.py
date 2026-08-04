@@ -224,9 +224,7 @@ _factories: dict[str, Callable[..., Any]] = {}
 
 
 class _ToolModule(ModuleType):
-    def __init__(
-        self, fullname: str, call_proxy: Callable[..., Any] | None = None
-    ) -> None:
+    def __init__(self, fullname: str, call_proxy: Callable[..., Any] | None = None) -> None:
         super().__init__(fullname)
         self.__call_proxy = call_proxy
         if call_proxy is not None:
