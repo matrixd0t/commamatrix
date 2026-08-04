@@ -61,6 +61,7 @@ from ...components.storage import StorageManager, STORAGE_ATTRIBUTE
 from ...components.table import TableManager
 from ...components.file_storage import FileStorageManager, FILE_STORAGE_ATTRIBUTE
 from ...components.server import Server
+from ...builtin.mcp import MCPManager, MCPToolSource
 from ..classes.manager import ServiceInstanceManager, ServiceInstanceRegistry
 from ..classes.service import AbstractService
 from ..extensions import (
@@ -133,7 +134,10 @@ class Agent:
         self._extension_runtime = ExtensionRuntime()
         self._http_client: AsyncClient | None = None
 
+        self.mcp = MCPManager(agent=self)
         self.tool_manager = ToolManager(agent=self)
+        self.mcp_source = MCPToolSource(self.mcp)
+        self.tool_manager.mount(self.mcp_source)
         self.hook_manager = HookManager(agent=self)
         self.instruction_manager = InstructionManager(agent=self)
         self.llm_adapter = LLMAdapterManager(agent=self)
@@ -146,6 +150,7 @@ class Agent:
         self.scheduler: AbstractService | None = None
 
         self.manager = AgentLifecycle(registry=self.services, children=[
+            self.mcp,
             self.tool_manager,
             self.hook_manager,
             self.instruction_manager,

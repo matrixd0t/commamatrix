@@ -29,6 +29,9 @@ dependencies = [
 postgres = ["asyncpg"]
 test = ["pytest", "pytest-asyncio"]
 all = ["commamatrix[postgres]"]
+mcp = [
+    "mcp>=2.0.0",
+]
 
 [dependency-groups]
 dev = ["commamatrix[test]"]
