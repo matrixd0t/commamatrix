@@ -348,6 +348,45 @@ and `after`; higher priority runs earlier. The complete implementation and the
 built-in system-message hook are in
 [instruction.py](../../components/instruction.py).
 
+### Using Tools in Extension Code
+
+Inside a hook, instruction, or tool that receives a `RunCtx`, call any active agent tool through `run.tools`. You do not need to import the extension that defined the tool or know its Python module name:
+
+```python
+from commamatrix import BeforeRunCtx, before_run
+
+
+@before_run
+async def collect_research(ctx: BeforeRunCtx) -> None:
+    result = await ctx.run.tools.web.search(
+        query="current project status",
+    )
+    ctx.run.state["research"] = result
+```
+
+A tool can call another tool in exactly the same way:
+
+```python
+from commamatrix import BeforeToolCallCtx, tool
+
+
+@tool(alias="reports")
+async def make_report(topic: str, ctx: BeforeToolCallCtx) -> str:
+    source = await ctx.run.tools.web.search(query=topic)
+    return f"Report source: {source}"
+```
+
+The first attribute after `run.tools` is the tool alias from `@tool(alias="...")`, not the extension filename. The second attribute is the decorated function name. An undecorated alias uses the module's last component, and `@tool(alias="")` exposes the tool directly:
+
+```python
+await ctx.run.tools.data.read(ref="README.md")
+await ctx.run.tools.current(city="Berlin")  # @tool(alias="")
+```
+
+`ctx` parameters are injected automatically by the framework; do not pass `BeforeToolCallCtx` yourself. Calls return the raw Python result and do not add tool-call items to dialog history. `run.tools` is available only when a `RunCtx` exists, so it cannot be used from `OnAgentStartCtx` or `OnParsedCtx`, which contain no `run`.
+
+Use an explicit, stable alias for tools intended for reuse. If two active extensions register the same alias and function name, the call is ambiguous and raises `AmbiguousToolError`.
+
 ## Configuration and Third-Party Libraries
 
 Declare configuration fields at module level. A field object, not its string
@@ -431,18 +470,11 @@ class WeatherService(Service):
 - `refresh()` synchronizes an active instance after extension changes and may be called often.
 - `stop()` releases resources when the extension is removed or the agent stops.
 
-All lifecycle methods should be idempotent where practical. A custom service
-should subclass `Service`, not `AbstractService`, so the normal service manager
-discovers it. Access a running service with
-`ctx.run.agent.services.get(MyService)` or `require(MyService)`. See
-[core/classes/service.py](../../core/classes/service.py) and
-[core/classes/manager.py](../../core/classes/manager.py).
+All lifecycle methods should be idempotent where practical. A custom service should subclass `Service`, not `AbstractService`, so the normal service manager discovers it. Access a running service with `ctx.run.agent.services.get(MyService)` or `require(MyService)`. See [core/classes/service.py](../../core/classes/service.py) and [core/classes/manager.py](../../core/classes/manager.py).
 
 ## Connectors
 
-A connector translates an external platform into `DialogItem` objects and
-renders outgoing items back to that platform. Define a platform-specific
-`DialogOrigin` and a generic connector:
+A connector translates an external platform into `DialogItem` objects and renders outgoing items back to that platform. Define a platform-specific `DialogOrigin` and a generic connector:
 
 ```python
 # my_extension/connector.py
@@ -474,16 +506,9 @@ class ChatConnector(Connector[ChatOrigin]):
         return
 ```
 
-Connectors are discovered automatically and every discovered connector is
-active. `Connector[ChatOrigin]` lets the framework infer `origin_types`. The
-base connector starts `listen(self.agent.handle)` as a task. Override
-`listen()` for polling or webhook loops, and override `start()` or `stop()` only
-when the third-party client needs additional lifecycle handling.
+Connectors are discovered automatically and every discovered connector is active. `Connector[ChatOrigin]` lets the framework infer `origin_types`. The base connector starts `listen(self.agent.handle)` as a task. Override `listen()` for polling or webhook loops, and override `start()` or `stop()` only when the third-party client needs additional lifecycle handling.
 
-`send()` receives every complete outgoing block, including reasoning, text,
-images, files, and tool calls. The connector decides what its platform can
-render. It must return an external ID or an empty string; the agent persists
-the dialog item even when delivery has no external ID.
+`send()` receives every complete outgoing block, including reasoning, text, images, files, and tool calls. The connector decides what its platform can render. It must return an external ID or an empty string; the agent persists the dialog item even when delivery has no external ID.
 
 For livestreaming, set `supports_streaming = True` and implement `send_stream_chunk(origin, chunk)` when the platform supports partial updates.  Streaming chunks are real-time only; complete blocks still arrive through `send()` and are persisted. See [components/connector.py](../../components/connector.py), [components/dialog.py](../../components/dialog.py), and the built-in [http_connector/connector.py](../http_connector/connector.py).
 
@@ -568,16 +593,8 @@ async def weekly_digest(ctx: ScheduledTaskContext) -> None:
     ...
 ```
 
-Use `cron(...)`, `every(...)`, or `once(datetime(...))`; these helpers are
-re-exported by `commamatrix.builtin.planner` (which wraps the `matrix_planner`
-package). The task ID is always
-`<module>:<function>`, so function names must be unique within a module.
-Tasks are discovered from active extensions, added and removed on extension
-reload, and recreated after restart. Missed cron/interval runs are skipped;
-a past `once(...)` task runs immediately when the service starts. To continue
-an existing stored branch, forward a sub-run through `Agent.submit_run(...)`
-(`await ctx.agent.submit_run(parent_item_id=item_id, tools=...)`) instead of
-passing new `dialog_items`.
+Use `cron(...)`, `every(...)`, or `once(datetime(...))`; these helpers are re-exported by `commamatrix.builtin.planner` (which wraps the `matrix_planner` package). The task ID is always `<module>:<function>`, so function names must be unique within a module.
+Tasks are discovered from active extensions, added and removed on extension reload, and recreated after restart. Missed cron/interval runs are skipped; a past `once(...)` task runs immediately when the service starts. To continue an existing stored branch, forward a sub-run through `Agent.submit_run(...)` (`await ctx.agent.submit_run(parent_item_id=item_id, tools=...)`) instead of passing new `dialog_items`.
 
 ## Storage, File Storage, and LLM Providers
 

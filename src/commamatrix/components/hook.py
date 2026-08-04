@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from .connector import Connector
     from .dialog import DialogItem, DialogOrigin
     from .llm_adapter import LLM, LLMAdapter, LLMResponse, ToolCallResult, ToolCall
-    from .tool import ToolDescriptor
+    from .tool import RunTools, ToolDescriptor
 
 CtxT = TypeVar("CtxT")
 
@@ -84,6 +84,12 @@ class RunCtx:
     tool_output_tail: int | None = None
     pending_input_items: list[DialogItem] = field(default_factory=list)
     last_item_id: int | None = None
+
+    @property
+    def tools(self) -> RunTools:
+        from .tool import RunTools
+
+        return RunTools(self)
 
 
 @dataclass(slots=True, kw_only=True)

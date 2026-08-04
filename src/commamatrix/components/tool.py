@@ -6,10 +6,12 @@ import functools
 import inspect
 import sys
 import weakref
+from abc import ABC
 
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, cast, get_type_hints, overload
+from uuid import uuid4
 
 from matrix_fn_schema import build_json_schema
 
@@ -18,7 +20,7 @@ from ..core.classes.source import Source
 from ..core.classes.manager import Manager
 from ..core.classes.source import PythonSource
 from .llm_adapter import ToolCall, ToolCallResult
-from .hook import BeforeToolCallCtx
+from .hook import BeforeToolCallCtx, RunCtx
 
 
 DEFAULT_TOOL_SEARCH_AMOUNT = 5
@@ -66,7 +68,7 @@ class ToolDescriptor(Descriptor):
         }
 
 
-class ToolSource(Source[ToolDescriptor]):
+class ToolSource(Source[ToolDescriptor], ABC):
     """
     Source ABC for tool execution.
 
@@ -272,6 +274,137 @@ def _type_hints(fn: AsyncOrSyncFunction) -> dict[str, Any]:
         return dict(getattr(fn, "__annotations__", {}))
 
 
+def _descriptor_signature(descriptor: ToolDescriptor) -> inspect.Signature | None:
+    declared = descriptor.meta.get("signature")
+    if not isinstance(declared, list):
+        return None
+
+    parameters: list[inspect.Parameter] = []
+    for item in declared:
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+            continue
+        kind = getattr(
+            inspect.Parameter,
+            item.get("kind", "KEYWORD_ONLY"),
+            inspect.Parameter.KEYWORD_ONLY,
+        )
+        default = item.get("default", inspect.Parameter.empty)
+        parameters.append(
+            inspect.Parameter(
+                item["name"],
+                kind,
+                default=default,
+                annotation=Any,
+            )
+        )
+
+    try:
+        return inspect.Signature(parameters)
+    except (TypeError, ValueError):
+        return None
+
+
+def _bind_descriptor_args(
+    descriptor: ToolDescriptor,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> dict[str, Any]:
+    signature = _descriptor_signature(descriptor)
+    if signature is None:
+        if args:
+            raise TypeError(
+                f"Tool {descriptor.name!r} does not expose a positional signature"
+            )
+        return dict(kwargs)
+    return dict(signature.bind(*args, **kwargs).arguments)
+
+
+class RunTools:
+    """Lazily expose registered tools as Python callables for one run.
+
+    The proxy resolves descriptors at call time, so it remains valid across
+    extension refreshes. Calls return the raw result and do not create dialog
+    history items.
+    """
+
+    def __init__(self, run: RunCtx) -> None:
+        self._run = run
+
+    def __getattr__(self, alias: str) -> _RunToolNamespace:
+        if alias.startswith("_"):
+            raise AttributeError(alias)
+        return _RunToolNamespace(self._run, alias)
+
+    def __dir__(self) -> list[str]:
+        names = set(super().__dir__())
+        names.update(
+            descriptor.alias or descriptor.name
+            for descriptor in self._run.agent.tool_manager.descriptors
+        )
+        return sorted(names)
+
+
+class _RunToolNamespace:
+    def __init__(self, run: RunCtx, alias: str) -> None:
+        self._run = run
+        self._alias = alias
+
+    def __getattr__(self, name: str) -> _RunToolProxy:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return _RunToolProxy(self._run, self._alias, name)
+
+    async def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Allow ``run.tools.tool_name(...)`` for ungrouped tools."""
+        return await _RunToolProxy(self._run, "", self._alias)(*args, **kwargs)
+
+    def __dir__(self) -> list[str]:
+        names = set(super().__dir__())
+        names.update(
+            descriptor.name
+            for descriptor in self._run.agent.tool_manager.find_alias(self._alias)
+        )
+        return sorted(names)
+
+
+class _RunToolProxy:
+    def __init__(self, run: RunCtx, alias: str, name: str) -> None:
+        self._run = run
+        self._alias = alias
+        self._name = name
+        self.__name__ = name
+        self.__qualname__ = f"{alias}.{name}" if alias else name
+
+    @property
+    def __signature__(self) -> inspect.Signature:
+        descriptor = self._resolve()
+        return _descriptor_signature(descriptor) or inspect.Signature()
+
+    def _resolve(self) -> ToolDescriptor:
+        descriptor = self._run.agent.tool_manager.resolve_alias_tool(self._alias, self._name)
+        if descriptor is None:
+            path = f"{self._alias}.{self._name}" if self._alias else self._name
+            raise LookupError(f"Tool {path!r} is not registered for this run")
+        return descriptor
+
+    async def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        descriptor = self._resolve()
+        tool_args = _bind_descriptor_args(descriptor, args, kwargs)
+        context = BeforeToolCallCtx(
+            run=self._run,
+            tool_call=ToolCall(
+                tool_call_id=uuid4().hex,
+                tool_name=self._run.agent.tool_manager.public_name(descriptor),
+                tool_args=tool_args,
+            ),
+        )
+        return await self._run.agent.tool_manager.invoke(
+            descriptor,
+            tool_args,
+            ctx=context,
+        )
+
+
 class ToolManager(Manager[ToolDescriptor]):
     """Central tool registry. Maintains alias/name/public_name/id index
     maps for multi-step resolution. The call() method executes a
@@ -307,6 +440,19 @@ class ToolManager(Manager[ToolDescriptor]):
         if len(candidates) == 1:
             return candidates[0]
         raise AmbiguousToolError(name, candidates)
+
+    def resolve_alias_tool(self, alias: str, name: str) -> ToolDescriptor | None:
+        candidates = [
+            descriptor
+            for descriptor in self.descriptors
+            if descriptor.alias == alias and descriptor.name == name
+        ]
+        if not candidates:
+            return None
+        if len(candidates) > 1:
+            path = f"{alias}.{name}" if alias else name
+            raise AmbiguousToolError(path, candidates)
+        return candidates[0]
 
     def resolve_id(self, id_str: str) -> ToolDescriptor | None:
         return self._by_id.get(id_str)
