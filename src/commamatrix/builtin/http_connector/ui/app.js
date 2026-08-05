@@ -1,6 +1,6 @@
 // builtin/http_connector/ui/app.js
 /** @typedef {{origin_type?: string, platform?: string, http_user_id?: number}} DialogOrigin */
-/** @typedef {{item_id: number|null, previous_item_id: number|null, item_type?: string, role?: string, content?: string, user?: string, origin?: DialogOrigin, created_at?: string|null, external_id?: string|null, meta?: Record<string, unknown>}} DialogItem */
+/** @typedef {{item_id: number|null, previous_item_id: number|null, item_type?: string, role?: string, content?: string, user?: string, origin?: DialogOrigin, created_at?: string|null, external_id?: string|null, branch_head_id?: number|null, branch_root_id?: number|null, branch_preview?: string, branch_updated_at?: string|null, meta?: Record<string, unknown>}} DialogItem */
 /** @typedef {{tool_name?: string, tool_call_id?: string}} StreamMeta */
 /** @typedef {{type?: string, item_id?: number|null, item_type?: string, role?: string, content?: string, error?: string, active?: boolean, previous_item_id?: number|null, stream_id?: string|null, meta?: StreamMeta}} StreamEvent */
 /* global hljs, marked, DOMPurify */
@@ -51,7 +51,6 @@ const passwordOverlay=document.getElementById("password-overlay");
 const passwordForm=document.getElementById("password-form");
 const passwordError=document.getElementById("password-error");
 const inviteOverlay=document.getElementById("invite-overlay");
-const inviteUrl=document.getElementById("invite-url");
 const attachmentOverlay=document.getElementById("attachment-overlay");
 const insertLinkChoice=document.getElementById("insert-link-choice");
 const uploadFileChoice=document.getElementById("upload-file-choice");
@@ -63,13 +62,14 @@ const linkError=document.getElementById("link-error");
 const linkCancel=document.getElementById("link-cancel");
 
 let inviteToken=new URLSearchParams(location.search).get("token");
+let inviteLink="";
 let authToken=localStorage.getItem("commamatrix_auth_token");
 let currentUser=null;
 let authMode=inviteToken?"register":"login";
 let activeStreamId=null;
 let eventsTask=null;
 let eventsAbortController=null;
-let currentReader=null;
+let eventsRequest=null;
 let eventsReady=false;
 let typingIndicator=null;
 let codeactSpinnerEl=null;
@@ -90,6 +90,8 @@ let selectedLeafByNode=new Map();
 let expandedNodes=new Set();
 let deletedRootIds=new Set();
 let showDeletedBranches=false;
+/** @type {DialogItem[]} */
+let historyHeads=[];
 let pendingBranch=null;
 let pendingMessage=null;
 let pendingAttachments=[];
@@ -105,6 +107,7 @@ let statusOverrideTimer=null;
 let serverConnected=null;
 const STATUS_POLL_INTERVAL_MS=3000;
 const NO_PUBLIC_ADDRESS_MESSAGE="You cannot upload files for LLM: CommaMatrix is not visible from the Internet.";
+const STREAMING_STATUS_TOOLTIP="If streaming gets stuck, reload the page (F5).";
 
 function updateSendButton(){
   sendBtn.disabled=!currentUser||document.body.classList.contains("auth-locked")||(!activeStreamId&&!eventsReady);
@@ -112,7 +115,7 @@ function updateSendButton(){
 
 function setEventsReady(ready){
   eventsReady=ready;updateSendButton();
-  if(authToken&&!activeStreamId)setUiStatus(ready?"Ready":"Connecting...");
+  if(authToken&&!activeStreamId)setUiStatus(ready||serverConnected===true?"Ready":"Connecting...");
 }
 
 function setAuthLocked(locked){
@@ -152,13 +155,13 @@ function statusKind(text){
 }
 function setUiStatus(text){
   const value=serverConnected===false?"Disconnected":text;
-  const kind=statusKind(value);statusEl.textContent=value;statusEl.className="status"+(kind?" status-"+kind:"");
+  const kind=statusKind(value);statusEl.textContent=value;statusEl.className="status"+(kind?" status-"+kind:"");statusEl.title=value.toLowerCase().includes("stream")?STREAMING_STATUS_TOOLTIP:"";
 }
 function serverStatusSeverity(){return serverStatusMessages.some(item=>item.severity==="red")?"red":serverStatusMessages.length?"yellow":"green"}
 function updateServerStatusLight(){const severity=serverConnected===false?"gray":statusPanelOverride?.severity||serverStatusSeverity();serverStatusLight.className="http-server-status-light "+severity}
 function setServerConnected(connected){
-  const wasDisconnected=serverConnected===false;serverConnected=connected;updateServerStatusLight();
-  if(!connected)setUiStatus("Disconnected");else if(wasDisconnected)setUiStatus(eventsReady?"Ready":"Connecting...");
+  const wasDisconnected=serverConnected===false;const wasConnecting=!activeStreamId&&statusEl.textContent==="Connecting...";serverConnected=connected;updateServerStatusLight();updateSendButton();
+  if(!connected)setUiStatus("Disconnected");else if(wasDisconnected||wasConnecting)setUiStatus("Ready");
 }
 
 function updateServerStatus(data){
@@ -403,12 +406,13 @@ function clearPendingMessage(){pendingBranch=null;pendingMessage=null;pendingRoo
 
 function clearAuth(){
   if(eventsAbortController)eventsAbortController.abort();
+  if(eventsRequest)eventsRequest.abort();
   stopStatusPolling();statusPanelOverride=null;serverStatusMessages=[];fileUploadAllowed=false;uploadFileChoice.disabled=true;renderServerStatusMessages();setStatusPanelVisible(false);serverStatusLight.className="http-server-status-light gray";setHeaderMenuOpen(false);
   eventsTask=null;authToken=null;currentUser=null;historyLoaded=false;activeStreamId=null;serverConnected=null;eventsReady=false;
   sendBtn.textContent="Send";sendBtn.classList.remove("cancel");sendBtn.disabled=true;
   localStorage.removeItem("commamatrix_auth_token");
   clearPendingAttachments();
-  hideTyping();messagesEl.replaceChildren();itemsById=new Map();childrenByParent=new Map();selectedHeadId=null;newRootSelected=false;selectedLeafByNode=new Map();expandedNodes=new Set();deletedRootIds=new Set();showDeletedBranches=false;activeStreams={};streamingPreviews={};clearPendingMessage();
+  hideTyping();messagesEl.replaceChildren();itemsById=new Map();childrenByParent=new Map();selectedHeadId=null;newRootSelected=false;selectedLeafByNode=new Map();expandedNodes=new Set();deletedRootIds=new Set();showDeletedBranches=false;historyHeads=[];activeStreams={};streamingPreviews={};clearPendingMessage();
   passwordBtn.hidden=true;inviteBtn.hidden=true;logoutBtn.hidden=true;userLabel.textContent="";statusEl.textContent="Sign in required";statusEl.className="status";
   renderBranchPanel();
 }
@@ -571,7 +575,11 @@ function branchSiblings(item){
 }
 
 function visibleRoots(){
-  return [...itemsById.values()].filter(item=>isVisibleItem(item)&&nearestVisibleParentId(item.item_id)===null);
+  return historyHeads.filter(isVisibleItem);
+}
+
+function branchKey(item){
+  return Number(item.branch_root_id??item.item_id);
 }
 
 function rememberCurrentSelection(){
@@ -592,12 +600,14 @@ function expandUserAncestors(itemId){
   }
 }
 
-function selectBranchNode(itemId){
-  const item=itemsById.get(itemId);if(!item)return;
+async function selectBranchNode(itemId,branchHeadId=null){
+  const item=itemsById.get(itemId)||historyHeads.find(head=>head.item_id===itemId);if(!item)return;
   const preferred=selectedLeafByNode.get(itemId);
-  selectedHeadId=preferred!==undefined&&chainContains(preferred,itemId)?preferred:(latestBranchItemId(itemId)||itemId);
+  selectedHeadId=branchHeadId??(preferred!==undefined&&chainContains(preferred,itemId)?preferred:(latestBranchItemId(itemId)||itemId));
   newRootSelected=false;
-  clearPendingMessage();expandUserAncestors(itemId);rememberCurrentSelection();renderHistory();closeBranchPanel();
+  clearPendingMessage();renderBranchPanel();
+  try{await loadHistory(selectedHeadId)}catch(error){addError("Could not load branch: "+error.message)}
+  closeBranchPanel();
 }
 
 function groupForDate(timestamp){
@@ -614,10 +624,16 @@ function groupForDate(timestamp){
 }
 
 /** @param {DialogItem} root @returns {DialogItem} */
-function rootLatestLeaf(root){return itemsById.get(latestVisibleItemId(root.item_id))||root}
+function rootLatestLeaf(root){
+  const latest=itemsById.get(latestVisibleItemId(root.item_id))||itemsById.get(root.branch_head_id);
+  if(latest)return latest;
+  if(root.branch_updated_at)return {...root,item_id:root.branch_head_id??root.item_id,created_at:root.branch_updated_at};
+  return root;
+}
 
 /** @param {DialogItem} root */
 function branchPreview(root){
+   if(root.branch_preview)return root.branch_preview;
   const descendants=[];const queue=[...childItems(root.item_id)];const seen=new Set();
   while(queue.length){
     const item=queue.shift();if(seen.has(item.item_id))continue;seen.add(item.item_id);descendants.push(item);queue.push(...childItems(item.item_id));
@@ -627,7 +643,7 @@ function branchPreview(root){
     const userInput=item.role==="user"&&["input","image_input","file_input"].includes(item.item_type);
     const assistantOutput=item.role==="assistant"&&["output","image_output","file_output"].includes(item.item_type);
     return userInput||assistantOutput;
-  })||root;
+  })||{content:root.branch_preview||root.content};
   return preview.content||"[empty message]";
 }
 
@@ -637,7 +653,7 @@ function updateBranchTabs(){
 }
 
 function selectReplacementRoot(excludedRootId){
-  const roots=visibleRoots().filter(root=>root.item_id!==excludedRootId&&!isRootDeleted(root.item_id));
+  const roots=visibleRoots().filter(root=>branchKey(root)!==excludedRootId&&!isRootDeleted(branchKey(root)));
   roots.sort((a,b)=>itemTime(rootLatestLeaf(b))-itemTime(rootLatestLeaf(a))||Number(b.item_id)-Number(a.item_id));
   return roots[0]||null;
 }
@@ -648,7 +664,7 @@ function setRootDeleted(rootId,deleted){
   const selectedRootId=selectedHeadId===null?null:rootIdForItem(selectedHeadId);
   if(deleted&&!showDeletedBranches&&selectedRootId===Number(rootId)){
     const replacement=selectReplacementRoot(Number(rootId));
-    if(replacement){selectBranchNode(replacement.item_id);return}
+    if(replacement){void selectBranchNode(replacement.item_id,replacement.branch_head_id);return}
     selectedHeadId=null;newRootSelected=true;
   }
   renderHistory();
@@ -659,7 +675,7 @@ function setBranchView(showDeleted){
   const selectedRootId=selectedHeadId===null?null:rootIdForItem(selectedHeadId);
   if(!showDeleted&&selectedRootId!==null&&isRootDeleted(selectedRootId)){
     const replacement=selectReplacementRoot(selectedRootId);
-    if(replacement){selectBranchNode(replacement.item_id);return}
+    if(replacement){void selectBranchNode(replacement.item_id,replacement.branch_head_id);return}
     selectedHeadId=null;newRootSelected=true;renderHistory();return;
   }
   renderBranchPanel();
@@ -667,16 +683,18 @@ function setBranchView(showDeleted){
 
 function renderBranchPanel(){
   updateBranchTabs();branchList.replaceChildren();
-  const roots=visibleRoots().filter(root=>isRootDeleted(root.item_id)===showDeletedBranches).sort((a,b)=>itemTime(rootLatestLeaf(b))-itemTime(rootLatestLeaf(a))||Number(b.item_id)-Number(a.item_id));
-  if(!roots.length){const empty=document.createElement("div");empty.className="branch-empty";empty.textContent=showDeletedBranches?"No deleted conversations.":"No conversations yet.";branchList.appendChild(empty);return}
-  const groups=new Map();
-  for(const root of roots){const group=groupForDate(itemTime(rootLatestLeaf(root)));const values=groups.get(group)||[];values.push(root);groups.set(group,values)}
-  for(const group of ["today","yesterday","this week","this month","older"]){
-    const values=groups.get(group);if(!values)continue;
-    const section=document.createElement("section");section.className="branch-group";
-    const title=document.createElement("div");title.className="branch-group-title";title.textContent="-- "+group+" --";section.appendChild(title);
-    for(const root of values)section.appendChild(renderBranchNode(root,0));
-    branchList.appendChild(section);
+  const roots=visibleRoots().filter(root=>isRootDeleted(branchKey(root))===showDeletedBranches).sort((a,b)=>itemTime(rootLatestLeaf(b))-itemTime(rootLatestLeaf(a))||Number(b.item_id)-Number(a.item_id));
+  if(!roots.length){const empty=document.createElement("div");empty.className="branch-empty";empty.textContent=showDeletedBranches?"No deleted conversations.":"No conversations yet.";branchList.appendChild(empty)}
+  else{
+    const groups=new Map();
+    for(const root of roots){const group=groupForDate(itemTime(rootLatestLeaf(root)));const values=groups.get(group)||[];values.push(root);groups.set(group,values)}
+    for(const group of ["today","yesterday","this week","this month","older"]){
+      const values=groups.get(group);if(!values)continue;
+      const section=document.createElement("section");section.className="branch-group";
+      const title=document.createElement("div");title.className="branch-group-title";title.textContent="-- "+group+" --";section.appendChild(title);
+      for(const root of values)section.appendChild(renderBranchNode(root,0));
+      branchList.appendChild(section);
+    }
   }
 }
 
@@ -692,14 +710,14 @@ function renderBranchNode(item,depth){
   if(item.item_id===selectedVisibleId())row.classList.add("current");
   const main=document.createElement("button");main.type="button";main.className="branch-row-main";main.style.paddingLeft=(6+depth*14)+"px";main.title="Select branch";
   const preview=document.createElement("span");preview.className="branch-preview";preview.textContent=depth===0?branchPreview(item):(item.content||"[empty message]");main.appendChild(preview);
-  main.addEventListener("click",()=>selectBranchNode(item.item_id));row.appendChild(main);
+  main.addEventListener("click",()=>{void selectBranchNode(item.item_id,item.branch_head_id)});row.appendChild(main);
   const children=logicalChildren(item.item_id);
   if(children.length){
     const toggle=document.createElement("button");toggle.type="button";toggle.className="branch-toggle";toggle.textContent=expandedNodes.has(item.item_id)?"⌄":"›";toggle.setAttribute("aria-expanded",String(expandedNodes.has(item.item_id)));toggle.setAttribute("aria-label",expandedNodes.has(item.item_id)?"Collapse branch":"Expand branch");toggle.title=toggle.getAttribute("aria-label");
     toggle.addEventListener("click",event=>{event.stopPropagation();if(expandedNodes.has(item.item_id))expandedNodes.delete(item.item_id);else expandedNodes.add(item.item_id);renderBranchPanel()});row.appendChild(toggle);
   }
   if(depth===0){
-    const deleted=document.createElement("button");deleted.type="button";deleted.className="branch-delete";const isDeleted=isRootDeleted(item.item_id);deleted.textContent=isDeleted?"↩":"×";deleted.title=isDeleted?"Restore branch":"Hide branch";deleted.setAttribute("aria-label",deleted.title);deleted.addEventListener("click",event=>{event.stopPropagation();setRootDeleted(item.item_id,!isDeleted)});row.appendChild(deleted);
+    const deleted=document.createElement("button");deleted.type="button";deleted.className="branch-delete";const branchId=branchKey(item);const isDeleted=isRootDeleted(branchId);deleted.textContent=isDeleted?"↩":"×";deleted.title=isDeleted?"Restore branch":"Hide branch";deleted.setAttribute("aria-label",deleted.title);deleted.addEventListener("click",event=>{event.stopPropagation();setRootDeleted(branchId,!isDeleted)});row.appendChild(deleted);
   }
   node.appendChild(row);
   if(expandedNodes.has(item.item_id)&&children.length){
@@ -997,44 +1015,74 @@ async function handleServerEvent(data){
   else if(data.type==="typing"){
     if(data.active){showTyping();setUiStatus("Processing...")}else hideTyping();
   }
-  else if(data.type==="message_done"){if(!activeStreamId||data.stream_id===activeStreamId)setProcessing(false)}
+  else if(data.type==="message_done"){if(!activeStreamId||data.stream_id===activeStreamId){setProcessing(false);await loadHistory()}}
   else if(data.type==="error")addError(data.content||data.error||"Server error");
+}
+
+function historyRequestUrl(branchHeadId=null){
+  const params=new URLSearchParams();params.set("heads","1");
+  const requested=branchHeadId??selectedHeadId;params.set("branch_head",requested===null||requested===undefined?"latest":String(requested));
+  return serverUrl("/api/history?")+params.toString();
 }
 
 async function loadHistory(preferredHeadId=null){
   const knownItemIds=new Set(itemsById.keys());
-  const {response,data,unauthorized}=await authJson(serverUrl("/api/history"));
+  const requestedHeadId=preferredHeadId??selectedHeadId;
+  const {response,data,unauthorized}=await authJson(historyRequestUrl(requestedHeadId));
   if(unauthorized)return
   if(!response.ok)throw new Error("History request failed");
-  const previousSelected=selectedHeadId;rebuildGraph(data.items||[]);
-  const preferredItem=typeof preferredHeadId==="number"?itemsById.get(preferredHeadId):null;
-  const preferredContinuesSelection=Boolean(preferredItem&&((selectedHeadId!==null&&chainContains(preferredItem.item_id,selectedHeadId))||(selectedHeadId===null&&!newRootSelected)));
+  const previousSelected=selectedHeadId;
+  historyHeads=Array.isArray(data.heads)?data.heads.filter(head=>head&&head.item_id!==null&&head.item_id!==undefined):[];
+  const incomingItems=Array.isArray(data.items)?data.items:[];
+  rebuildGraph(incomingItems);
+  const responseHeadId=Number.isInteger(data.current_head_id)?data.current_head_id:null;
+  const preferredItem=typeof requestedHeadId==="number"?itemsById.get(requestedHeadId):null;
   const pendingItem=pendingMessage?[...itemsById.values()].filter(item=>!knownItemIds.has(item.item_id)&&pendingItemMatches(item)).sort(compareItems).pop():null;
   const keepSelection=historyLoaded&&!pendingMessage&&previousSelected!==null&&isVisibleItem(itemsById.get(previousSelected));
-  if(pendingItem){selectedHeadId=latestBranchItemId(pendingItem.item_id)||pendingItem.item_id;clearPendingMessage()}else if(preferredContinuesSelection&&preferredItem)selectedHeadId=latestBranchItemId(preferredItem.item_id)||preferredItem.item_id;else if(keepSelection)selectedHeadId=previousSelected;else if(!historyLoaded&&!pendingMessage)selectedHeadId=latestGlobalItemId();else if(!pendingMessage&&selectedHeadId!==null&&!itemsById.has(selectedHeadId))selectedHeadId=latestGlobalItemId();
+  if(pendingItem){selectedHeadId=latestBranchItemId(pendingItem.item_id)||pendingItem.item_id;clearPendingMessage()}
+  else if(responseHeadId!==null)selectedHeadId=responseHeadId;
+  else if(preferredItem)selectedHeadId=latestBranchItemId(preferredItem.item_id)||preferredItem.item_id;
+  else if(keepSelection)selectedHeadId=previousSelected;
+  else if(!historyLoaded&&!pendingMessage)selectedHeadId=latestGlobalItemId();
+  else if(!pendingMessage&&selectedHeadId!==null&&!itemsById.has(selectedHeadId))selectedHeadId=latestGlobalItemId();
   historyLoaded=true;rememberCurrentSelection();renderHistory();
 }
 
-async function handleEventStream(response){
-  if(!response.body)throw new Error("Events stream has no body");
-  const reader=response.body.getReader();currentReader=reader;const decoder=new TextDecoder();let buffer="";let ended=false;
-  try{
-    while(authToken){const result=await reader.read();if(result.done){ended=true;break}buffer+=decoder.decode(result.value,{stream:true});const lines=buffer.split("\n");buffer=lines.pop();for(const line of lines){if(!line.startsWith("data: "))continue;try{const data=JSON.parse(line.slice(6));if(data.type!=="done")await handleServerEvent(data)}catch{}}}
-  }
-  finally{if(!ended)await reader.cancel().catch(()=>{});if(currentReader===reader)currentReader=null}
+function handleEventStream(){
+  const request=new XMLHttpRequest();eventsRequest=request;let offset=0;let buffer="";let opened=false;let settled=false;let processing=Promise.resolve();let resolveDone;let rejectDone;
+  const done=new Promise((resolve,reject)=>{resolveDone=resolve;rejectDone=reject});
+  const finish=error=>{if(settled)return;settled=true;if(error)rejectDone(error);else resolveDone()};
+  const consume=()=>{
+    const text=request.responseText.slice(offset);offset=request.responseText.length;if(!text)return;
+    processing=processing.then(async()=>{buffer+=text;const lines=buffer.split("\n");buffer=lines.pop()||"";for(const line of lines){if(!line.startsWith("data: "))continue;try{const data=JSON.parse(line.slice(6));if(data.type!=="done")await handleServerEvent(data)}catch{}}});
+  };
+  const finishRequest=()=>{consume();processing.then(()=>finish(request.status===0?new Error("Events stream disconnected"):null)).catch(finish)};
+  request.onreadystatechange=()=>{
+    if(request.readyState===XMLHttpRequest.HEADERS_RECEIVED&&!opened){
+      if(request.status===401){expireSession();request.abort();finish(new Error("Unauthorized"));return}
+      if(request.status<200||request.status>=300){setServerConnected(false);request.abort();finish(new Error(`Events stream returned HTTP ${request.status}`));return}
+      opened=true;setServerConnected(true);setEventsReady(true);
+    }
+    if(request.readyState===XMLHttpRequest.LOADING)consume();
+    if(request.readyState===XMLHttpRequest.DONE)finishRequest();
+  };
+  request.onerror=()=>finish(new Error("Events stream failed"));
+  request.onabort=()=>{const error=new Error("Events stream aborted");if(eventsAbortController?.signal.aborted)error.name="AbortError";finish(error)};
+  request.open("GET",serverUrl("/api/events"),true);
+  for(const [name,value] of Object.entries(authHeaders()))request.setRequestHeader(name,value);
+  request.setRequestHeader("Accept","text/event-stream");
+  if(eventsAbortController){eventsAbortController.signal.addEventListener("abort",()=>request.abort(),{once:true})}
+  request.send();
+  return done.finally(()=>{if(eventsRequest===request)eventsRequest=null});
 }
 
 async function eventsLoop(){
   while(authToken){
     setEventsReady(false);
     try{
-      eventsAbortController=new AbortController();const response=await authFetch(serverUrl("/api/events"),{signal:eventsAbortController.signal});
-      if(isUnauthorized(response))return
-      if(!response.ok){setServerConnected(false);await new Promise(resolve=>setTimeout(resolve,1000));continue}
-      setServerConnected(true);
-      setEventsReady(true);
+      eventsAbortController=new AbortController();const streamPromise=handleEventStream();
       try{await loadHistory()}catch(error){console.error("[CommaMatrix UI] event history refresh failed",error)}
-      await handleEventStream(response);
+      await streamPromise;
       setEventsReady(false);setServerConnected(false);
     }catch(error){
       setEventsReady(false);
@@ -1095,8 +1143,8 @@ serverStatusBtn.addEventListener("click",()=>{const visible=serverStatusPanel.cl
 passwordBtn.addEventListener("click",()=>{setHeaderMenuOpen(false);passwordError.textContent="";passwordForm.reset();passwordOverlay.classList.remove("hidden")});
 document.getElementById("password-cancel").addEventListener("click",()=>passwordOverlay.classList.add("hidden"));
 passwordForm.addEventListener("submit",async event=>{event.preventDefault();passwordError.textContent="";const next=document.getElementById("new-password").value;if(next!==document.getElementById("new-password-confirm").value){passwordError.textContent="Passwords do not match";return}try{const {response,data,unauthorized}=await authJson(serverUrl("/api/password"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({old_password:document.getElementById("old-password").value,new_password:next})});if(unauthorized)return;if(!response.ok){passwordError.textContent=data.detail||"Password change failed";return}passwordOverlay.classList.add("hidden")}catch(error){passwordError.textContent="Network error: "+error.message}});
-inviteBtn.addEventListener("click",async()=>{setHeaderMenuOpen(false);const {response,data,unauthorized}=await authJson(serverUrl("/api/invite"),{method:"POST"});if(unauthorized)return;if(!response.ok){addError(data.detail||"Could not create invitation");return}inviteUrl.textContent=data.url;inviteOverlay.classList.remove("hidden")});
-document.getElementById("invite-copy").addEventListener("click",async function(){await navigator.clipboard.writeText(inviteUrl.textContent);this.textContent="Copied";setTimeout(()=>{this.textContent="Copy link"},1200)});
+inviteBtn.addEventListener("click",async()=>{setHeaderMenuOpen(false);const {response,data,unauthorized}=await authJson(serverUrl("/api/invite"),{method:"POST"});if(unauthorized)return;if(!response.ok){addError(data.detail||"Could not create invitation");return}inviteLink=data.url||"";inviteOverlay.classList.remove("hidden")});
+document.getElementById("invite-copy").addEventListener("click",async function(){await navigator.clipboard.writeText(inviteLink);this.textContent="Copied";setTimeout(()=>{this.textContent="Copy link"},1200)});
 document.getElementById("invite-close").addEventListener("click",()=>inviteOverlay.classList.add("hidden"));
 attachmentCancel.addEventListener("click",closeAttachmentOverlay);
 insertLinkChoice.addEventListener("click",openLinkOverlay);

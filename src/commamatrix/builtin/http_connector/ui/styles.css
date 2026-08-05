@@ -168,7 +168,6 @@ body.header-menu-open .header-menu-btn{border:1px solid var(--accent);color:var(
 .auth-card button.secondary:not(:disabled):hover{border-color:var(--accent);color:var(--accent);background:rgba(88,166,255,.08)}
 .attachment-choice-card{display:flex;flex-direction:column;gap:4px}
 .auth-error{color:var(--error);font-size:13px;min-height:18px}
-.auth-success{color:var(--success);font-size:13px;line-height:1.45;word-break:break-all}
 body.auth-locked #app-shell{filter:blur(6px);pointer-events:none;user-select:none}
 .icon-button{border:0;background:transparent;color:var(--text);font-size:20px;line-height:1;padding:4px}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}

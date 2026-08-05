@@ -69,6 +69,8 @@ async def get_origins(platform: str = "any") -> str:
     base_fields = set(DialogOrigin.model_fields)
     by_platform: dict[str, list[type[DialogOrigin]]] = {}
     for origin_cls in ORIGIN_REGISTRY.values():
+        if origin_cls.__name__ == 'InternalOrigin':
+            continue
         by_platform.setdefault(origin_cls.model_fields["platform"].default, []).append(origin_cls)
 
     lines: list[str] = []

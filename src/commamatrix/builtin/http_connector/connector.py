@@ -122,6 +122,7 @@ class HttpConnector(Connector[HttpOrigin]):
         self._timezones_by_user: dict[int, tzinfo] = {}
         self._files: dict[str, HttpFileRecord] = {}
         self._status_messages: list[HttpStatusMessage] = []
+        self._history_cache: dict[int, list[DialogItem]] = {}
         self._stream_tasks: dict[str, asyncio.Task] = {}
         self._route_handles: list[object] = []
         self._request_streaming: ContextVar[bool] = ContextVar(f"http_streaming:{id(self)}", default=True)
@@ -230,7 +231,7 @@ class HttpConnector(Connector[HttpOrigin]):
         if not self.file_upload_allowed:
             messages.append({"message": _NO_PUBLIC_ADDRESS_MESSAGE, "severity": "yellow"})
         messages.extend({"message": item.message, "severity": item.severity} for item in self._status_messages)
-        return {"messages": messages, "file_upload_allowed": self.file_upload_allowed, "poll_after": 10}
+        return {"messages": messages, "file_upload_allowed": self.file_upload_allowed, "poll_after": 3}
 
     async def _status(self, _request: Request) -> Response:
         return JSONResponse(self._status_payload())
@@ -250,7 +251,11 @@ class HttpConnector(Connector[HttpOrigin]):
 
     async def _create_invite(self, _request: Request) -> Response:
         token = await self.authorizer.create_invite()
-        url = f"{self.base_url}/invite?token={token}"
+        base_url = self.base_url.rstrip("/")
+        parsed = urlparse(base_url)
+        if parsed.hostname == "0.0.0.0":
+            base_url = parsed._replace(netloc=parsed.netloc.replace("0.0.0.0", "127.0.0.1", 1)).geturl().rstrip("/")
+        url = f"{base_url}/invite?token={token}"
         return JSONResponse({"url": url})
 
     async def _cancel_message(self, request: Request) -> Response:
@@ -287,6 +292,7 @@ class HttpConnector(Connector[HttpOrigin]):
         self._sessions.clear()
         self._sessions_by_user.clear()
         self._timezones_by_user.clear()
+        self._history_cache.clear()
 
     async def parse(self, data: dict) -> OnParsedCtx | None:
         if data.get("platform") != "http":
@@ -422,12 +428,13 @@ class HttpConnector(Connector[HttpOrigin]):
 
     async def publish_item(self, origin: DialogOrigin, item: DialogItem) -> None:
         if isinstance(origin, HttpOrigin):
+            self._cache_item(item)
             await self._publish(origin.http_user_id, _serialize_item(item))
 
     async def send_stream_chunk(self, origin: DialogOrigin, chunk: StreamDelta) -> None:
         if not isinstance(origin, HttpOrigin):
             return
-        meta = dict(chunk.meta)
+        meta = {key: value for key, value in chunk.meta.items() if key != "llm"}
         await self._publish(origin.http_user_id, {"type": "stream_chunk", "stream_id": meta.pop("stream_id", None), "item_type": {"text": "output", "reasoning": "reasoning"}.get(chunk.delta_type, chunk.delta_type), "delta_type": chunk.delta_type, "content": chunk.content, "previous_item_id": meta.pop("previous_item_id", None), "meta": meta})
 
     @asynccontextmanager
@@ -458,6 +465,7 @@ class HttpConnector(Connector[HttpOrigin]):
             sessions.discard(session.session_id)
             if not sessions:
                 self._sessions_by_user.pop(session.user_id, None)
+                self._history_cache.pop(session.user_id, None)
 
     @staticmethod
     def _is_user_origin(item: DialogItem, user_id: int) -> bool:
@@ -474,34 +482,181 @@ class HttpConnector(Connector[HttpOrigin]):
             return False
         return branch_has_visible
 
-    async def _history_for_user(self, user_id: int) -> list[dict]:
-        items = await self.agent.storage.get_history()
+    def _cache_item(self, item: DialogItem) -> None:
+        if item.item_id is None or not isinstance(item.origin, HttpOrigin):
+            return
+        cached = self._history_cache.get(item.origin.http_user_id)
+        if cached is None:
+            return
+        for index, cached_item in enumerate(cached):
+            if cached_item.item_id == item.item_id:
+                cached[index] = item
+                break
+        else:
+            cached.append(item)
+            cached.sort(key=lambda value: value.item_id or 0)
+
+    async def _history_for_user(self, user_id: int) -> list[DialogItem]:
+        cached = self._history_cache.get(user_id)
+        if cached is not None:
+            return cached
+
+        items = await self.agent.storage.get_history(origin_type=HttpOrigin, origin_fields={"http_user_id": user_id})
         by_id = {item.item_id: item for item in items if item.item_id is not None}
-        included_ids: set[int] = set()
         for item in items:
-            if item.item_id is None or not self._is_user_origin(item, user_id):
+            if item.item_id is None or item.previous_item_id is None or item.previous_item_id in by_id:
                 continue
-            current_id: int | None = item.item_id
+            for ancestor in await self.agent.storage.get_branch(item.item_id):
+                if ancestor.item_id is not None:
+                    by_id.setdefault(ancestor.item_id, ancestor)
+
+        cached = sorted(by_id.values(), key=lambda item: item.item_id or 0)
+        self._history_cache[user_id] = cached
+        return cached
+
+    @staticmethod
+    def _history_tree(items: list[DialogItem], head_id: int | None) -> list[DialogItem]:
+        if head_id is None:
+            return []
+        by_id = {item.item_id: item for item in items if item.item_id is not None}
+        head = by_id.get(head_id)
+        if head is None:
+            return []
+
+        root_id = head.item_id
+        current = head
+        visited: set[int] = set()
+        while current.item_id is not None and current.item_id not in visited:
+            visited.add(current.item_id)
+            parent = by_id.get(current.previous_item_id)
+            if parent is None:
+                break
+            root_id = parent.item_id
+            current = parent
+
+        children: dict[int, list[int]] = {}
+        for item in items:
+            if item.item_id is None or item.previous_item_id not in by_id:
+                continue
+            children.setdefault(item.previous_item_id, []).append(item.item_id)
+
+        result: list[DialogItem] = []
+        stack = [root_id]
+        seen: set[int] = set()
+        while stack:
+            item_id = stack.pop()
+            if item_id in seen:
+                continue
+            seen.add(item_id)
+            item = by_id.get(item_id)
+            if item is None:
+                continue
+            result.append(item)
+            stack.extend(children.get(item_id, ()))
+        result.sort(key=lambda item: item.item_id or 0)
+        return result
+
+    def _branch_preview(self, items: list[DialogItem], root: DialogItem, user_id: int) -> str:
+        if root.item_id is None:
+            return root.content
+        by_id = {item.item_id: item for item in items if item.item_id is not None}
+        children: dict[int, list[int]] = {}
+        for item in items:
+            if item.item_id is None or item.previous_item_id not in by_id:
+                continue
+            children.setdefault(item.previous_item_id, []).append(item.item_id)
+
+        branch: list[DialogItem] = []
+        stack = [root.item_id]
+        seen: set[int] = set()
+        while stack:
+            item_id = stack.pop()
+            if item_id in seen:
+                continue
+            seen.add(item_id)
+            item = by_id.get(item_id)
+            if item is None:
+                continue
+            branch.append(item)
+            stack.extend(children.get(item_id, ()))
+        branch.sort(key=lambda item: (item.created_at, item.item_id or 0))
+
+        message_types = {
+            DialogItemType.INPUT,
+            DialogItemType.IMAGE_INPUT,
+            DialogItemType.FILE_INPUT,
+            DialogItemType.OUTPUT,
+            DialogItemType.IMAGE_OUTPUT,
+            DialogItemType.FILE_OUTPUT,
+        }
+        messages = [
+            item
+            for item in branch
+            if self._is_user_origin(item, user_id)
+            and item.role in {DialogRole.USER, DialogRole.ASSISTANT}
+            and item.item_type in message_types
+        ]
+        return (messages or branch)[0].content if messages or branch else ""
+
+    def _history_heads(self, items: list[DialogItem], user_id: int) -> list[tuple[DialogItem, DialogItem]]:
+        by_id = {item.item_id: item for item in items if item.item_id is not None}
+        visible = [item for item in items if item.item_id is not None and self._is_user_origin(item, user_id)]
+        children: dict[int, set[int]] = {}
+        for item in items:
+            if item.item_id is None or item.previous_item_id not in by_id or not self._is_user_origin(item, user_id):
+                continue
+            children.setdefault(item.previous_item_id, set()).add(item.item_id)
+
+        roots: list[DialogItem] = []
+        root_by_id: dict[int, DialogItem] = {}
+        for item in visible:
+            current_id = item.previous_item_id
             visited: set[int] = set()
+            visible_parent = False
             while current_id is not None and current_id not in visited:
                 visited.add(current_id)
-                if current_id in included_ids:
+                parent = by_id.get(current_id)
+                if parent is None:
                     break
-                current = by_id.get(current_id)
-                if current is None:
+                if self._is_user_origin(parent, user_id):
+                    visible_parent = True
                     break
-                included_ids.add(current_id)
-                current_id = current.previous_item_id
-
-        result: list[dict] = []
-        for item in items:
-            if item.item_id is None or item.item_id not in included_ids:
+                current_id = parent.previous_item_id
+            if visible_parent:
                 continue
-            if self._is_user_origin(item, user_id):
-                result.append(_serialize_item(item))
-            else:
-                result.append({"item_id": item.item_id, "previous_item_id": item.previous_item_id})
+            roots.append(item)
+            root_by_id[item.item_id] = item
+
+        latest_by_root: dict[int, DialogItem] = {}
+        for item in visible:
+            if children.get(item.item_id):
+                continue
+            current = item
+            visited: set[int] = set()
+            root_id: int | None = None
+            while current.item_id is not None and current.item_id not in visited:
+                visited.add(current.item_id)
+                if current.item_id in root_by_id:
+                    root_id = current.item_id
+                    break
+                parent = by_id.get(current.previous_item_id)
+                if parent is None:
+                    break
+                current = parent
+            if root_id is None:
+                continue
+            latest = latest_by_root.get(root_id)
+            if latest is None or (item.item_id or 0) > (latest.item_id or 0):
+                latest_by_root[root_id] = item
+
+        result = [(latest_by_root[root.item_id], root) for root in roots if root.item_id in latest_by_root]
+        result.sort(key=lambda pair: pair[0].item_id or 0, reverse=True)
         return result
+
+    def _serialize_history_item(self, item: DialogItem, user_id: int) -> dict:
+        if self._is_user_origin(item, user_id):
+            return _serialize_item(item)
+        return {"item_id": item.item_id, "previous_item_id": item.previous_item_id}
 
     def _file_content_url(self, file_id: str) -> str:
         return f"{SERVER_ROOT}/files/{quote(file_id, safe='')}"
@@ -624,7 +779,7 @@ class HttpConnector(Connector[HttpOrigin]):
         )
 
     async def _user_history(self, user_id: int) -> list[DialogItem]:
-        return await self.agent.storage.get_history(origin_type=HttpOrigin, origin_fields={"http_user_id": user_id})
+        return await self._history_for_user(user_id)
 
     async def _normalize_attachments(self, value: object) -> tuple[list[dict], str | None]:
         if value is None:
@@ -805,12 +960,41 @@ class HttpConnector(Connector[HttpOrigin]):
     async def _handle_history(self, request: Request) -> Response:
         user_id = request.state.user.id
         items = await self._history_for_user(user_id)
-        return JSONResponse({"items": items})
+        heads = self._history_heads(items, user_id)
+        branch_head_value = request.query_params.get("branch_head")
+        current_head_id: int | None = None
+        if branch_head_value == "latest":
+            if heads:
+                current_head_id = heads[0][0].item_id
+        elif branch_head_value:
+            try:
+                current_head_id = int(branch_head_value)
+            except ValueError:
+                return JSONResponse({"error": "'branch_head' must be an integer, 'latest', or null"}, status_code=400)
+            if current_head_id not in {item.item_id for item in items}:
+                current_head_id = None
+
+        head_payloads = []
+        if request.query_params.get("heads") == "1":
+            for head, root in heads:
+                payload = _serialize_item(head)
+                payload["branch_head_id"] = head.item_id
+                payload["branch_root_id"] = root.item_id
+                payload["branch_preview"] = self._branch_preview(items, root, user_id)
+                payload["branch_updated_at"] = head.created_at.isoformat() if head.created_at else None
+                head_payloads.append(payload)
+
+        branch_items = self._history_tree(items, current_head_id)
+        return JSONResponse({
+            "items": [self._serialize_history_item(item, user_id) for item in branch_items],
+            "heads": head_payloads,
+            "current_head_id": current_head_id,
+        })
 
 
 async def _sse_generator(queue: asyncio.Queue[dict | None], on_disconnect=None):
     disconnected = False
-    yield ": connected\n\n"
+    yield 'data: {"type":"ready"}\n\n'
     try:
         while True:
             try:
@@ -831,4 +1015,5 @@ async def _sse_generator(queue: asyncio.Queue[dict | None], on_disconnect=None):
 
 
 def _serialize_item(item: DialogItem) -> dict:
-    return {"type": "dialog_item", "item_id": item.item_id, "previous_item_id": item.previous_item_id, "item_type": item.item_type.value, "role": item.role.value, "content": item.content, "user": item.user, "origin": item.origin.model_dump(mode="json"), "external_id": item.external_id, "created_at": item.created_at.isoformat() if item.created_at else None, "meta": item.meta}
+    meta = {key: value for key, value in item.meta.items() if key != "llm"}
+    return {"type": "dialog_item", "item_id": item.item_id, "previous_item_id": item.previous_item_id, "item_type": item.item_type.value, "role": item.role.value, "content": item.content, "user": item.user, "origin": item.origin.model_dump(mode="json"), "external_id": item.external_id, "created_at": item.created_at.isoformat() if item.created_at else None, "meta": meta}

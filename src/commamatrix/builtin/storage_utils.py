@@ -26,13 +26,13 @@ def _row_to_dict(row: Any) -> dict[str, Any] | Any:
 
 def _schema_text(storage: Any, tables: list[str]) -> str:
     table_text = ("\n" + "\n".join(tables)) or "none"
-    return f"Persistent storage: {_storage_kind(storage)}. Tables:{table_text}."
+    return f"# Storage\nType: {_storage_kind(storage)}.\nTables:{table_text}."
 
 
 @tool(alias="storage")
 async def execute(query: str, params: list | None = None, *, ctx: BeforeToolCallCtx) -> str:
     """
-    Execute SQL against the active persistent storage and return serialized results.
+    Execute SQL against persistent storage and return serialized results.
     Use RETURNING for INSERT, UPDATE, or DELETE when changed rows are needed.
     """
     rows = await ctx.run.agent.storage.execute(query, tuple(params or ()))

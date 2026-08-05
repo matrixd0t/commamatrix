@@ -21,5 +21,5 @@ __all__ = [
     "HTTPSession",
     "http_auth_app_name",
     "http_auth_jwt_secret",
-    "http_auth_token_ttl_seconds"
+    "http_auth_token_ttl_seconds",
 ]
