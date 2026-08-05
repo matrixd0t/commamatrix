@@ -6,12 +6,18 @@ build-backend = "hatchling.build"
 name = "commamatrix"
 version = "0.1.0"
 description = "AI Agent Orchestration Framework"
+readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "pydantic",
     "httpx2>=2.9.1,<3",
     "matrix-fn-schema>=0.1.9",
 ]
+
+[project.urls]
+Homepage = "https://github.com/matrixd0t/commamatrix"
+Repository = "https://github.com/matrixd0t/commamatrix"
+Issues = "https://github.com/matrixd0t/commamatrix/issues"
 
 [project.optional-dependencies]
 # Optional integrations can be selected individually, for example:

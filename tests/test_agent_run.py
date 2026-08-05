@@ -230,7 +230,7 @@ async def _setup_agent(
     hooks: dict[str, list] | None = None,
 ) -> tuple[Agent, RecordingConnector, InMemoryStorage]:
     """Create an agent with mock LLM, recording connector, and in-memory storage."""
-    agent = Agent(config={}, auto_load_main=False)
+    agent = Agent("test", config={}, auto_load_main=False)
 
     connector = connector_cls(agent=agent)
     llm = MockLLMAdapter(agent, events)
@@ -422,7 +422,7 @@ class TestAgentRunStreaming:
 
 def _make_multi_call_agent(events_list, connector_cls=RecordingConnector):
     """Create an agent with a multi-call LLM adapter."""
-    agent = Agent(config={}, auto_load_main=False)
+    agent = Agent("test", config={}, auto_load_main=False)
     call_count = 0
 
     class MultiCallAdapter(LLMAdapter):

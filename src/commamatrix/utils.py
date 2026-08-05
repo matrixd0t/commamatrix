@@ -66,13 +66,7 @@ class TextFileSnapshot:
 
     __slots__ = ("content", "file_format", "digest", "mode")
 
-    def __init__(
-        self,
-        content: str,
-        file_format: TextFileFormat,
-        digest: str,
-        mode: int,
-    ) -> None:
+    def __init__(self, content: str, file_format: TextFileFormat, digest: str, mode: int) -> None:
         self.content = content
         self.file_format = file_format
         self.digest = digest
@@ -185,13 +179,7 @@ def write_bytes_file(path: Path, data: bytes, *, mode: int | None = None) -> Non
             pass
 
 
-def write_text_file(
-    path: Path,
-    content: str,
-    *,
-    file_format: TextFileFormat | None = None,
-    mode: int | None = None,
-) -> None:
+def write_text_file(path: Path, content: str, *, file_format: TextFileFormat | None = None, mode: int | None = None) -> None:
     """Atomically write UTF text while preserving existing file formatting."""
     if file_format is None and path.exists():
         snapshot = read_text_file(path)
@@ -206,29 +194,12 @@ async def read_text_file_async(path: Path) -> TextFileSnapshot:
     return await asyncio.to_thread(read_text_file, path)
 
 
-async def write_bytes_file_async(
-    path: Path,
-    data: bytes,
-    *,
-    mode: int | None = None,
-) -> None:
+async def write_bytes_file_async(path: Path, data: bytes, *,  mode: int | None = None) -> None:
     await asyncio.to_thread(write_bytes_file, path, data, mode=mode)
 
 
-async def write_text_file_async(
-    path: Path,
-    content: str,
-    *,
-    file_format: TextFileFormat | None = None,
-    mode: int | None = None,
-) -> None:
-    await asyncio.to_thread(
-        write_text_file,
-        path,
-        content,
-        file_format=file_format,
-        mode=mode,
-    )
+async def write_text_file_async(path: Path, content: str, *, file_format: TextFileFormat | None = None, mode: int | None = None) -> None:
+    await asyncio.to_thread(write_text_file, path, content, file_format=file_format, mode=mode)
 
 
 async def await_if_needed(result: Any) -> Any:

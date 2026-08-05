@@ -2,7 +2,7 @@
 """Agent orchestrator — the top-level entry point for CommaMatrix.
 
 Agent creates all native managers, wires them into AgentLifecycle for lifecycle management,
-and provides the public API: start(), stop(), handle(raw), run(), and submit_run().
+and provides the public API: start(), stop(), run_forever(), handle(raw), run(), and submit_run().
 Extensions are activated per-agent via add_extensions(), with optional workspace plugin auto-discovery.
 """
 
@@ -13,7 +13,7 @@ import json
 import sys
 import types
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator, MutableMapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 from traceback import format_exc
@@ -58,7 +58,6 @@ from ...components.llm_adapter import (
     ToolCall,
     ToolCallResult,
 )
-from ...components.http_client import HTTP_BASE_HEADERS, http_default_headers, http_timeout
 from ...components.storage import STORAGE_ATTRIBUTE
 from ...components.file_storage import FILE_STORAGE_ATTRIBUTE
 from ..classes.manager import ServiceInstanceRegistry
@@ -101,6 +100,50 @@ agentic_model = ConfigField[str](
 )
 
 
+class AgentRegistry(MutableMapping[str, "Agent"]):
+    """Resolve agents by their current, mutable names."""
+
+    def __init__(self) -> None:
+        self._agents: dict[int, Agent] = {}
+
+    def register(self, agent: Agent) -> None:
+        for agent_id, current in list(self._agents.items()):
+            if current is not agent and current.name == agent.name:
+                del self._agents[agent_id]
+        self._agents[id(agent)] = agent
+
+    def __getitem__(self, name: str) -> Agent:
+        for agent in reversed(list(self._agents.values())):
+            if agent.name == name:
+                return agent
+        raise KeyError(name)
+
+    def __setitem__(self, name: str, agent: Agent) -> None:
+        self.register(agent)
+
+    def __delitem__(self, name: str) -> None:
+        agent = self[name]
+        del self._agents[id(agent)]
+
+    def __iter__(self) -> Iterator[str]:
+        names: set[str] = set()
+        for agent in self._agents.values():
+            if agent.name not in names:
+                names.add(agent.name)
+                yield agent.name
+
+    def __len__(self) -> int:
+        return len({agent.name for agent in self._agents.values()})
+
+
+agent_by_name = AgentRegistry()
+
+
+def get_subagent_by_name(name: str) -> Agent:
+    """Return the agent registered under its current name."""
+    return agent_by_name[name]
+
+
 class Agent:
     """Orchestrates the agent lifecycle: parse -> LLM -> tools -> send."""
 
@@ -119,12 +162,17 @@ class Agent:
 
     def __init__(
             self,
+            name: str,
+            description: str = "",
             *,
             config: dict[ConfigField, Any] | Config = {},
             auto_load_main: bool = True,
             auto_load_plugins: bool = True,
     ):
         load_dotenv()
+        self.name = name
+        self.description = description
+        agent_by_name.register(self)
         if isinstance(config, dict):
             config = Config(overrides=config)
         self.config: Config = config
@@ -233,6 +281,11 @@ class Agent:
         await self.lifecycle.stop()
         await self.runner.stop()
         self._started = False
+
+    async def run_forever(self) -> None:
+        """Start the agent and keep it alive until the task is cancelled."""
+        async with self:
+            await asyncio.Event().wait()
 
     async def __aenter__(self) -> Agent:
         await self.start()

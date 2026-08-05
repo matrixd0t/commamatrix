@@ -9,31 +9,31 @@ Python path.
 Install the test dependencies with:
 
 ```text
-python -m pip install -e ".[test]"
+uv sync --extra test
 ```
 
 Run the complete suite:
 
 ```text
-python -m pytest
+uv run pytest
 ```
 
 Run only CodeAct tests:
 
 ```text
-python -m pytest tests/test_codeact.py -q
+uv run pytest tests/test_codeact.py -q
 ```
 
 Run a focused group by keyword:
 
 ```text
-python -m pytest -k codeact
+uv run pytest -k codeact
 ```
 
 Inspect test collection without running tests:
 
 ```text
-python -m pytest --collect-only
+uv run pytest --collect-only
 ```
 
 ## Layout

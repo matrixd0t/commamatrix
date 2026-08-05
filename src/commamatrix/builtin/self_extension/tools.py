@@ -74,7 +74,7 @@ async def list_all(*, ctx: BeforeToolCallCtx) -> str:
 
 
 @tool(alias="self_extension", filesystem=True)
-async def readme(ctx: BeforeToolCallCtx) -> str:
+async def read_guide(ctx: BeforeToolCallCtx) -> str:
     """Returns self-modification guide together with runtime and installation information."""
     path = ctx.run.agent.config.get(guide_path)
     version = sys.version_info

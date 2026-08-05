@@ -30,17 +30,17 @@ from ..utils import (
 from .web_utils.security import validate_url
 
 read_timeout = ConfigField[int](
-    name="data.read_timeout",
+    name="read_timeout",
     default=30,
     description="Timeout in seconds for a single HTTP request during read.",
 )
 read_max_response_bytes = ConfigField[int](
-    name="data.read_max_response_bytes",
+    name="read_max_response_bytes",
     default=5_242_880,
     description="Maximum byte count for a downloaded URL during read.",
 )
 read_max_redirects = ConfigField[int](
-    name="data.read_max_redirects",
+    name="read_max_redirects",
     default=5,
     description="Maximum number of HTTP redirects to follow during read.",
 )
@@ -222,19 +222,11 @@ async def read(ref: str, max_chars: int = 4000, *, ctx: BeforeToolCallCtx) -> st
         local_path: Path | None = None
         if _is_local_path_ref(ref):
             try:
-                local_path = resolve_path(
-                    ref,
-                    root=Path.cwd(),
-                    allow_absolute=ctx.run.agent.config.get(allow_absolute_paths),
-                )
+                local_path = resolve_path(ref, root=Path.cwd(), allow_absolute=ctx.run.agent.config.get(allow_absolute_paths))
             except ValueError as exc:
                 return f"Error: {exc}"
         else:
-            candidate = resolve_path(
-                ref,
-                root=Path.cwd(),
-                allow_absolute=ctx.run.agent.config.get(allow_absolute_paths),
-            )
+            candidate = resolve_path(ref, root=Path.cwd(), allow_absolute=ctx.run.agent.config.get(allow_absolute_paths))
             if candidate.is_file():
                 local_path = candidate
 

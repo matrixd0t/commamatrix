@@ -20,7 +20,7 @@ from tests.conftest import StubOrigin, stub_origin, make_dialog_item
 
 class TestAgentInit:
     def test_creates_managers(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         assert agent.tool_manager is not None
         assert agent.hook_manager is not None
         assert agent.instruction_manager is not None
@@ -38,34 +38,42 @@ class TestAgentInit:
 
     def test_config_from_dict(self):
         f = ConfigField[str](name="k", default="v")
-        agent = Agent(config={f: "val"}, auto_load_main=False)
+        agent = Agent("test", config={f: "val"}, auto_load_main=False)
         assert agent.config.get(f) == "val"
 
     def test_config_from_config_object(self):
         cfg = Config()
-        agent = Agent(config=cfg, auto_load_main=False)
+        agent = Agent("test", config=cfg, auto_load_main=False)
         assert agent.config is cfg
 
     def test_not_started_initially(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         assert agent._started is False
 
     def test_extension_scope_empty_when_plugin_autoload_disabled(self):
-        agent = Agent(config={}, auto_load_main=False, auto_load_plugins=False)
+        agent = Agent("test", config={}, auto_load_main=False, auto_load_plugins=False)
         assert agent._extension_scope == []
+
+    def test_coding_preset_points_to_importable_instruction(self):
+        from importlib import import_module
+
+        from commamatrix import presets
+
+        module = import_module(presets.coding[-1])
+        assert module.__name__ == "commamatrix.builtin.instructions.coding"
 
 
 class TestAgentExtensions:
     @pytest.mark.asyncio
     async def test_add_extension_by_string(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         result = await agent.add_extensions("os")
         assert "os" in agent._extension_scope
         assert result == ["os"]
 
     @pytest.mark.asyncio
     async def test_add_extension_by_module(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         import os
 
         result = await agent.add_extensions(os)
@@ -82,7 +90,7 @@ class TestAgentExtensions:
             "    return query\n",
             encoding="utf-8",
         )
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         await agent.add_extensions(str(path))
         await agent.start()
         try:
@@ -110,7 +118,7 @@ class TestAgentExtensions:
             "    return \"pong\"\n",
             encoding="utf-8",
         )
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         await agent.add_extensions(str(package))
         await agent.start()
         try:
@@ -128,20 +136,20 @@ class TestAgentExtensions:
 
     @pytest.mark.asyncio
     async def test_add_extension_no_duplicates(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         await agent.add_extensions("os")
         await agent.add_extensions("os")
         assert agent._extension_scope.count("os") == 1
 
     @pytest.mark.asyncio
     async def test_add_extension_includes_submodules(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         await agent.add_extensions("json")
         assert "json" in agent._extension_scope
 
     @pytest.mark.asyncio
     async def test_add_multiple(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         result = await agent.add_extensions("os", "json")
         assert "os" in agent._extension_scope
         assert "json" in agent._extension_scope
@@ -149,14 +157,14 @@ class TestAgentExtensions:
 
     @pytest.mark.asyncio
     async def test_add_skips_invalid(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         result = await agent.add_extensions(42, "os")
         assert result == ["os"]
         assert "os" in agent._extension_scope
 
     @pytest.mark.asyncio
     async def test_add_reports_invalid_path_and_keeps_scope(self, tmp_path):
-        agent = Agent(
+        agent = Agent("test",
             config={}, auto_load_main=False, auto_load_plugins=False
         )
         missing = tmp_path / "missing_extension.py"
@@ -168,7 +176,7 @@ class TestAgentExtensions:
 
     @pytest.mark.asyncio
     async def test_add_empty(self):
-        agent = Agent(
+        agent = Agent("test",
             config={}, auto_load_main=False, auto_load_plugins=False
         )
         result = await agent.add_extensions()
@@ -177,7 +185,7 @@ class TestAgentExtensions:
 
     @pytest.mark.asyncio
     async def test_remove_extension(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         await agent.add_extensions("os")
         assert "os" in agent._extension_scope
         result = await agent.remove_extensions("os")
@@ -186,7 +194,7 @@ class TestAgentExtensions:
 
     @pytest.mark.asyncio
     async def test_remove_multiple(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         await agent.add_extensions("os", "json")
         result = await agent.remove_extensions("os", "json")
         assert "os" not in agent._extension_scope
@@ -195,20 +203,20 @@ class TestAgentExtensions:
 
     @pytest.mark.asyncio
     async def test_remove_skips_not_in_scope(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         result = await agent.remove_extensions("os")
         assert result == []
 
     @pytest.mark.asyncio
     async def test_remove_skips_invalid(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         await agent.add_extensions("os")
         result = await agent.remove_extensions(42, "os")
         assert result == ["os"]
 
     @pytest.mark.asyncio
     async def test_remove_empty(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         result = await agent.remove_extensions()
         assert result == []
 
@@ -227,7 +235,7 @@ class TestAgentExtensions:
 class TestAgentLifecycle:
     @pytest.mark.asyncio
     async def test_start_and_stop(self):
-        agent = Agent(config={http_port: 0}, auto_load_main=False)
+        agent = Agent("test", config={http_port: 0}, auto_load_main=False)
         await agent.start()
         assert agent._started is True
         await agent.stop()
@@ -235,7 +243,7 @@ class TestAgentLifecycle:
 
     @pytest.mark.asyncio
     async def test_double_start_is_idempotent(self):
-        agent = Agent(config={http_port: 0}, auto_load_main=False)
+        agent = Agent("test", config={http_port: 0}, auto_load_main=False)
         await agent.start()
         await agent.start()
         assert agent._started is True
@@ -243,20 +251,48 @@ class TestAgentLifecycle:
 
     @pytest.mark.asyncio
     async def test_context_manager(self):
-        async with Agent(config={http_port: 0}, auto_load_main=False) as agent:
+        async with Agent("test", config={http_port: 0}, auto_load_main=False) as agent:
             assert agent._started is True
         assert agent._started is False
 
     @pytest.mark.asyncio
+    async def test_run_forever_stops_on_cancellation(self, monkeypatch):
+        agent = Agent("test", config={}, auto_load_main=False)
+        started = asyncio.Event()
+        stopped = asyncio.Event()
+
+        async def fake_start():
+            agent._started = True
+            started.set()
+
+        async def fake_stop():
+            agent._started = False
+            stopped.set()
+
+        monkeypatch.setattr(agent, "start", fake_start)
+        monkeypatch.setattr(agent, "stop", fake_stop)
+
+        task = asyncio.create_task(agent.run_forever())
+        await asyncio.wait_for(started.wait(), timeout=1)
+        assert agent._started is True
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert stopped.is_set()
+        assert agent._started is False
+
+    @pytest.mark.asyncio
     async def test_auto_load_main(self):
-        agent = Agent(config={http_port: 0}, auto_load_main=True)
+        agent = Agent("test", config={http_port: 0}, auto_load_main=True)
         await agent.start()
         assert "__main__" in agent._extension_scope
         await agent.stop()
 
     @pytest.mark.asyncio
     async def test_auto_load_defaults(self):
-        agent = Agent(config={http_port: 0}, auto_load_main=False)
+        agent = Agent("test", config={http_port: 0}, auto_load_main=False)
         await agent.start()
         scope_str = ",".join(agent._extension_scope)
         assert "components.instruction" in scope_str
@@ -290,7 +326,7 @@ class TestAgentLifecycle:
         )
 
         monkeypatch.chdir(tmp_path)
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         assert "direct_plugin" in agent.extension_scope
         assert "package_plugin" in agent.extension_scope
         await agent.start()
@@ -315,7 +351,7 @@ class TestAgentLifecycle:
         )
 
         monkeypatch.chdir(tmp_path)
-        agent = Agent(
+        agent = Agent("test",
             config={},
             auto_load_main=False,
             auto_load_plugins=False,
@@ -333,7 +369,7 @@ class TestAgentLifecycle:
     @pytest.mark.asyncio
     async def test_auto_load_plugins_creates_plugins_dir(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         await agent.start()
         try:
             assert (tmp_path / ".commamatrix" / "plugins").is_dir()
@@ -343,7 +379,7 @@ class TestAgentLifecycle:
     @pytest.mark.asyncio
     async def test_auto_load_plugins_disabled_skips_plugins_dir(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        agent = Agent(
+        agent = Agent("test",
             config={},
             auto_load_main=False,
             auto_load_plugins=False,
@@ -357,7 +393,7 @@ class TestAgentLifecycle:
 
 class TestAgentSplitRuns:
     def test_single_origin(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         origin = stub_origin()
         items = [
             make_dialog_item("a", origin=origin),
@@ -376,7 +412,7 @@ class TestAgentSplitRuns:
         assert len(runs[0][1]) == 2
 
     def test_multiple_origins(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         o1 = stub_origin("chat1")
         o2 = stub_origin("chat2")
         items = [
@@ -397,7 +433,7 @@ class TestAgentSplitRuns:
 
 class TestAgentScopeHasAttribute:
     def test_finds_attribute(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         mod = types.ModuleType("test_scope_attr")
 
         class Svc:
@@ -412,7 +448,7 @@ class TestAgentScopeHasAttribute:
             del sys.modules["test_scope_attr"]
 
     def test_does_not_find_attribute(self):
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         assert agent._scope_has_attribute("__nonexistent__") is False
 
 
@@ -424,7 +460,7 @@ class TestAgentValidateResponse:
             LLMResponseError,
         )
 
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         resp = LLMResponse(stop_reason=StopReason.ERROR)
         with pytest.raises(LLMResponseError):
             agent._validate_response(resp, None)
@@ -436,7 +472,7 @@ class TestAgentValidateResponse:
             LLMTruncatedError,
         )
 
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         resp = LLMResponse(stop_reason=StopReason.LENGTH)
         with pytest.raises(LLMTruncatedError):
             agent._validate_response(resp, None)
@@ -444,6 +480,6 @@ class TestAgentValidateResponse:
     def test_end_turn_ok(self):
         from commamatrix.components.llm_adapter import LLMResponse, StopReason
 
-        agent = Agent(config={}, auto_load_main=False)
+        agent = Agent("test", config={}, auto_load_main=False)
         resp = LLMResponse(stop_reason=StopReason.END_TURN)
         agent._validate_response(resp, None)

@@ -120,17 +120,14 @@ async def search(query: str, limit: int = 5, sites: list[str] | None = None, *, 
         ):
             return "Error: sites must be a JSON array of strings."
         sites = parsed_sites
-    elif sites is not None and (
-        not isinstance(sites, list) or not all(isinstance(site, str) for site in sites)
-    ):
+    elif sites is not None and (not isinstance(sites, list) or not all(isinstance(site, str) for site in sites)):
         return "Error: sites must be a list of strings."
 
-    max_limit = config.get(search_max_limit)
     if limit < 1:
-        return f"Error: limit must be between 1 and {max_limit}."
+        return f"Error: limit must be positive."
     return await do_search(
         query=query,
-        limit=min(limit, max_limit),
+        limit=min(limit, config.get(search_max_limit)),
         sites=sites,
         timeout=config.get(search_timeout),
         max_output=config.get(search_max_output_chars),

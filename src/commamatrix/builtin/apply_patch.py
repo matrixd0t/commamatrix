@@ -17,6 +17,7 @@ from typing import Literal
 
 from ..components.config import ConfigField
 from ..components.hook import BeforeToolCallCtx
+from ..components.instruction import InstructionCtx, instruction
 from ..components.tool import tool
 from ..utils import (
     PathResolutionError,
@@ -105,6 +106,15 @@ max_patch_chars = ConfigField[int](
     default=2_000_000,
     description="Maximum text size accepted by the apply_patch tool.",
 )
+
+
+@instruction(priority=-120)
+def apply_patch_guidance(_ctx: InstructionCtx) -> str:
+    """Recommend the patch tool for code edits and multi-file changes."""
+    return """
+# Code editing
+When editing code, prefer the `code_apply_patch` tool (named `tools.code.apply_patch` in CodeAct) over other I/O methods such as shell redirection or direct file writes. This is especially important when a change affects multiple files: combine related operations into one patch when practical, keep the patch focused, and inspect the affected code before applying it.
+"""
 
 
 # --------------------------------------------------------------------------
@@ -596,6 +606,7 @@ __all__ = [
     "PatchOperationResult",
     "PatchResult",
     "apply_patch",
+    "apply_patch_guidance",
     "apply_patch_text",
     "apply_update",
     "parse_patch",

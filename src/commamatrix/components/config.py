@@ -82,7 +82,7 @@ class Config:
         # 3. Set in Agent config (the ConfigField object itself is the key)
         from my_plugin import api_key, timeout
 
-        agent = Agent(config={
+        agent = Agent(name="main", config={
             api_key: "sk-...",
             timeout: 60.0,
         })

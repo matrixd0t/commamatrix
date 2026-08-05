@@ -4,7 +4,7 @@ This guide explains how to write an extension or a third-party integration for a
 
 ## Public API
 
-The public component API is re-exported from the package root. `Agent(auto_load_plugins=True)` automatically activates existing files and package directories in `<CWD>/.commamatrix/plugins` at startup; pass `auto_load_plugins=False` to opt out. For a quick extension, this is supported:
+The public component API is re-exported from the package root. `Agent("main", auto_load_plugins=True)` automatically activates existing files and package directories in `<CWD>/.commamatrix/plugins` at startup; pass `auto_load_plugins=False` to opt out. For a quick extension, this is supported:
 
 ```python
 from commamatrix import *
@@ -41,7 +41,7 @@ The runtime reserves `<CWD>/.commamatrix/plugins` for this purpose and creates i
 Do not spend a tool call creating this directory.
 
 When a new `Agent` starts, `auto_load_plugins=True` (the default) automatically activates every direct `.py` file and every direct package directory in `<CWD>/.commamatrix/plugins`.
-A package should import its contribution modules from `__init__.py`; nested implementation files are not imported just because they exist. Disable this behavior with `Agent(auto_load_plugins=False)` when the host must activate extensions explicitly.
+A package should import its contribution modules from `__init__.py`; nested implementation files are not imported just because they exist. Disable this behavior with `Agent("main", auto_load_plugins=False)` when the host must activate extensions explicitly.
 Python files created during the current run need a `self_extension.manage(action="add")` call to be used.
 
 ```text
@@ -413,7 +413,7 @@ Read fields through `self.config.get(field)` or
 from commamatrix import Agent
 from my_extension.config import api_key, request_timeout
 
-agent = Agent(config={api_key: "secret", request_timeout: 10.0})
+agent = Agent("main", config={api_key: "secret", request_timeout: 10.0})
 ```
 
 A field without a default fails when it is first read if no override was
