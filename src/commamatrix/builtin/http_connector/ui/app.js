@@ -103,7 +103,7 @@ let statusPollTimer=null;
 let statusPanelOverride=null;
 let statusOverrideTimer=null;
 let serverConnected=null;
-const STATUS_POLL_INTERVAL_MS=10000;
+const STATUS_POLL_INTERVAL_MS=3000;
 const NO_PUBLIC_ADDRESS_MESSAGE="You cannot upload files for LLM: CommaMatrix is not visible from the Internet.";
 
 function updateSendButton(){
@@ -711,7 +711,7 @@ function renderBranchNode(item,depth){
 }
 
 function renderHistory(){
-  hideTyping();messagesEl.replaceChildren();activeStreams={};streamingPreviews={};codeactActiveEl=null;codeactStreamArgs="";codeactStreamToolId=null;lastWasCodeAct=false;
+  hideTyping();hideCodeActSpinner();messagesEl.replaceChildren();activeStreams={};streamingPreviews={};codeactActiveEl=null;codeactStreamArgs="";codeactStreamToolId=null;lastWasCodeAct=false;
   for(const item of currentChain())if(isVisibleItem(item))renderItem(item);
   rememberCurrentSelection();renderBranchPanel();syncActionState();scrollToBottom();
 }
@@ -836,12 +836,17 @@ function decodePartialCodeArg(raw){
 
 function codeActPreviewContent(raw){try{const parsed=JSON.parse(raw);if(parsed&&typeof parsed.code==="string")return parsed.code}catch{}return decodePartialCodeArg(raw)}
 
+function streamPreviewKey(data){
+  const meta=data?.meta||{};const toolId=meta.tool_call_id;
+  return toolId?"tool_call:"+toolId:data?.stream_id||data?.item_type||"stream";
+}
+
 /** @param {StreamEvent} data */
 function updateCodeActPreview(data){
-  const meta=data.meta||{};if(meta.tool_name!=="execute")return false;const toolId=meta.tool_call_id||null;
-  if(codeactStreamToolId&&toolId&&toolId!==codeactStreamToolId){codeactStreamArgs="";if(!document.body.contains(codeactActiveEl))codeactActiveEl=null}
-  if(!codeactActiveEl)addCodeActCall({code:""});codeactStreamToolId=toolId;codeactStreamArgs+=data.content||"";const code=codeActPreviewContent(codeactStreamArgs);const codeEl=codeactActiveEl&&codeactActiveEl.querySelector("pre code");
-  if(codeEl){codeEl.textContent=code;scheduleCodeHighlight(codeEl)}streamingPreviews.tool_call=codeactActiveEl;scrollToBottom();return true;
+  const meta=data.meta||{};if(meta.tool_name!=="execute")return false;const streamKey=data.stream_id||meta.tool_call_id||null;
+  if(codeactStreamToolId&&streamKey&&streamKey!==codeactStreamToolId){codeactStreamArgs="";codeactActiveEl=null}
+  if(!codeactActiveEl)addCodeActCall({code:""});codeactStreamToolId=streamKey;codeactStreamArgs+=data.content||"";const code=codeActPreviewContent(codeactStreamArgs);const codeEl=codeactActiveEl&&codeactActiveEl.querySelector("pre code");
+  if(codeEl){codeEl.textContent=code;scheduleCodeHighlight(codeEl)}streamingPreviews[streamPreviewKey(data)]=codeactActiveEl;scrollToBottom();return true;
 }
 
 function finishCodeActSession(content){
@@ -885,8 +890,16 @@ function syncActionState(){
 /** @param {DialogItem} item */
 function renderItem(item){
   hideTyping();
-  const preview=streamingPreviews[item.item_type];if(preview){preview.remove();delete streamingPreviews[item.item_type]}
-  for(const key of Object.keys(activeStreams)){const stream=activeStreams[key];if(stream.item_type===item.item_type&&stream.previous_item_id===item.previous_item_id){stream.element.remove();delete activeStreams[key]}}
+  const previewKeys=[item.item_type];
+  if(item.item_type==="tool_call"){
+    try{const toolCall=JSON.parse(item.content);if(toolCall.tool_call_id)previewKeys.push("tool_call:"+toolCall.tool_call_id)}catch{}
+  }
+  let itemToolCallId=null;
+  if(item.item_type==="tool_call"){
+    try{itemToolCallId=JSON.parse(item.content).tool_call_id||null}catch{}
+  }
+  for(const key of previewKeys){const preview=streamingPreviews[key];if(preview){preview.remove();delete streamingPreviews[key]}}
+  for(const key of Object.keys(activeStreams)){const stream=activeStreams[key];const sameTool=item.item_type!=="tool_call"||!itemToolCallId||!stream.tool_call_id||stream.tool_call_id===itemToolCallId;if(stream.item_type===item.item_type&&stream.previous_item_id===item.previous_item_id&&sameTool){stream.element.remove();delete activeStreams[key]}}
   if(item.meta?.is_tool_call_result&&!(["image_input","file_input"].includes(item.item_type))){addToolResult(item.content||"");return}
   switch(item.item_type){
     case "input":
@@ -910,8 +923,8 @@ function handleStreamChunk(data){
   if(chunkType==="tool_call"&&updateCodeActPreview(data))return;
   const streamId=data.stream_id||chunkType;let stream=activeStreams[streamId];
   setUiStatus("Streaming...");
-  if(!stream){let element;if(chunkType==="reasoning")element=addReasoning("");else if(chunkType==="tool_call"){element=document.createElement("details");element.className="msg tool-call";element.open=true;const summary=document.createElement("summary");summary.textContent="Tool: ...";element.appendChild(summary);const content=document.createElement("div");element.appendChild(content);messagesEl.appendChild(element)}else element=addMessage("assistant","","Assistant");stream={element,item_type:chunkType,previous_item_id:data.previous_item_id,text:""};activeStreams[streamId]=stream}
-  stream.text+=(data.content||"");const contentEl=stream.element.querySelector("div:last-child")||stream.element;
+  if(!stream){let element;if(chunkType==="reasoning")element=addReasoning("");else if(chunkType==="tool_call"){element=document.createElement("details");element.className="msg tool-call";element.open=true;const summary=document.createElement("summary");summary.textContent="Tool: ...";element.appendChild(summary);const content=document.createElement("div");element.appendChild(content);messagesEl.appendChild(element)}else element=addMessage("assistant","","Assistant");stream={element,item_type:chunkType,previous_item_id:data.previous_item_id,tool_call_id:data.meta?.tool_call_id||null,text:""};activeStreams[streamId]=stream}
+  if(chunkType==="tool_call"&&data.meta?.tool_call_id)stream.tool_call_id=data.meta.tool_call_id;stream.text+=(data.content||"");const contentEl=stream.element.querySelector("div:last-child")||stream.element;
   if(chunkType==="output"||chunkType==="reasoning")renderMarkdown(contentEl,stripOutputMarkers(stream.text));else contentEl.textContent=stream.text;
   scrollToBottom();
 }

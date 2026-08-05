@@ -364,7 +364,14 @@ class Agent:
 
                     async for event in self.llm_adapter.ask_llm(before_llm_ctx, stream=stream):
                         if isinstance(event, StreamDelta):
-                            stream_id = stream_ids.setdefault(event.delta_type, f"stream:{uuid4().hex}")
+                            stream_key = event.delta_type
+                            if event.delta_type == "tool_call":
+                                tool_index = event.meta.get("tool_call_index")
+                                tool_id = event.meta.get("tool_call_id")
+                                tool_key = tool_index if tool_index is not None else tool_id
+                                if tool_key is not None:
+                                    stream_key = f"tool_call:{tool_key}"
+                            stream_id = stream_ids.setdefault(stream_key, f"stream:{uuid4().hex}")
                             event.meta["stream_id"] = stream_id
                             event.meta["previous_item_id"] = last_item_id
                             await connector.send_stream_chunk(run.origin, event)
