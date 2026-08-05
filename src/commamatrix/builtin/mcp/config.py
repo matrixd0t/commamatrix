@@ -1,4 +1,4 @@
-# builtin/mcp/config.py
+# src/commamatrix/builtin/mcp/config.py
 
 from __future__ import annotations
 
@@ -13,11 +13,7 @@ MCPTransport = Literal["stdio", "streamable_http", "sse"]
 
 @dataclass(frozen=True, slots=True)
 class MCPServerSpec:
-    """Connection settings for one MCP server.
-
-    The framework keeps this model transport-neutral so the MCP SDK remains an
-    implementation detail of the runtime.
-    """
+    """Connection settings for one MCP server."""
 
     server_id: str
     transport: MCPTransport = "stdio"
@@ -27,7 +23,6 @@ class MCPServerSpec:
     env: Mapping[str, str] = field(default_factory=dict)
     url: str | None = None
     headers: Mapping[str, str] = field(default_factory=dict)
-    enabled: bool = True
     timeout: float = 30.0
 
     def __post_init__(self) -> None:
@@ -62,7 +57,6 @@ class MCPServerSpec:
                 env=value.env,
                 url=value.url,
                 headers=value.headers,
-                enabled=value.enabled,
                 timeout=value.timeout,
             )
 
@@ -80,9 +74,23 @@ class MCPServerSpec:
             env=dict(data.get("env", {})),
             url=data.get("url"),
             headers=dict(data.get("headers", {})),
-            enabled=bool(data.get("enabled", True)),
             timeout=float(data.get("timeout", 30.0)),
         )
+
+
+def server_spec_to_value(spec: MCPServerSpec) -> dict[str, Any]:
+    """Return a JSON-compatible representation of a server specification."""
+    return {
+        "server_id": spec.server_id,
+        "transport": spec.transport,
+        "command": spec.command,
+        "args": list(spec.args),
+        "cwd": spec.cwd,
+        "env": dict(spec.env),
+        "url": spec.url,
+        "headers": dict(spec.headers),
+        "timeout": spec.timeout,
+    }
 
 
 def normalize_server_specs(value: Any) -> tuple[MCPServerSpec, ...]:
@@ -109,7 +117,7 @@ def normalize_server_specs(value: Any) -> tuple[MCPServerSpec, ...]:
                 raise ValueError("MCP server entries require server_id")
             specs.append(MCPServerSpec.from_value(server_id, raw))
     else:
-        raise TypeError("mcp.servers must be a mapping or iterable")
+        raise TypeError("MCP server configuration must be a mapping or iterable")
 
     ids = [spec.server_id for spec in specs]
     if len(ids) != len(set(ids)):
@@ -117,10 +125,10 @@ def normalize_server_specs(value: Any) -> tuple[MCPServerSpec, ...]:
     return tuple(specs)
 
 
-mcp_servers = ConfigField[Any](
-    name="mcp.servers",
-    default=(),
-    description="MCP server definitions, either MCPServerSpec values or a host-style mapping",
+mcp_config_path = ConfigField[str](
+    name="mcp.config_path",
+    default=".commamatrix/mcp.json",
+    description="Path to the built-in MCP JSON configuration file",
 )
 
 mcp_client_name = ConfigField[str](
@@ -139,8 +147,9 @@ mcp_client_version = ConfigField[str](
 __all__ = [
     "MCPTransport",
     "MCPServerSpec",
+    "server_spec_to_value",
     "normalize_server_specs",
-    "mcp_servers",
+    "mcp_config_path",
     "mcp_client_name",
     "mcp_client_version",
 ]

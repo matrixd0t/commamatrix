@@ -167,3 +167,4 @@ cython_debug/
 /.commamatrix/*.db
 /.commamatrix/*.sqlite
 /.commamatrix/files/
+/.commamatrix/mcp.json

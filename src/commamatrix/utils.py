@@ -79,12 +79,7 @@ class TextFileSnapshot:
         self.mode = mode
 
 
-def resolve_path(
-    value: str | os.PathLike[str],
-    *,
-    root: str | os.PathLike[str] | None = None,
-    allow_absolute: bool = False,
-) -> Path:
+def resolve_path(value: str | os.PathLike[str], *, root: str | os.PathLike[str] | None = None, allow_absolute: bool = False) -> Path:
     """Resolve a user path under ``root`` unless absolute paths are allowed.
 
     Relative paths are interpreted from ``root`` and resolved through symlinks

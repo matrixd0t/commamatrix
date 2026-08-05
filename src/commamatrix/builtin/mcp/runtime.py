@@ -1,4 +1,4 @@
-# builtin/mcp/runtime.py
+# src/commamatrix/builtin/mcp/runtime.py
 
 from __future__ import annotations
 
@@ -7,10 +7,14 @@ import os
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from ...core.classes.service import AbstractService
 from .config import MCPServerSpec
 from .result import normalize_call_result
+
+if TYPE_CHECKING:
+    from ...core.agent.agent import Agent
 
 
 class MCPDependencyError(RuntimeError):
@@ -61,12 +65,22 @@ def _sdk() -> dict[str, Any]:
     }
 
 
-class MCPServerRuntime:
+class MCPServerRuntime(AbstractService):
     """Owns one long-lived MCP transport and client session."""
 
-    def __init__(self, spec: MCPServerSpec, on_tools_changed: Callable[[], None]) -> None:
+    def __init__(
+        self,
+        agent: Agent,
+        spec: MCPServerSpec,
+        on_tools_changed: Callable[[], None],
+        client_name: str,
+        client_version: str,
+    ) -> None:
+        super().__init__(agent)
         self.spec = spec
         self._on_tools_changed = on_tools_changed
+        self._client_name = client_name
+        self._client_version = client_version
         self._exit_stack: AsyncExitStack | None = None
         self._session: Any = None
         self._tools: tuple[MCPToolInfo, ...] = ()
@@ -75,7 +89,7 @@ class MCPServerRuntime:
     def tools(self) -> tuple[MCPToolInfo, ...]:
         return self._tools
 
-    async def start(self, client_name: str, client_version: str) -> None:
+    async def start(self) -> None:
         if self._session is not None:
             return
 
@@ -92,8 +106,8 @@ class MCPServerRuntime:
                     write_stream,
                     message_handler=self._handle_message,
                     client_info=sdk["Implementation"](
-                        name=client_name,
-                        version=client_version,
+                        name=self._client_name,
+                        version=self._client_version,
                     ),
                 )
             )
@@ -166,6 +180,9 @@ class MCPServerRuntime:
 
         self._tools = tuple(tools)
         return self._tools
+
+    async def refresh(self) -> None:
+        await self.refresh_tools()
 
     async def call_tool(self, remote_name: str, arguments: dict[str, Any]) -> Any:
         if self._session is None:

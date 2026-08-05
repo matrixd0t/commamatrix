@@ -485,7 +485,7 @@ mcp = ctx.run.agent.services.require(MCPService)
 result = await mcp.call_tool("server_id", "tool_name", {"value": "..."})
 ```
 
-Activate `commamatrix.builtin.mcp` before using `MCPService`. The service owns MCP sessions; its discovered remote tools are mounted into the regular `ToolManager` automatically.
+Activate `commamatrix.builtin.mcp` before using `MCPService`. The service owns MCP sessions; its discovered remote tools are mounted into the regular `ToolManager` automatically. The built-in JSON loader reads the path configured by `mcp_config_path`. Extensions can add another source with `await mcp.add_loader(MyMCPConfigLoader())`; its `load(agent)` method returns a list of `MCPServerSpec` values.
 
 ## Lifecycle Components
 
