@@ -52,6 +52,19 @@ def _field_is_nullable(field_info) -> bool:
     return False
 
 
+def _format_schema_column(name: str, _type: str, *, null: bool, primary_key: bool = False, default: Any = None, inc: bool = False) -> str:
+    parts = [f"{name} {_type or 'unknown'}"]
+    if primary_key:
+        parts.append("PRIMARY KEY")
+    if inc:
+        parts.append("AUTOINCREMENT")
+    elif not null and not primary_key:
+        parts.append("NOT NULL")
+    if default is not None:
+        parts.append(f"DEFAULT {default}")
+    return " ".join(parts)
+
+
 class SqlStorage(Storage):
     def __init__(self, agent: Agent) -> None:
         super().__init__(agent)
@@ -410,7 +423,7 @@ class SqlStorage(Storage):
         await self._commit(db)
 
     async def schema(self) -> list[str]:
-        """Return the current physical schema in a compact addon-friendly form."""
+        """Return DDL-like table descriptions including column constraints."""
         return await self._schema()
 
     async def _schema(self) -> list[str]:

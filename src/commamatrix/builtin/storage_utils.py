@@ -23,7 +23,7 @@ def _row_to_dict(row: Any) -> dict[str, Any] | Any:
 
 async def _schema_text(storage: Storage, tables: list[str]) -> str:
     table_text = ("\n" + "\n".join(tables)) or "none"
-    return f"# Storage\nType: {await storage.info()}.\nTables:{table_text}."
+    return f"# Storage\nType: {await storage.info()}.\nTables (DDL):{table_text}."
 
 
 @tool(alias="storage")

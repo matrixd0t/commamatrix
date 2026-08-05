@@ -49,6 +49,7 @@ class Storage(AbstractService):
         return 'Abstract storage class (if you see this, something might be wrong)'
 
     async def schema(self) -> list[str]:
+        """Return DDL-like descriptions of the physical tables and columns."""
         raise NotImplementedError
 
     async def execute(self, query: str, params: tuple = ()) -> list[dict[str, Any]]:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, TYPE_CHECKING
 import asyncpg
 
-from .sql_storage import SqlStorage
+from .sql_storage import SqlStorage, _format_schema_column
 from ...components.config import ConfigField
 
 if TYPE_CHECKING:
@@ -33,10 +33,30 @@ class PostgresStorage(SqlStorage):
     async def _schema(self) -> list[str]:
         columns = await self.execute(
             """
-            SELECT table_schema, table_name, column_name, data_type
-            FROM information_schema.columns
-            WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
-            ORDER BY table_schema, table_name, ordinal_position
+            SELECT
+                columns.table_schema,
+                columns.table_name,
+                columns.column_name,
+                columns.data_type,
+                columns.is_nullable,
+                columns.column_default,
+                EXISTS (
+                    SELECT 1
+                    FROM information_schema.table_constraints AS constraints
+                    JOIN information_schema.key_column_usage AS key_columns
+                      ON key_columns.constraint_catalog = constraints.constraint_catalog
+                     AND key_columns.constraint_schema = constraints.constraint_schema
+                     AND key_columns.constraint_name = constraints.constraint_name
+                     AND key_columns.table_schema = constraints.table_schema
+                     AND key_columns.table_name = constraints.table_name
+                     AND key_columns.column_name = columns.column_name
+                    WHERE constraints.constraint_type = 'PRIMARY KEY'
+                      AND constraints.table_schema = columns.table_schema
+                      AND constraints.table_name = columns.table_name
+                ) AS is_primary_key
+            FROM information_schema.columns AS columns
+            WHERE columns.table_schema NOT IN ('pg_catalog', 'information_schema')
+            ORDER BY columns.table_schema, columns.table_name, columns.ordinal_position
             """
         )
         tables: dict[str, list[str]] = {}
@@ -45,7 +65,8 @@ class PostgresStorage(SqlStorage):
             table_name = str(column["table_name"])
             display_name = table_name if schema == "public" else f"{schema}.{table_name}"
             tables.setdefault(display_name, []).append(
-                f"{column['column_name']} ({column['data_type']})"
+                _format_schema_column(str(column["column_name"]), str(column["data_type"]), null=column["is_nullable"] == "YES",
+                                      primary_key=bool(column["is_primary_key"]), default=column["column_default"])
             )
         return [f"{name}: {', '.join(fields)}" for name, fields in tables.items()]
 

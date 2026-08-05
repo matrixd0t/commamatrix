@@ -6,7 +6,7 @@ from typing import Any, TYPE_CHECKING
 from pathlib import Path
 import aiosqlite
 
-from .sql_storage import SqlStorage
+from .sql_storage import SqlStorage, _format_schema_column
 from ...components.config import ConfigField
 from ...utils import commamatrix_dir
 
@@ -36,7 +36,7 @@ class SqliteStorage(SqlStorage):
     async def _schema(self) -> list[str]:
         tables = await self.execute(
             """
-            SELECT name
+            SELECT name, sql
             FROM sqlite_master
             WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
             ORDER BY name
@@ -47,8 +47,11 @@ class SqliteStorage(SqlStorage):
             table_name = str(table_row["name"])
             quoted_name = f'"{table_name.replace(chr(34), chr(34) * 2)}"'
             columns = await self.execute(f"PRAGMA table_info({quoted_name})")
+            table_sql = str(table_row["sql"] or "")
+            has_autoincrement = "AUTOINCREMENT" in table_sql.upper()
             column_text = ", ".join(
-                f"{column['name']} ({column['type'] or 'unknown'})"
+                _format_schema_column(str(column["name"]), str(column["type"] or "unknown"), null=not bool(column["notnull"]), primary_key=bool(column["pk"]),
+                                      default=column["dflt_value"], inc=has_autoincrement and bool(column["pk"]))
                 for column in columns
             )
             result.append(f"{table_name}: {column_text}")

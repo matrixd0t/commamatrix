@@ -114,6 +114,29 @@ class TestSqliteStorage:
 
             await storage.stop()
 
+    @pytest.mark.asyncio
+    async def test_schema_includes_column_constraints(self):
+        from commamatrix.builtin.sql.sqlite_storage import SqliteStorage, sqlite_path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = str(Path(tmpdir) / "test.db")
+            agent = stub_agent()
+            agent.config = Config(overrides={sqlite_path: db_path})
+            storage = SqliteStorage(agent=agent)
+            await storage.start()
+
+            schemas = await storage.schema()
+            dialog_schema = next(
+                schema for schema in schemas if schema.startswith("commamatrix_dialog:")
+            )
+
+            assert "item_id INTEGER PRIMARY KEY AUTOINCREMENT" in dialog_schema
+            assert "content TEXT NOT NULL" in dialog_schema
+            assert "meta TEXT NOT NULL" in dialog_schema
+            assert "external_id TEXT NOT NULL" not in dialog_schema
+
+            await storage.stop()
+
 
 class TestSimpleFileStorage:
     @pytest.mark.asyncio
