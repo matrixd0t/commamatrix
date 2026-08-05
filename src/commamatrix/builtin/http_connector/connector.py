@@ -20,8 +20,9 @@ from typing import TYPE_CHECKING
 from urllib.parse import quote, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from sse_starlette import EventSourceResponse, JSONServerSentEvent, ServerSentEvent
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.staticfiles import StaticFiles
 
 from ...components.config import ConfigField
@@ -955,7 +956,14 @@ class HttpConnector(Connector[HttpOrigin]):
 
     async def _handle_events(self, request: Request) -> Response:
         session = self._open_session(request.state.user.id)
-        return StreamingResponse(_sse_generator(session.queue, lambda: self._close_session(session)), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
+        return EventSourceResponse(
+            _sse_generator(session.queue, lambda: self._close_session(session)),
+            ping=15,
+            sep="\n",
+            ping_message_factory=lambda: ServerSentEvent(comment="ping", sep="\n"),
+            send_timeout=30,
+            headers={"Cache-Control": "no-cache"},
+        )
 
     async def _handle_history(self, request: Request) -> Response:
         user_id = request.state.user.id
@@ -993,25 +1001,17 @@ class HttpConnector(Connector[HttpOrigin]):
 
 
 async def _sse_generator(queue: asyncio.Queue[dict | None], on_disconnect=None):
-    disconnected = False
-    yield 'data: {"type":"ready"}\n\n'
     try:
+        yield JSONServerSentEvent({"type": "ready"})
         while True:
-            try:
-                item = await asyncio.wait_for(queue.get(), timeout=15)
-            except asyncio.TimeoutError:
-                yield ": ping\n\n"
-                continue
+            item = await queue.get()
             if item is None:
                 break
-            yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
-    except asyncio.CancelledError:
-        disconnected = True
+            yield JSONServerSentEvent(item)
     finally:
-        if disconnected and on_disconnect is not None:
+        if on_disconnect is not None:
             on_disconnect()
-    if not disconnected:
-        yield "data: {\"type\":\"done\"}\n\n"
+    yield JSONServerSentEvent({"type": "done"})
 
 
 def _serialize_item(item: DialogItem) -> dict:

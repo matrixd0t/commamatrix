@@ -79,3 +79,6 @@ class PostgresStorage(SqlStorage):
 
     def _insert_returning_suffix(self) -> str:
         return " RETURNING item_id"
+
+    async def info(self) -> str:
+        return f'PostgreSQL {self._dsn}'

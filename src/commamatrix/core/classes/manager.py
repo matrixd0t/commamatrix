@@ -230,7 +230,6 @@ class InstanceManager(Manager[D], Generic[D, S]):
 
     async def start(self) -> None:
         await super().start()
-        await self.refresh()
 
     async def refresh(self) -> None:
         await super().refresh()
@@ -270,7 +269,9 @@ class InstanceManager(Manager[D], Generic[D, S]):
             if sid in self._instances:
                 continue
             instance = self._create_instance(descriptor)
-            await self._start_instance(instance)
+            started = await self._start_instance(instance)
+            if started is False:
+                continue
             self._instances[sid] = instance
             self._instance_fingerprints[sid] = descriptor.fingerprint
             self._start_order.append(sid)
@@ -292,7 +293,7 @@ class InstanceManager(Manager[D], Generic[D, S]):
     def _create_instance(self, descriptor: D) -> S:
         raise NotImplementedError
 
-    async def _start_instance(self, instance: S) -> None:
+    async def _start_instance(self, instance: S) -> bool | None:
         pass
 
     async def _stop_instance(self, instance: S) -> None:

@@ -5,13 +5,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from types import SimpleNamespace
 from typing import Any
 
 import aiosqlite
 import httpx2 as httpx
 import pytest
+from sse_starlette import EventSourceResponse
 
-from commamatrix.builtin.http_connector.connector import HttpConnector, HttpOrigin
+from commamatrix.builtin.http_connector.connector import HttpConnector, HttpOrigin, _sse_generator
 from commamatrix.components.config import Config
 from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
 from commamatrix.components.server import Server
@@ -205,9 +208,9 @@ class TestHttpConnectorRoutes:
             response = await client.get("/commamatrix/api/history", headers=headers)
 
         assert response.status_code == 200
-        assert response.json() == {"items": []}
-        assert storage.last_origin_type is None
-        assert storage.last_origin_fields is None
+        assert response.json() == {"items": [], "heads": [], "current_head_id": None}
+        assert storage.last_origin_type is HttpOrigin
+        assert storage.last_origin_fields == {"http_user_id": user_id}
 
     @pytest.mark.asyncio
     async def test_background_error_is_published_to_user_events(self):
@@ -219,6 +222,93 @@ class TestHttpConnectorRoutes:
 
         assert event == {"type": "error", "error": "LLM failed"}
         conn._close_session(session)
+
+
+def _sse_data(event) -> dict[str, Any]:
+    payload = event.encode().decode("utf-8")
+    data = "\n".join(line[6:] for line in payload.splitlines() if line.startswith("data: "))
+    return json.loads(data)
+
+
+class TestHttpConnectorSse:
+    @pytest.mark.asyncio
+    async def test_generator_emits_ready_json_and_done_events(self):
+        queue: asyncio.Queue[dict | None] = asyncio.Queue()
+        await queue.put({"type": "message", "content": "Привет"})
+        await queue.put(None)
+
+        events = [event async for event in _sse_generator(queue)]
+
+        assert [_sse_data(event) for event in events] == [
+            {"type": "ready"},
+            {"type": "message", "content": "Привет"},
+            {"type": "done"},
+        ]
+
+    @pytest.mark.asyncio
+    async def test_generator_closes_session_when_client_disconnects(self):
+        conn = _make_connector()
+        session = conn._open_session(7)
+        generator = _sse_generator(session.queue, lambda: conn._close_session(session))
+
+        await anext(generator)
+        await generator.aclose()
+
+        assert session.closed
+        assert session.session_id not in conn._sessions
+
+    @pytest.mark.asyncio
+    async def test_generator_closes_session_after_terminal_sentinel(self):
+        conn = _make_connector()
+        session = conn._open_session(7)
+        await session.queue.put(None)
+
+        events = [
+            event
+            async for event in _sse_generator(session.queue, lambda: conn._close_session(session))
+        ]
+
+        assert _sse_data(events[-1]) == {"type": "done"}
+        assert session.closed
+
+    @pytest.mark.asyncio
+    async def test_events_response_configures_heartbeat_and_proxy_headers(self):
+        conn = _make_connector()
+        request = SimpleNamespace(state=SimpleNamespace(user=SimpleNamespace(id=7)))
+
+        response = await conn._handle_events(request)
+
+        assert isinstance(response, EventSourceResponse)
+        assert response.media_type == "text/event-stream"
+        assert response.ping_interval == 15
+        assert response.send_timeout == 30
+        assert response.ping_message_factory is not None
+        assert response.ping_message_factory().encode() == b": ping\n\n"
+        assert response.headers["cache-control"] == "no-cache"
+        assert response.headers["x-accel-buffering"] == "no"
+        conn._close_session(next(iter(conn._sessions.values())))
+
+    @pytest.mark.asyncio
+    async def test_publish_applies_backpressure_without_dropping_events(self):
+        conn = _make_connector()
+        session = conn._open_session(7)
+        session.queue = asyncio.Queue(maxsize=1)
+        first = {"type": "first"}
+        second = {"type": "second"}
+        await session.queue.put(first)
+        publish_task = asyncio.create_task(conn._publish(7, second))
+
+        try:
+            await asyncio.sleep(0)
+            assert not publish_task.done()
+            assert await session.queue.get() == first
+            await asyncio.wait_for(publish_task, timeout=1)
+            assert await session.queue.get() == second
+        finally:
+            if not publish_task.done():
+                publish_task.cancel()
+                await asyncio.gather(publish_task, return_exceptions=True)
+            conn._close_session(session)
 
 
 class TestHttpConnectorLifecycle:

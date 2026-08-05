@@ -19,6 +19,7 @@ dependencies = [
 dotenv = ["python-dotenv"]
 sqlite = ["aiosqlite"]
 http = [
+    "sse-starlette>=3.3,<4",
     "starlette",
     "uvicorn",
     "bcrypt",
@@ -41,6 +42,7 @@ mcp = [
 all = [
     "python-dotenv",
     "aiosqlite",
+    "sse-starlette>=3.3,<4",
     "starlette",
     "uvicorn",
     "bcrypt",
@@ -59,6 +61,7 @@ test = [
     "pytest-asyncio",
     "python-dotenv",
     "aiosqlite",
+    "sse-starlette>=3.3,<4",
     "starlette",
     "uvicorn",
     "bcrypt",
@@ -76,6 +79,7 @@ dev = [
     "pytest-asyncio",
     "python-dotenv",
     "aiosqlite",
+    "sse-starlette>=3.3,<4",
     "starlette",
     "uvicorn",
     "bcrypt",

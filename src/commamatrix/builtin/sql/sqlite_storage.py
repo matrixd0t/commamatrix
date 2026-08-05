@@ -70,3 +70,6 @@ class SqliteStorage(SqlStorage):
         if self._db is not None:
             await self._db.close()
             self._db = None
+
+    async def info(self) -> str:
+        return f"SQLite {self._path}"

@@ -45,6 +45,9 @@ class Storage(AbstractService):
     @abstractmethod
     async def get_history(self, *, origin_type: type[DialogOrigin] | None = None, origin_fields: dict[str, Any] | None = None) -> list[DialogItem]: ...
 
+    async def info(self) -> str:
+        return 'Abstract storage class (if you see this, something might be wrong)'
+
     async def schema(self) -> list[str]:
         raise NotImplementedError
 

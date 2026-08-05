@@ -14,8 +14,9 @@ from commamatrix.builtin.mcp.hooks import refresh_mcp_config_after_filesystem_to
 from commamatrix.builtin.mcp.instructions import mcp_config_context
 from commamatrix.builtin.mcp.loader import MCPConfigLoader, MCPJsonConfigLoader
 from commamatrix.builtin.mcp.manager import MCPService
-from commamatrix.builtin.mcp.server import MCPServerDescriptor, MCPServerSource
+from commamatrix.builtin.mcp.server import MCPServerDescriptor, MCPServerManager, MCPServerSource
 from commamatrix.components.config import Config
+from commamatrix.core.classes.manager import ServiceInstanceRegistry
 from commamatrix.components.hook import AfterToolCallCtx
 from commamatrix.components.instruction import InstructionCtx
 
@@ -134,6 +135,50 @@ class TestMCPServerDescriptors:
 
         with pytest.raises(ValueError, match="Duplicate MCP server ID"):
             MCPServerSource(service).scan()
+
+
+@pytest.mark.asyncio
+async def test_mcp_server_manager_skips_failed_servers(monkeypatch):
+    started: list[str] = []
+    stopped: list[str] = []
+    refreshed: list[str] = []
+
+    async def start(runtime):
+        server_id = runtime.spec.server_id
+        started.append(server_id)
+        if server_id == "broken":
+            raise RuntimeError("server initialization failed")
+
+    async def stop(runtime):
+        stopped.append(runtime.spec.server_id)
+
+    async def refresh(runtime):
+        refreshed.append(runtime.spec.server_id)
+
+    monkeypatch.setattr("commamatrix.builtin.mcp.runtime.MCPServerRuntime.start", start)
+    monkeypatch.setattr("commamatrix.builtin.mcp.runtime.MCPServerRuntime.stop", stop)
+    monkeypatch.setattr("commamatrix.builtin.mcp.runtime.MCPServerRuntime.refresh", refresh)
+
+    agent = SimpleNamespace(config=Config(), services=ServiceInstanceRegistry())
+    service = SimpleNamespace(
+        agent=agent,
+        _load_specs=lambda: [_spec("broken"), _spec("working")],
+        _request_refresh=lambda: None,
+        client_name="test-client",
+        client_version="1.0",
+    )
+    manager = MCPServerManager(service)
+
+    await manager.start()
+
+    try:
+        assert started == ["broken", "working"]
+        assert stopped == ["broken"]
+        assert refreshed == ["working"]
+        assert [spec.server_id for spec, _ in manager.iter_servers()] == ["working"]
+        assert manager.get_by_server_id("broken") is None
+    finally:
+        await manager.stop()
 
 
 @pytest.mark.asyncio

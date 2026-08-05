@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import weakref
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -11,10 +12,13 @@ from ...core.classes.descriptor import Descriptor
 from ...core.classes.manager import InstanceManager
 from ...core.classes.source import Source
 from .config import MCPServerSpec
-from .runtime import MCPServerRuntime
+from .runtime import MCPDependencyError, MCPServerRuntime
 
 if TYPE_CHECKING:
     from .manager import MCPService
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,8 +82,26 @@ class MCPServerManager(InstanceManager[MCPServerDescriptor, MCPServerRuntime]):
             self.service.client_version,
         )
 
-    async def _start_instance(self, instance: MCPServerRuntime) -> None:
-        await instance.start()
+    async def _start_instance(self, instance: MCPServerRuntime) -> bool:
+        try:
+            await instance.start()
+        except MCPDependencyError:
+            raise
+        except Exception:
+            logger.warning(
+                "MCP server %r failed to start and will be skipped",
+                instance.spec.server_id,
+                exc_info=True,
+            )
+            try:
+                await instance.stop()
+            except Exception:
+                logger.exception(
+                    "Failed to clean up MCP server %r after a startup error",
+                    instance.spec.server_id,
+                )
+            return False
+        return True
 
     async def _stop_instance(self, instance: MCPServerRuntime) -> None:
         await instance.stop()
