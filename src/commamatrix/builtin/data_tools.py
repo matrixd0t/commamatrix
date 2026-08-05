@@ -21,6 +21,12 @@ from ..components.file_storage import (
 )
 from ..components.hook import BeforeToolCallCtx
 from ..components.tool import tool
+from ..utils import (
+    allow_absolute_paths,
+    resolve_path,
+    write_bytes_file_async,
+    write_text_file_async,
+)
 from .web_utils.security import validate_url
 
 read_timeout = ConfigField[int](
@@ -49,6 +55,13 @@ def _extension(ext: str) -> str:
 
 def _is_http_url(value: str) -> bool:
     return urlparse(value).scheme in {"http", "https"}
+
+
+def _is_local_path_ref(value: str) -> bool:
+    path = Path(value)
+    return path.is_absolute() or path.parent != Path(".") or any(
+        part in {".", ".."} for part in path.parts
+    )
 
 
 def _make_file_name(dest: str, ext: str) -> str:
@@ -192,7 +205,7 @@ async def _fetch_url(ref: str, ctx: BeforeToolCallCtx) -> tuple[FileData, str] |
     ), current_url
 
 
-@tool(alias="data")
+@tool(alias="data", filesystem=True)
 async def read(ref: str, max_chars: int = 4000, *, ctx: BeforeToolCallCtx) -> str:
     """
     Read a text, image, or file from a URL, path, or local storage.
@@ -206,9 +219,28 @@ async def read(ref: str, max_chars: int = 4000, *, ctx: BeforeToolCallCtx) -> st
             return fetched
         file_data, source_url = fetched
     else:
+        local_path: Path | None = None
+        if _is_local_path_ref(ref):
+            try:
+                local_path = resolve_path(
+                    ref,
+                    root=Path.cwd(),
+                    allow_absolute=ctx.run.agent.config.get(allow_absolute_paths),
+                )
+            except ValueError as exc:
+                return f"Error: {exc}"
+        else:
+            candidate = resolve_path(
+                ref,
+                root=Path.cwd(),
+                allow_absolute=ctx.run.agent.config.get(allow_absolute_paths),
+            )
+            if candidate.is_file():
+                local_path = candidate
+
         file_data = await read_file(
-            ref,
-            file_storage=ctx.run.agent.file_storage,
+            str(local_path) if local_path is not None else ref,
+            file_storage=fs.active if (fs := ctx.run.agent.file_storage) else None,
             http_client=ctx.run.agent.http_client,
         )
         source_url = ref
@@ -237,7 +269,7 @@ async def read(ref: str, max_chars: int = 4000, *, ctx: BeforeToolCallCtx) -> st
     return _truncate_text(content, max_chars)
 
 
-@tool(alias="data")
+@tool(alias="data", filesystem=True)
 async def write(content: str | bytes, dest: str | None = None, ext: str = "", *, ctx: BeforeToolCallCtx) -> str:
     """
     Write UTF-8 text or any bytes to a path, URL, or local storage.
@@ -261,14 +293,19 @@ async def write(content: str | bytes, dest: str | None = None, ext: str = "", *,
         return "OK"
 
     if destination:
-        path = Path(destination)
-        if not path.is_absolute():
-            return "Error: dest must be an HTTP(S) URL, an absolute path, or omitted."
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            await asyncio.to_thread(path.write_bytes, data)
-        except OSError as exc:
-            return f"Error writing file to {path}: {exc}"
+            path = resolve_path(
+                destination,
+                root=Path.cwd(),
+                allow_absolute=ctx.run.agent.config.get(allow_absolute_paths),
+            )
+            async with ctx.run.agent._filesystem_lock:
+                if isinstance(content, str):
+                    await write_text_file_async(path, content)
+                else:
+                    await write_bytes_file_async(path, data)
+        except (OSError, UnicodeError, ValueError) as exc:
+            return f"Error writing file to {destination}: {exc}"
         return "OK"
 
     try:

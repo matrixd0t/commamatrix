@@ -18,7 +18,7 @@ def _format_tool_display(d: ToolDescriptor) -> str:
     return "\n".join(parts)
 
 
-@tool(alias="", codeact=False)
+@tool(alias="", codeact=False, filesystem=True)
 async def execute(code: str, ctx: BeforeToolCallCtx) -> str:
     """Execute Python code in the configured CodeAct environment."""
     codeact: CodeActService = ctx.run.agent.services.require(CodeActService)

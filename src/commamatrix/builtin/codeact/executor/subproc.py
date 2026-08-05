@@ -5,8 +5,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import platform
 import secrets
 import sys
 from pathlib import Path
@@ -45,9 +43,7 @@ class SubprocessBackend(ExecutionBackend):
     def environment_description(self) -> str:
         v = sys.version_info
         return (
-            f"Platform: {platform.system()} {platform.release()} | "
-            f"Python {v.major}.{v.minor}.{v.micro} | "
-            f"CWD: {os.getcwd()}\n"
+            f"Python {v.major}.{v.minor}.{v.micro}. "
             "Full filesystem and network access — no security isolation. "
             "All standard library modules are available. "
             "Each execution starts with a clean namespace; no state persists between runs."

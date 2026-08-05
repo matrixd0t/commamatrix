@@ -11,6 +11,7 @@ essentials = [
     f"{FP}.builtin.self_extension",
     f"{FP}.builtin.web_utils",
     f"{FP}.builtin.data_tools",
+    f"{FP}.builtin.apply_patch",
     f"{FP}.builtin.storage_utils",
     f"{FP}.builtin.multi_dialog",
     # f"{FP}.builtin.multi_user",

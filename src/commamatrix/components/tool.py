@@ -134,6 +134,10 @@ class PythonToolSource(PythonSource[ToolDescriptor], ToolSource):
         raw_meta: dict[str, Any] = getattr(fn, TOOL_ATTRIBUTE)
         metadata = dict(raw_meta)
         metadata["signature"] = _signature_metadata(fn)
+        try:
+            metadata["__codeact_source__"] = inspect.getsource(fn)
+        except (OSError, TypeError):
+            pass
         descriptor_id = f"python://{fn.__module__}/{object_name}"
         self._functions[descriptor_id] = fn
 
@@ -535,6 +539,7 @@ class ToolManager(Manager[ToolDescriptor]):
                     "doc": descriptor.doc,
                     "schema": descriptor.schema,
                     "meta": descriptor.meta,
+                    "source": descriptor.meta.get("__codeact_source__"),
                 }
             )
 

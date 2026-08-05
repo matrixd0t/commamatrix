@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import inspect
+import os
+import stat
+import tempfile
 from dataclasses import fields, is_dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from .components.config import ConfigField
@@ -23,6 +29,211 @@ commamatrix_dir = ConfigField[str](
     default=".commamatrix",
     description="Root directory for all Commamatrix data",
 )
+
+allow_absolute_paths = ConfigField[bool](
+    name="allow_absolute_paths",
+    default=False,
+    description="Allow agent to access absolute paths outside the CWD.",
+)
+
+
+class PathResolutionError(ValueError):
+    """Raised when a user path violates the active filesystem policy."""
+
+
+class TextFileFormat:
+    """Encoding and newline style used when serializing a text file."""
+
+    __slots__ = ("encoding", "newline")
+
+    def __init__(self, encoding: str = "utf-8", newline: str = "\n") -> None:
+        self.encoding = encoding
+        self.newline = newline
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            isinstance(other, TextFileFormat)
+            and self.encoding == other.encoding
+            and self.newline == other.newline
+        )
+
+    def __repr__(self) -> str:
+        return f"TextFileFormat(encoding={self.encoding!r}, newline={self.newline!r})"
+
+
+class TextFileSnapshot:
+    """Text content together with the original bytes and file metadata."""
+
+    __slots__ = ("content", "file_format", "digest", "mode")
+
+    def __init__(
+        self,
+        content: str,
+        file_format: TextFileFormat,
+        digest: str,
+        mode: int,
+    ) -> None:
+        self.content = content
+        self.file_format = file_format
+        self.digest = digest
+        self.mode = mode
+
+
+def resolve_path(
+    value: str | os.PathLike[str],
+    *,
+    root: str | os.PathLike[str] | None = None,
+    allow_absolute: bool = False,
+) -> Path:
+    """Resolve a user path under ``root`` unless absolute paths are allowed.
+
+    Relative paths are interpreted from ``root`` and resolved through symlinks
+    before the workspace boundary is checked. This policy is shared by code
+    tools and general file-writing tools.
+    """
+    raw_value = os.fspath(value)
+    if not isinstance(raw_value, str):
+        raise PathResolutionError("bytes paths are not supported")
+    raw = raw_value.strip()
+    if not raw:
+        raise PathResolutionError("path must not be empty")
+
+    root_path = (Path(root) if root is not None else Path.cwd()).resolve()
+    candidate = Path(raw)
+    if candidate.drive and not candidate.is_absolute():
+        raise PathResolutionError(f"drive-relative paths are not supported: {raw!r}")
+
+    if candidate.is_absolute():
+        if not allow_absolute:
+            raise PathResolutionError(
+                f"absolute paths are disabled: {raw!r}; use a relative path"
+            )
+        resolved = candidate.resolve(strict=False)
+    else:
+        resolved = (root_path / candidate).resolve(strict=False)
+
+    if not allow_absolute and not resolved.is_relative_to(root_path):
+        raise PathResolutionError(f"path escapes the workspace: {raw!r}")
+    return resolved
+
+
+def _text_encoding(raw: bytes) -> str:
+    if raw.startswith((b"\xff\xfe\x00\x00", b"\x00\x00\xfe\xff")):
+        return "utf-32"
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return "utf-16"
+    if raw.startswith(b"\xef\xbb\xbf"):
+        return "utf-8-sig"
+    return "utf-8"
+
+
+def _newline_style(content: str) -> str:
+    if "\r\n" in content:
+        return "\r\n"
+    if "\r" in content:
+        return "\r"
+    return "\n"
+
+
+def _normalize_newlines(content: str) -> str:
+    return content.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def read_text_file(path: Path) -> TextFileSnapshot:
+    """Read a UTF text file while retaining format and replacement metadata."""
+    raw = path.read_bytes()
+    encoding = _text_encoding(raw)
+    decoded = raw.decode(encoding)
+    file_format = TextFileFormat(
+        encoding=encoding,
+        newline=_newline_style(decoded),
+    )
+    mode = stat.S_IMODE(path.stat().st_mode)
+    return TextFileSnapshot(
+        content=_normalize_newlines(decoded),
+        file_format=file_format,
+        digest=hashlib.sha256(raw).hexdigest(),
+        mode=mode,
+    )
+
+
+def _encode_text(content: str, file_format: TextFileFormat) -> bytes:
+    normalized = _normalize_newlines(content)
+    serialized = normalized.replace("\n", file_format.newline)
+    return serialized.encode(file_format.encoding)
+
+
+def write_bytes_file(path: Path, data: bytes, *, mode: int | None = None) -> None:
+    """Atomically replace a file with bytes, preserving its mode if possible."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if mode is None and path.exists():
+        mode = stat.S_IMODE(path.stat().st_mode)
+
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=path.parent,
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "wb") as file:
+            file.write(data)
+            file.flush()
+            os.fsync(file.fileno())
+        if mode is not None:
+            os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def write_text_file(
+    path: Path,
+    content: str,
+    *,
+    file_format: TextFileFormat | None = None,
+    mode: int | None = None,
+) -> None:
+    """Atomically write UTF text while preserving existing file formatting."""
+    if file_format is None and path.exists():
+        snapshot = read_text_file(path)
+        file_format = snapshot.file_format
+        if mode is None:
+            mode = snapshot.mode
+    file_format = file_format or TextFileFormat()
+    write_bytes_file(path, _encode_text(content, file_format), mode=mode)
+
+
+async def read_text_file_async(path: Path) -> TextFileSnapshot:
+    return await asyncio.to_thread(read_text_file, path)
+
+
+async def write_bytes_file_async(
+    path: Path,
+    data: bytes,
+    *,
+    mode: int | None = None,
+) -> None:
+    await asyncio.to_thread(write_bytes_file, path, data, mode=mode)
+
+
+async def write_text_file_async(
+    path: Path,
+    content: str,
+    *,
+    file_format: TextFileFormat | None = None,
+    mode: int | None = None,
+) -> None:
+    await asyncio.to_thread(
+        write_text_file,
+        path,
+        content,
+        file_format=file_format,
+        mode=mode,
+    )
 
 
 async def await_if_needed(result: Any) -> Any:

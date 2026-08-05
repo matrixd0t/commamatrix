@@ -17,6 +17,7 @@ import asyncio
 import contextlib
 import inspect
 import io
+import linecache
 import json
 import struct
 import sys
@@ -200,7 +201,34 @@ def _make_tool_proxy(client, descriptor):
     proxy.__doc__ = descriptor.get("doc", "")
     proxy.__signature__ = signature
     proxy.__annotations__ = annotations
-    return proxy
+    source = descriptor.get("source")
+    if not isinstance(source, str) or not source.strip():
+        return proxy
+
+    filename = f"codeact_tool_{uuid4().hex}.py"
+    linecache.cache[filename] = (
+        len(source),
+        None,
+        source.splitlines(keepends=True),
+        filename,
+    )
+    namespace = {"_codeact_call": proxy}
+    exec(
+        compile(
+            "async def _codeact_source_proxy(*args, **kwargs):\n"
+            "    return await _codeact_call(*args, **kwargs)\n",
+            filename,
+            "exec",
+        ),
+        namespace,
+    )
+    source_proxy = namespace["_codeact_source_proxy"]
+    source_proxy.__name__ = proxy_name
+    source_proxy.__qualname__ = proxy_name
+    source_proxy.__doc__ = proxy.__doc__
+    source_proxy.__signature__ = signature
+    source_proxy.__annotations__ = annotations
+    return source_proxy
 
 
 def _make_ambiguous_proxy(name, descriptors):

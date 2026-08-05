@@ -43,7 +43,7 @@ How to use:
 '''
 
 
-@tool(alias="self_extension")
+@tool(alias="self_extension", filesystem=True)
 async def manage(module_or_path: str, action: Literal["add", "remove", "reload"], *, ctx: BeforeToolCallCtx) -> str:
     """Add, remove, or reload an extension by import name or filesystem path."""
     if not module_or_path:
@@ -73,7 +73,7 @@ async def list_all(*, ctx: BeforeToolCallCtx) -> str:
     return "Active extension modules:\n" + "\n".join(f"- {name}" for name in roots)
 
 
-@tool(alias="self_extension")
+@tool(alias="self_extension", filesystem=True)
 async def readme(ctx: BeforeToolCallCtx) -> str:
     """Returns self-modification guide together with runtime and installation information."""
     path = ctx.run.agent.config.get(guide_path)

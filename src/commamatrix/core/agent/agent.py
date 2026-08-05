@@ -135,6 +135,7 @@ class Agent:
         self.runner = AgentRunner()
         self._started = False
         self._start_lock = asyncio.Lock()
+        self._filesystem_lock = asyncio.Lock()
         self._extension_runtime = ExtensionRuntime()
 
         self.lifecycle = AgentLifecycle(registry=self.services, agent=self, auto_register=True)
@@ -439,6 +440,7 @@ class Agent:
                 if self._auto_load_main:
                     await self.add_extensions("__main__")
                 await self.add_extensions(FP + ".components")
+                await self.add_extensions(FP + ".builtin.filesystem")
                 if self._auto_load_plugins:
                     (Path.cwd() / self.config.get(commamatrix_dir) / self.config.get(plugins_dir)).mkdir(parents=True, exist_ok=True)
                     plugin_targets = self._workspace_plugin_targets()
