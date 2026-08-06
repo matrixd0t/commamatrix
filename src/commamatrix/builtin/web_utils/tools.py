@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 
 from ddgs import DDGS
 
@@ -125,10 +126,19 @@ async def search(query: str, limit: int = 5, sites: list[str] | None = None, *, 
 
     if limit < 1:
         return f"Error: limit must be positive."
-    return await do_search(
-        query=query,
-        limit=min(limit, config.get(web_search_max_limit)),
-        sites=sites,
-        timeout=config.get(web_search_timeout),
-        max_output=config.get(web_search_max_output_chars),
-    )
+    effective_limit = min(limit, config.get(web_search_max_limit))
+    started = time.perf_counter()
+    ctx.run.agent.logger.debug("Web search started query_chars=%d limit=%d sites=%d", len(query), effective_limit, len(sites or ()))
+    try:
+        result = await do_search(
+            query=query,
+            limit=effective_limit,
+            sites=sites,
+            timeout=config.get(web_search_timeout),
+            max_output=config.get(web_search_max_output_chars),
+        )
+    except Exception:
+        ctx.run.agent.logger.exception("Web search failed")
+        raise
+    ctx.run.agent.logger.info("Web search completed result_chars=%d duration_ms=%.1f", len(result), (time.perf_counter() - started) * 1000)
+    return result

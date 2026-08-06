@@ -106,12 +106,15 @@ class CodeActService(Service):
         else:
             self.backend = backend_cls_resolved()
         self.searcher = self.config.get(codeact_searcher)()
+        self.logger.info("CodeAct configured backend=%s", type(self.backend).__name__)
 
     async def start(self) -> None:
         await self.backend.start()
+        self.logger.info("CodeAct backend started backend=%s", type(self.backend).__name__)
 
     async def stop(self) -> None:
         await self.backend.stop()
+        self.logger.info("CodeAct backend stopped backend=%s", type(self.backend).__name__)
 
     def rebuild_index(self, tools: list[ToolDescriptor], run: RunCtx) -> None:
         fingerprint = run.agent.tool_manager.fingerprint
@@ -120,9 +123,17 @@ class CodeActService(Service):
             if allowed != "all":
                 fingerprint = f"{fingerprint}|allowed_tools={allowed!r}"
             self.searcher.rebuild_index(fingerprint, tools)
+            self.logger.debug("CodeAct tool index rebuilt tools=%d", len(tools))
 
     async def execute(self, code: str, ctx: BeforeToolCallCtx) -> ExecutionResult:
-        return await self.backend.execute(code, ctx)
+        self.logger.info("CodeAct execution started run_id=%s", ctx.run.run_id)
+        try:
+            result = await self.backend.execute(code, ctx)
+        except Exception:
+            self.logger.exception("CodeAct execution failed run_id=%s", ctx.run.run_id)
+            raise
+        self.logger.info("CodeAct execution completed run_id=%s returncode=%s", ctx.run.run_id, result.returncode)
+        return result
 
     async def invoke_tool(self, ctx: BeforeToolCallCtx, tool_call: ToolCall) -> Any:
         """Invoke a nested tool through the agent's unified tool lifecycle.

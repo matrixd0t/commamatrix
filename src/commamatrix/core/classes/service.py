@@ -6,7 +6,7 @@ from abc import ABC
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from ...components.config import Config
+from ...components.config import AgentLogger, Config, get_agent_logger
 from .descriptor import Descriptor
 
 if TYPE_CHECKING:
@@ -32,6 +32,10 @@ class AbstractService(ABC):
     @property
     def config(self) -> Config:
         return self.agent.config
+
+    @property
+    def logger(self) -> AgentLogger:
+        return get_agent_logger(self.agent, type(self).__name__)
 
     async def start(self) -> None:
         """Initialize resources. Called once after agent startup."""

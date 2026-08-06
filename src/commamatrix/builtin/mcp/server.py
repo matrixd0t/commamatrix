@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import weakref
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -16,9 +15,6 @@ from .runtime import MCPDependencyError, MCPServerRuntime
 
 if TYPE_CHECKING:
     from .manager import MCPService
-
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,7 +84,7 @@ class MCPServerManager(InstanceManager[MCPServerDescriptor, MCPServerRuntime]):
         except MCPDependencyError:
             raise
         except Exception:
-            logger.warning(
+            self.logger.warning(
                 "MCP server %r failed to start and will be skipped",
                 instance.spec.server_id,
                 exc_info=True,
@@ -96,18 +92,21 @@ class MCPServerManager(InstanceManager[MCPServerDescriptor, MCPServerRuntime]):
             try:
                 await instance.stop()
             except Exception:
-                logger.exception(
+                self.logger.exception(
                     "Failed to clean up MCP server %r after a startup error",
                     instance.spec.server_id,
                 )
             return False
+        self.logger.info("MCP server started server_id=%s tools=%d", instance.spec.server_id, len(instance.tools))
         return True
 
     async def _stop_instance(self, instance: MCPServerRuntime) -> None:
         await instance.stop()
+        self.logger.info("MCP server stopped server_id=%s", instance.spec.server_id)
 
     async def _refresh_instance(self, instance: MCPServerRuntime) -> None:
         await instance.refresh()
+        self.logger.debug("MCP server tools refreshed server_id=%s tools=%d", instance.spec.server_id, len(instance.tools))
 
     def get_by_server_id(self, server_id: str) -> MCPServerRuntime | None:
         return self.get_by_id(MCPServerDescriptor.id_for(server_id))

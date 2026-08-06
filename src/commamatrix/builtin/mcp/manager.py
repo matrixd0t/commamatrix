@@ -72,11 +72,13 @@ class MCPService(Service):
 
     async def start(self) -> None:
         self._ensure_tool_source()
+        self.logger.info("MCP service starting loaders=%d", len(self._loaders))
         async with self._refresh_lock:
             await self._server_manager.start()
             self._config_fingerprint = self._calculate_loader_fingerprint()
             self._started = True
         await self.agent.tool_manager.refresh()
+        self.logger.info("MCP service started servers=%d", len(tuple(self._server_manager.iter_servers())))
 
     async def refresh(self) -> None:
         if not self._started:
@@ -84,8 +86,10 @@ class MCPService(Service):
         async with self._refresh_lock:
             await self._refresh_locked()
         await self.agent.tool_manager.refresh()
+        self.logger.debug("MCP service refreshed servers=%d", len(tuple(self._server_manager.iter_servers())))
 
     async def stop(self) -> None:
+        self.logger.info("MCP service stopping")
         async with self._refresh_lock:
             await self._server_manager.stop()
             self._config_fingerprint = None
@@ -93,6 +97,7 @@ class MCPService(Service):
         if self._tool_source is not None and self._tool_source_mounted:
             self.agent.tool_manager.unmount(self._tool_source)
             self._tool_source_mounted = False
+        self.logger.info("MCP service stopped")
 
     async def add_loader(self, loader: MCPConfigLoader) -> None:
         """Add a configuration loader and refresh active MCP servers."""
@@ -101,6 +106,7 @@ class MCPService(Service):
         if any(existing is loader for existing in self._loaders):
             return
         self._loaders.append(loader)
+        self.logger.debug("MCP loader added loader=%s", type(loader).__name__)
         if self._started:
             await self.refresh()
 

@@ -16,6 +16,19 @@ from tests.conftest import stub_agent
 
 
 class TestAgentLifecycleStart:
+    def test_logger_reuses_agent_logger_without_creating_another(self, monkeypatch):
+        existing_logger = object()
+        agent = stub_agent()
+        agent.logger = existing_logger
+        lifecycle = AgentLifecycle(agent=agent)
+
+        monkeypatch.setattr(
+            "commamatrix.core.agent.lifecycle.get_agent_logger",
+            lambda *_args: pytest.fail("unexpected logger creation"),
+        )
+
+        assert lifecycle.logger is existing_logger
+
     @pytest.mark.asyncio
     async def test_start_sets_started(self):
         agent = stub_agent()

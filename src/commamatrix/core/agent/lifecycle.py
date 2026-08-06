@@ -17,6 +17,7 @@ from ..classes.lifecycle_registry import (
 from ..classes.manager import Manager, ServiceInstanceRegistry
 from ..classes.ordering import ConstraintRef, normalize_constraint_refs, resolve_order
 from ..classes.service import AbstractService
+from ...components.config import AgentLogger, get_agent_logger
 from commamatrix.utils import await_if_needed
 
 if TYPE_CHECKING:
@@ -69,6 +70,15 @@ class AgentLifecycle:
                     self._add_registration(registration)
 
     @property
+    def logger(self) -> AgentLogger:
+        if self._agent is None:
+            return get_agent_logger(self, "AgentLifecycle")
+        logger = getattr(self._agent, "logger", None)
+        if logger is None:
+            logger = get_agent_logger(self._agent, "AgentLifecycle")
+        return logger
+
+    @property
     def registry(self) -> ServiceInstanceRegistry:
         return self._registry
 
@@ -111,6 +121,7 @@ class AgentLifecycle:
         self._children_by_key[key] = child
         self._configure_child(child)
         self._sort_children()
+        child.logger.debug("Lifecycle component registered key=%s", key)
 
     async def add_child(
         self,
@@ -130,7 +141,9 @@ class AgentLifecycle:
             return
         try:
             await await_if_needed(child.start())
+            child.logger.info("Lifecycle component started key=%s", self._child_specs[id(child)].key)
         except BaseException:
+            child.logger.exception("Lifecycle component failed to start key=%s", self._child_specs[id(child)].key)
             self._remove_child(child)
             raise
 
@@ -139,6 +152,7 @@ class AgentLifecycle:
             return
         if self._started:
             await await_if_needed(child.stop())
+            child.logger.info("Lifecycle component stopped key=%s", self._child_specs[id(child)].key)
         self._remove_child(child)
 
     async def sync_registered(self, scope: Iterable[str]) -> None:
@@ -183,6 +197,7 @@ class AgentLifecycle:
         if self._started:
             return
         self._sort_children()
+        self.logger.info("Lifecycle startup components=%d", len(self._children))
         started_children: list[AbstractService] = []
         try:
             for child in self._children:
@@ -190,12 +205,14 @@ class AgentLifecycle:
                 await await_if_needed(child.start())
             self._started = True
             self._changed = False
+            self.logger.info("Lifecycle startup completed")
         except BaseException:
+            self.logger.exception("Lifecycle startup failed; rolling back")
             for child in reversed(started_children):
                 try:
                     await await_if_needed(child.stop())
                 except Exception:
-                    pass
+                    child.logger.exception("Lifecycle rollback failed key=%s", self._child_specs[id(child)].key)
             self._registry.clear()
             raise
 
@@ -204,15 +221,23 @@ class AgentLifecycle:
             if not force and not self._changed:
                 return
             self._sort_children()
+            self.logger.debug("Lifecycle refresh components=%d force=%s", len(self._children), force)
             for child in self._children:
                 await await_if_needed(child.refresh())
             self._changed = False
 
     async def stop(self) -> None:
+        self.logger.info("Lifecycle shutdown components=%d", len(self._children))
         for child in reversed(self._children):
-            await await_if_needed(child.stop())
+            try:
+                await await_if_needed(child.stop())
+                child.logger.info("Lifecycle component stopped key=%s", self._child_specs[id(child)].key)
+            except Exception:
+                child.logger.exception("Lifecycle component failed to stop key=%s", self._child_specs[id(child)].key)
+                raise
         self._registry.clear()
         self._started = False
+        self.logger.info("Lifecycle shutdown completed")
 
     def _add_registration(self, registration: LifecycleRegistration) -> None:
         if self._agent is None:

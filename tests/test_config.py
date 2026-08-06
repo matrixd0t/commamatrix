@@ -5,8 +5,9 @@
 from __future__ import annotations
 
 import pytest
+from types import SimpleNamespace
 
-from commamatrix.components.config import Config, ConfigField
+from commamatrix.components.config import Config, ConfigField, close_agent_logging, get_agent_logger, log_format, log_level
 
 
 class TestConfigField:
@@ -102,3 +103,17 @@ class TestConfig:
         cfg = Config(defaults={f: "original"})
         cfg.update_defaults({f: "new"})
         assert cfg.get(f) == "original"
+
+    def test_agent_logger_uses_configured_level_and_format(self, capsys):
+        agent = SimpleNamespace(
+            name="test-agent",
+            config=Config(overrides={log_level: "WARNING", log_format: "%(levelname)s:%(message)s"}),
+        )
+        logger = get_agent_logger(agent, "config-test")
+        logger.info("hidden")
+        logger.warning("visible")
+        output = capsys.readouterr().err
+        close_agent_logging(agent)
+
+        assert "hidden" not in output
+        assert "WARNING:visible" in output

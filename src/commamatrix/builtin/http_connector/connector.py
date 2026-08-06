@@ -140,6 +140,7 @@ class HttpConnector(Connector[HttpOrigin]):
         self._route_handles: list[object] = []
         self._request_streaming: ContextVar[bool] = ContextVar(f"http_streaming:{id(self)}", default=True)
         self._register_routes()
+        self.logger.debug("HTTP connector routes registered count=%d", len(self._route_handles))
 
     @property
     def supports_streaming(self) -> bool:
@@ -289,10 +290,13 @@ class HttpConnector(Connector[HttpOrigin]):
         try:
             await self.authorizer.init_db()
         except BaseException:
+            self.logger.exception("HTTP connector failed to initialize authentication")
             self._unregister_routes()
             raise
+        self.logger.info("HTTP connector started")
 
     async def stop(self) -> None:
+        self.logger.info("HTTP connector stopping sessions=%d streams=%d", len(self._sessions), len(self._stream_tasks))
         await self.authorizer.stop()
         self._unregister_routes()
         for task in self._stream_tasks.values():
@@ -306,6 +310,7 @@ class HttpConnector(Connector[HttpOrigin]):
         self._sessions_by_user.clear()
         self._timezones_by_user.clear()
         self._history_cache.clear()
+        self.logger.info("HTTP connector stopped")
 
     async def parse(self, data: dict) -> OnParsedCtx | None:
         if data.get("platform") != "http":
@@ -347,6 +352,7 @@ class HttpConnector(Connector[HttpOrigin]):
                     origin=origin,
                     previous_item_id=previous_item_id,
                 ))
+        self.logger.debug("HTTP event parsed user_id=%d items=%d attachments=%d", user_id, len(dialog_items), len(attachments) if isinstance(attachments, list) else 0)
         return OnParsedCtx(raw=data, connector=self, agent=self.agent, dialog_items=dialog_items)
 
     async def get_user_timezone(self, origin: DialogOrigin) -> tzinfo | None:
@@ -520,6 +526,7 @@ class HttpConnector(Connector[HttpOrigin]):
         session = HTTPSession(session_id=uuid.uuid4().hex, user_id=user_id, queue=asyncio.Queue())
         self._sessions[session.session_id] = session
         self._sessions_by_user.setdefault(user_id, set()).add(session.session_id)
+        self.logger.debug("HTTP event session opened user_id=%d active_sessions=%d", user_id, len(self._sessions))
         return session
 
     def _close_session(self, session: HTTPSession) -> None:
@@ -534,6 +541,7 @@ class HttpConnector(Connector[HttpOrigin]):
             if not sessions:
                 self._sessions_by_user.pop(session.user_id, None)
                 self._history_cache.pop(session.user_id, None)
+        self.logger.debug("HTTP event session closed user_id=%d active_sessions=%d", session.user_id, len(self._sessions))
 
     @staticmethod
     def _is_user_origin(item: DialogItem, user_id: int) -> bool:
@@ -795,6 +803,7 @@ class HttpConnector(Connector[HttpOrigin]):
         try:
             file_id = await self.agent.file_storage.save(data, ext=extension)
         except Exception as exc:
+            self.logger.exception("HTTP file upload storage failed user_id=%d", request.state.user.id)
             return JSONResponse({"error": f"Could not save file: {exc}"}, status_code=503)
 
         record = HttpFileRecord(
@@ -807,6 +816,7 @@ class HttpConnector(Connector[HttpOrigin]):
             user_id=request.state.user.id,
         )
         self._files[file_id] = record
+        self.logger.info("HTTP file uploaded user_id=%d size=%d", request.state.user.id, len(data))
         return JSONResponse(self._file_payload(record))
 
     def _resolve_file_id(self, request: Request) -> str | Response:
@@ -997,7 +1007,7 @@ class HttpConnector(Connector[HttpOrigin]):
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                print(f"[HttpConnector] non-stream request failed: {exc}")
+                self.logger.exception("HTTP non-stream request failed user_id=%d", user.id)
                 return JSONResponse({"error": str(exc)}, status_code=500)
             after = await self._user_history(user.id)
             items = [item for item in after if item.item_id not in known_ids]
@@ -1011,7 +1021,7 @@ class HttpConnector(Connector[HttpOrigin]):
             except asyncio.CancelledError:
                 pass
             except Exception as stream_error:
-                print(f"[HttpConnector] background stream failed: {stream_error}")
+                self.logger.exception("HTTP background stream failed stream_id=%s", stream_id)
                 await self._publish(user.id, {"type": "error", "error": str(stream_error), "stream_id": stream_id})
             finally:
                 await self._publish(user.id, {"type": "message_done", "stream_id": stream_id})
@@ -1019,10 +1029,12 @@ class HttpConnector(Connector[HttpOrigin]):
 
         wrapper_task = asyncio.create_task(_run_wrapper(), name=f"http-stream:{stream_id}")
         self._stream_tasks[stream_id] = wrapper_task
+        self.logger.info("HTTP message stream started user_id=%d", user.id)
         return JSONResponse({"stream_id": stream_id}, status_code=202)
 
     async def _handle_events(self, request: Request) -> Response:
         session = self._open_session(request.state.user.id)
+        self.logger.info("HTTP event stream opened user_id=%d", request.state.user.id)
         return EventSourceResponse(
             _sse_generator(session.queue, lambda: self._close_session(session)),
             ping=15,
@@ -1084,8 +1096,3 @@ async def _sse_generator(queue: asyncio.Queue[dict | None], on_disconnect=None):
 def _serialize_item(item: DialogItem) -> dict:
     meta = {key: value for key, value in item.meta.items() if key != "llm"}
     return {"type": "dialog_item", "item_id": item.item_id, "previous_item_id": item.previous_item_id, "item_type": item.item_type.value, "role": item.role.value, "content": item.content, "user": item.user, "origin": item.origin.model_dump(mode="json"), "external_id": item.external_id, "created_at": item.created_at.isoformat() if item.created_at else None, "meta": meta}
-
-
-
-
-

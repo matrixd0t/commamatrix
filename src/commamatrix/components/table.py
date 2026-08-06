@@ -177,6 +177,7 @@ class TableManager(Manager[TableDescriptor]):
 
         for table in sorted(tables, key=lambda descriptor: descriptor.table_cls.resolved_table_id()):
             await backend.ensure_table(table)
+            self.logger.debug("Plugin table ensured table=%s", table.table_cls.table_name)
 
     def _rebuild(self) -> None:
         by_table_id: dict[str, TableDescriptor] = {}
@@ -210,5 +211,3 @@ __all__ = [
     "SchemaBackend",
     "TableManager",
 ]
-
-

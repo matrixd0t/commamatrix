@@ -73,7 +73,18 @@ from .llm_adapter import (
     PythonLLMAdapterSource,
     LLMAdapterManager,
 )
-from .config import ConfigField, Config
+from .config import (
+    AgentLogger,
+    ConfigField,
+    Config,
+    DEFAULT_LOG_FORMAT,
+    close_agent_logging,
+    configure_agent_logging,
+    get_agent_logger,
+    log_format,
+    log_level,
+    resolve_log_level,
+)
 from .server import (
     SERVER_ROOT,
     Server,
@@ -205,6 +216,14 @@ __all__ = [
     "LLMTruncatedError",
     "ConfigField",
     "Config",
+    "AgentLogger",
+    "DEFAULT_LOG_FORMAT",
+    "close_agent_logging",
+    "configure_agent_logging",
+    "get_agent_logger",
+    "log_format",
+    "log_level",
+    "resolve_log_level",
     "SERVER_ROOT",
     "Server",
     "http_external_url",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -74,6 +75,7 @@ class Authorizer:
         if token_ttl_seconds <= 0:
             raise ValueError("JWT token TTL must be positive")
         self.agent = agent
+        self.logger = getattr(agent, "logger", logging.getLogger(__name__))
         self.app_name = app_name
         self.jwt_secret = jwt_secret
         self.jwt_algorithm = "HS256"
@@ -105,6 +107,7 @@ class Authorizer:
         async with self._init_lock:
             if self._initialized:
                 return
+            self.logger.info("HTTP auth database initializing app=%s", self.app_name)
             await self.agent.storage.execute(
                 f"CREATE TABLE IF NOT EXISTS {_AUTH_TABLE} ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -135,7 +138,9 @@ class Authorizer:
                 else:
                     await self._insert_user("admin", password, is_admin=True)
                 print("Admin account created. Save this password; you won't be able to see it again: " + password)
+                self.logger.info("HTTP administrator account created app=%s", self.app_name)
             self._initialized = True
+            self.logger.info("HTTP auth database ready app=%s", self.app_name)
 
     async def _insert_user(self, username: str, password: str, is_admin: bool = False) -> AuthUser:
         password_hash = self._hash_password(password)
@@ -173,11 +178,13 @@ class Authorizer:
         await self.init_db()
         token = secrets.token_urlsafe(32)
         self._invites.add(token)
+        self.logger.info("HTTP invitation created app=%s active_invites=%d", self.app_name, len(self._invites))
         return token
 
     async def register_with_invite(self, token: str, username: str, password: str) -> AuthUser:
         await self.init_db()
         if not isinstance(token, str) or token not in self._invites:
+            self.logger.warning("HTTP invitation rejected app=%s", self.app_name)
             raise AuthError("Invalid or expired invitation")
         self._invites.remove(token)
         username = username.strip() if isinstance(username, str) else username
@@ -193,11 +200,16 @@ class Authorizer:
             (self.app_name, username),
         )
         if not rows:
+            self.logger.warning("HTTP login failed app=%s reason=unknown_user", self.app_name)
             raise AuthError("Invalid username or password")
         row = rows[0]
         if not self._password_matches(password, row["password_hash"]):
+            self.logger.warning("HTTP login failed app=%s reason=invalid_password", self.app_name)
             raise AuthError("Invalid username or password")
-        return self._issue_token(int(row["id"]), username)
+        user_id = int(row["id"])
+        token = self._issue_token(user_id, username)
+        self.logger.info("HTTP login succeeded app=%s user_id=%d", self.app_name, user_id)
+        return token
 
     def _issue_token(self, user_id: int, username: str) -> str:
         now = datetime.now(timezone.utc)
@@ -296,8 +308,10 @@ class Authorizer:
             token = self.extract_bearer_token(request.headers.get("Authorization"))
             request.state.user = await self.authenticate(token)
         except AuthError as exc:
+            self.logger.warning("HTTP authentication failed app=%s reason=%s", self.app_name, type(exc).__name__)
             return JSONResponse({"detail": str(exc)}, status_code=401)
         except Exception:
+            self.logger.exception("HTTP authentication backend failed app=%s", self.app_name)
             return JSONResponse({"detail": "Authentication service unavailable"}, status_code=503)
         return None
 
@@ -321,6 +335,3 @@ class Authorizer:
 
     async def stop(self) -> None:
         self._invites.clear()
-
-
-

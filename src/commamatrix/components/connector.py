@@ -74,6 +74,7 @@ class Connector(AbstractService, Generic[OrgT]):
         if current is not None and not current.done():
             return
         self._listener_task = asyncio.create_task(self.listen(self.agent.handle))
+        self.logger.info("Connector listener started connector=%s", type(self).__name__)
 
     async def stop(self) -> None:
         task = self._listener_task
@@ -82,6 +83,7 @@ class Connector(AbstractService, Generic[OrgT]):
             return
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+        self.logger.info("Connector listener stopped connector=%s", type(self).__name__)
 
     @abstractmethod
     async def parse(self, data: dict) -> OnParsedCtx | None: ...
@@ -161,10 +163,10 @@ class ConnectorManager(ServiceInstanceManager[Connector]):
     def resolve_for_origin(self, origin: DialogOrigin) -> Connector:
         matches = [connector for connector in self.instances if isinstance(origin, connector.origin_types)]
         if len(matches) != 1:
+            self.logger.error("Connector resolution failed origin_type=%s matches=%d", type(origin).__name__, len(matches))
             raise LookupError(f"Expected one connector for {type(origin).__name__}, found {len(matches)}")
+        self.logger.debug("Connector resolved origin_type=%s connector=%s", type(origin).__name__, type(matches[0]).__name__)
         return matches[0]
 
     def _create_instance(self, descriptor: ConnectorDescriptor) -> Connector:
         return descriptor.connector_cls(agent=self.agent)
-
-

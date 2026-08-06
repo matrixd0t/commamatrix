@@ -128,8 +128,10 @@ class SqlStorage(Storage):
 
     async def _get_db(self) -> Any:
         if self._db is None:
+            self.logger.info("Storage connecting backend=%s", type(self).__name__)
             self._db = await self._connect()
             await self._init_db()
+            self.logger.info("Storage connected backend=%s", type(self).__name__)
         return self._db
 
     async def _init_db(self) -> None:
@@ -178,6 +180,7 @@ class SqlStorage(Storage):
                 if name not in self._known_columns:
                     raise RuntimeError(f"Failed to migrate commamatrix_dialog.{name}") from exc
             self._known_columns.add(name)
+            self.logger.debug("Storage schema column added table=commamatrix_dialog column=%s", name)
 
     @staticmethod
     def _origin_to_row(origin: DialogOrigin) -> dict[str, Any]:
@@ -211,11 +214,13 @@ class SqlStorage(Storage):
         )
         values = list(data.values()) + list(origin_row.values())
 
-        return await self._insert(
+        item_id = await self._insert(
             db,
             f"INSERT INTO commamatrix_dialog ({quoted_cols}) VALUES ({placeholders}){self._insert_returning_suffix()}",
             tuple(values),
         )
+        self.logger.debug("Storage event saved item_type=%s id_present=%s", entry.item_type.value, item_id is not None)
+        return item_id
 
     async def get_branch(self, last_item_id: int) -> list[DialogItem]:
         db = await self._get_db()
@@ -258,6 +263,7 @@ class SqlStorage(Storage):
                     meta=json.loads(row["meta"]) if row["meta"] else {},
                 )
             )
+        self.logger.debug("Storage branch loaded items=%d", len(result))
         return result
 
     async def find_item_id_by_external_id(self, external_id: str, origin: DialogOrigin) -> int | None:
@@ -273,7 +279,9 @@ class SqlStorage(Storage):
             f"SELECT item_id FROM commamatrix_dialog WHERE {' AND '.join(conditions)}",
             tuple(values),
         )
-        return rows[0]["item_id"] if rows else None
+        item_id = rows[0]["item_id"] if rows else None
+        self.logger.debug("Storage external item lookup found=%s", item_id is not None)
+        return item_id
 
     async def get_history(self, *, origin_type: type[DialogOrigin] | None = None, origin_fields: dict[str, Any] | None = None) -> list[DialogItem]:
         """Return persisted items filtered by origin fields."""
@@ -316,6 +324,7 @@ class SqlStorage(Storage):
                 created_at=row["created_at"],
                 meta=json.loads(row["meta"]) if row["meta"] else {},
             ))
+        self.logger.debug("Storage history loaded items=%d", len(result))
         return result
 
     @property
@@ -437,6 +446,7 @@ class SqlStorage(Storage):
                 await self._record_schema_version(db, table)
 
         await self._ensure_indexes(db, table)
+        self.logger.debug("Storage table ensured table=%s version=%d", table_cls.table_name, table_cls.version)
 
     async def add_column(self, table_name: str, column_name: str, sql_type: str, *, nullable: bool = True) -> None:
         db = await self._get_db()
@@ -459,15 +469,16 @@ class SqlStorage(Storage):
         db = await self._get_db()
         result = await self._fetchall(db, query, params)
         await self._commit(db)
+        self.logger.debug("Storage query completed rows=%d", len(result))
         return result
 
     async def start(self) -> None:
         await self._get_db()
+        self.logger.info("Storage started backend=%s", type(self).__name__)
 
     async def close(self) -> None:
         await self._close()
 
     async def stop(self) -> None:
         await self._close()
-
-
+        self.logger.info("Storage stopped backend=%s", type(self).__name__)

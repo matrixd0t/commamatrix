@@ -83,6 +83,7 @@ class Manager(AbstractService, Generic[D]):
         self._sources.append(source)
         self._source_invalidators[id(source)] = invalidate
         source._attach_invalidator(invalidate)
+        self.logger.debug("Source mounted source=%s", type(source).__name__)
 
     def unmount(self, source: Source[D]) -> None:
         """Remove a source and invalidate its descriptors."""
@@ -92,14 +93,17 @@ class Manager(AbstractService, Generic[D]):
             source._detach_invalidator(invalidator)
         self._sources.remove(source)
         self._source_descriptor_ids.pop(id(source), None)
+        self.logger.debug("Source unmounted source=%s", type(source).__name__)
 
     async def start(self) -> None:
+        self.logger.debug("Manager starting sources=%d", len(self._sources))
         for source in self._sources:
             source.restore()
             await await_if_needed(source.start())
         await self.refresh()
 
     async def stop(self) -> None:
+        self.logger.debug("Manager stopping sources=%d descriptors=%d", len(self._sources), len(self._descriptors))
         for source in reversed(self._sources):
             source.invalidate()
             await await_if_needed(source.stop())
@@ -139,6 +143,7 @@ class Manager(AbstractService, Generic[D]):
             self._rebuild()
             raise
         self._notify_change()
+        self.logger.debug("Manager invalidated source=%s descriptors=%d", type(source).__name__, len(self._descriptors))
         return True
 
     def scan(self) -> bool:
@@ -181,6 +186,7 @@ class Manager(AbstractService, Generic[D]):
             self._rebuild()
             raise
         self._notify_change()
+        self.logger.debug("Manager scan changed descriptors=%d", len(descriptors))
         return True
 
     def _notify_change(self) -> None:
@@ -254,6 +260,7 @@ class InstanceManager(Manager[D], Generic[D, S]):
                 self._start_order.remove(sid)
                 await self._stop_instance(instance)
                 self._on_instance_removed(instance)
+                self.logger.debug("Instance removed id=%s", sid)
 
         for sid, descriptor in desired.items():
             old_fp = self._instance_fingerprints.get(sid)
@@ -264,6 +271,7 @@ class InstanceManager(Manager[D], Generic[D, S]):
                 self._start_order.remove(sid)
                 await self._stop_instance(instance)
                 self._on_instance_removed(instance)
+                self.logger.debug("Instance restarted id=%s", sid)
 
         for sid, descriptor in desired.items():
             if sid in self._instances:
@@ -276,6 +284,7 @@ class InstanceManager(Manager[D], Generic[D, S]):
             self._instance_fingerprints[sid] = descriptor.fingerprint
             self._start_order.append(sid)
             self._on_instance_added(instance, sid, descriptor)
+            self.logger.debug("Instance added id=%s", sid)
 
     async def _stop_all_instances(self) -> None:
         for sid in reversed(self._start_order):
@@ -370,6 +379,7 @@ class ActiveServiceInstanceManager(ServiceInstanceManager[SvcT]):
         if configured is not None:
             if configured in self._instances:
                 self._active_id = configured
+                self.logger.debug("Active provider selected configured_id=%s", configured)
                 return
             if self.agent.config.has_override(self.active_field):
                 raise RuntimeError(f"Active {self.id_prefix} '{configured}' not found")
@@ -377,6 +387,7 @@ class ActiveServiceInstanceManager(ServiceInstanceManager[SvcT]):
             return
         if self._instances:
             self._active_id = next(iter(self._instances))
+            self.logger.debug("Active provider selected fallback_id=%s", self._active_id)
 
     @property
     def _active(self) -> SvcT:

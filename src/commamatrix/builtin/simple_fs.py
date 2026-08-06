@@ -28,6 +28,7 @@ class SimpleFileStorage(FileStorage):
         file_id = uuid.uuid4().hex + (f'.{ext.lstrip(".")}' if ext else '')
         path = self._directory / file_id
         await asyncio.to_thread(path.write_bytes, data)
+        self.logger.debug("File saved size=%d extension=%s", len(data), ext or "")
         return file_id
 
     async def _resolve_path(self, file_id: str) -> Path | None:
@@ -51,8 +52,11 @@ class SimpleFileStorage(FileStorage):
         if path is None:
             return None
         try:
-            return await asyncio.to_thread(path.read_bytes)
+            data = await asyncio.to_thread(path.read_bytes)
+            self.logger.debug("File loaded size=%d", len(data))
+            return data
         except OSError:
+            self.logger.warning("File read failed")
             return None
 
     async def delete(self, file_id: str) -> bool:
@@ -63,6 +67,7 @@ class SimpleFileStorage(FileStorage):
             await asyncio.to_thread(path.unlink)
         except FileNotFoundError:
             return False
+        self.logger.debug("File deleted")
         return True
 
 

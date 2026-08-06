@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from typing import Any, Generic, TypeVar
 
@@ -61,6 +62,20 @@ class ConfigField(Generic[T]):
         return self._name
 
 
+DEFAULT_LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] [agent=%(agent)s] %(message)s"
+
+log_level = ConfigField[str](
+    name="log_level",
+    default="INFO",
+    description="Minimum log level for this agent",
+)
+log_format = ConfigField[str](
+    name="log_format",
+    default=DEFAULT_LOG_FORMAT,
+    description="Python logging format string for this agent",
+)
+
+
 class Config:
     """Per-agent configuration store.
 
@@ -92,9 +107,9 @@ class Config:
     """
 
     def __init__(
-        self,
-        overrides: dict[ConfigField, Any] | None = None,
-        defaults: dict[ConfigField, Any] | None = None,
+            self,
+            overrides: dict[ConfigField, Any] | None = None,
+            defaults: dict[ConfigField, Any] | None = None,
     ) -> None:
         self._overrides: dict[ConfigField, Any] = dict(overrides or {})
         self._defaults: dict[ConfigField, Any] = dict(defaults or {})
@@ -126,3 +141,117 @@ class Config:
 
     def __contains__(self, field: ConfigField) -> bool:
         return field in self._overrides or field in self._defaults or field.has_default
+
+
+def resolve_log_level(value: object) -> int:
+    """Convert a configured level to a logging value without breaking logging."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().upper()
+        if normalized == "OFF":
+            return logging.CRITICAL + 1
+        resolved = getattr(logging, normalized, None)
+        if isinstance(resolved, int):
+            return resolved
+    return logging.INFO
+
+
+class AgentLogger:
+    """Small per-agent facade over the standard library logger."""
+
+    def __init__(self, agent: Any, component: str) -> None:
+        self._agent = agent
+        self._component = component
+        self._logger = logging.getLogger(f"commamatrix.{component}")
+        configure_agent_logging(agent)
+
+    def isEnabledFor(self, level: int) -> bool:
+        config = getattr(self._agent, "config", None)
+        if config is None:
+            return level >= logging.INFO
+        return level >= resolve_log_level(config.get(log_level))
+
+    def log(self, level: int, message: str, *args: object, **kwargs: object) -> None:
+        if not self.isEnabledFor(level):
+            return
+        extra = dict(kwargs.pop("extra", {}) or {})
+        extra.setdefault("agent", getattr(self._agent, "name", "<unnamed>"))
+        extra.setdefault("component", self._component)
+        extra["_commamatrix_agent_id"] = id(self._agent)
+        self._logger.log(level, message, *args, extra=extra, **kwargs)
+
+    def debug(self, message: str, *args: object, **kwargs: object) -> None:
+        self.log(logging.DEBUG, message, *args, **kwargs)
+
+    def info(self, message: str, *args: object, **kwargs: object) -> None:
+        self.log(logging.INFO, message, *args, **kwargs)
+
+    def warning(self, message: str, *args: object, **kwargs: object) -> None:
+        self.log(logging.WARNING, message, *args, **kwargs)
+
+    warn = warning
+
+    def error(self, message: str, *args: object, **kwargs: object) -> None:
+        self.log(logging.ERROR, message, *args, **kwargs)
+
+    def exception(self, message: str, *args: object, **kwargs: object) -> None:
+        kwargs["exc_info"] = True
+        self.error(message, *args, **kwargs)
+
+
+class _AgentHandler(logging.StreamHandler):
+    def __init__(self, agent: Any) -> None:
+        super().__init__()
+        self._agent_id = id(agent)
+        self._config = agent.config
+        self._agent_name = getattr(agent, "name", "<unnamed>")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if getattr(record, "_commamatrix_agent_id", None) != self._agent_id:
+            return False
+        return record.levelno >= resolve_log_level(self._config.get(log_level))
+
+    def format(self, record: logging.LogRecord) -> str:
+        configured = self._config.get(log_format)
+        fmt = configured if isinstance(configured, str) and configured.strip() else DEFAULT_LOG_FORMAT
+        record.agent = getattr(record, "agent", self._agent_name)
+        try:
+            return logging.Formatter(fmt).format(record)
+        except (KeyError, TypeError, ValueError):
+            return logging.Formatter(DEFAULT_LOG_FORMAT).format(record)
+
+
+def configure_agent_logging(agent: Any) -> None:
+    """Attach one filtered handler for an agent without changing root logging."""
+    if not hasattr(agent, "config"):
+        return
+    try:
+        handler = getattr(agent, "_commamatrix_log_handler", None)
+        if handler is not None:
+            return
+        package_logger = logging.getLogger("commamatrix")
+        package_logger.setLevel(logging.DEBUG)
+        handler = _AgentHandler(agent)
+        package_logger.addHandler(handler)
+        setattr(agent, "_commamatrix_log_handler", handler)
+    except (AttributeError, TypeError):
+        # Lightweight test doubles and frozen host objects can use root logging.
+        return
+
+
+def close_agent_logging(agent: Any) -> None:
+    handler = getattr(agent, "_commamatrix_log_handler", None)
+    if handler is None:
+        return
+    package_logger = logging.getLogger("commamatrix")
+    package_logger.removeHandler(handler)
+    handler.close()
+    try:
+        delattr(agent, "_commamatrix_log_handler")
+    except AttributeError:
+        pass
+
+
+def get_agent_logger(agent: Any, component: str) -> AgentLogger:
+    return AgentLogger(agent, component)

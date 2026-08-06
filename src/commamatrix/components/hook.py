@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import time
 import weakref
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -303,8 +304,17 @@ class HookManager(Manager[HookDescriptor]):
         self._python_source.set_scope(scope)
 
     async def fire(self, event: str, ctx: Any) -> None:
-        for descriptor in self._handlers.get(event, []):
-            await self._source_of(descriptor).invoke(descriptor, ctx)
+        handlers = self._handlers.get(event, [])
+        self.logger.debug("Firing hooks event=%s handlers=%d", event, len(handlers))
+        for descriptor in handlers:
+            started = time.perf_counter()
+            try:
+                await self._source_of(descriptor).invoke(descriptor, ctx)
+            except Exception:
+                self.logger.exception("Hook failed event=%s name=%s", event, descriptor.name)
+                raise
+            finally:
+                self.logger.debug("Hook completed event=%s name=%s duration_ms=%.1f", event, descriptor.name, (time.perf_counter() - started) * 1000)
 
     def _rebuild(self) -> None:
         from ..core.classes.ordering import resolve_order
@@ -321,6 +331,7 @@ class HookManager(Manager[HookDescriptor]):
                 after=lambda d: d.after,
             )
         self._handlers = by_event
+        self.logger.debug("Hook index rebuilt events=%d handlers=%d", len(by_event), sum(map(len, by_event.values())))
 
 
 on_agent_start = Hook[OnAgentStartCtx](HookEventType.ON_AGENT_START, OnAgentStartCtx)

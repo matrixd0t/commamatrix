@@ -16,7 +16,6 @@ from collections import defaultdict
 from collections.abc import Iterable, Iterator, MutableMapping
 from contextlib import asynccontextmanager
 from pathlib import Path
-from traceback import format_exc
 from uuid import uuid4
 
 from typing import TYPE_CHECKING, Any, Callable, Literal, cast
@@ -29,7 +28,7 @@ except ImportError:
 
 from httpx2 import AsyncClient
 
-from ...components.config import Config, ConfigField
+from ...components.config import Config, ConfigField, close_agent_logging, get_agent_logger
 from ...components.dialog import DialogItem, DialogItemType, DialogRole
 from ...components.hook import (
     AfterLlmCallCtx,
@@ -177,11 +176,12 @@ class Agent:
         if isinstance(config, dict):
             config = Config(overrides=config)
         self.config: Config = config
+        self.logger = get_agent_logger(self, "Agent")
         self._auto_load_main = auto_load_main
         self._auto_load_plugins = auto_load_plugins
 
         self.services = ServiceInstanceRegistry()
-        self.runner = AgentRunner()
+        self.runner = AgentRunner(self.logger)
         self._started = False
         self._start_lock = asyncio.Lock()
         self._filesystem_lock = asyncio.Lock()
@@ -288,6 +288,7 @@ class Agent:
         """Apply an extension operation and refresh active managers."""
         original_scope = list(self._extension_scope)
         targets = self._normalize_extension_targets(module_or_path)
+        self.logger.debug("Applying extension operation=%s targets=%d", operation, len(targets))
         try:
             handled = self._extension_runtime.apply(targets, operation)
             if handled:
@@ -295,8 +296,10 @@ class Agent:
                 self.lifecycle.set_scope(self._extension_scope)
                 if self._started:
                     await self.lifecycle.refresh()
+            self.logger.info("Extension operation=%s handled=%d active_modules=%d", operation, len(handled), len(self._extension_scope))
             return handled
         except Exception as exc:
+            self.logger.exception("Extension operation=%s failed", operation)
             self._extension_runtime.replace_scope(original_scope)
             if isinstance(exc, ExtensionRuntimeError):
                 raise
@@ -316,6 +319,7 @@ class Agent:
 
     async def refresh_extensions(self) -> None:
         """Propagate scope and refresh all services."""
+        self.logger.debug("Refreshing extensions active_modules=%d", len(self._extension_scope))
         await self.lifecycle.sync_registered(self._extension_scope)
         self.lifecycle.set_scope(self._extension_scope)
         await self.lifecycle.refresh()
@@ -326,9 +330,14 @@ class Agent:
 
     async def stop(self) -> None:
         """Stop scheduled/listener services, then cancel active runs."""
-        await self.lifecycle.stop()
-        await self.runner.stop()
-        self._started = False
+        self.logger.info("Stopping agent")
+        try:
+            await self.lifecycle.stop()
+            await self.runner.stop()
+            self._started = False
+            self.logger.info("Agent stopped")
+        finally:
+            close_agent_logging(self)
 
     async def run_forever(self) -> None:
         """Start the agent and keep it alive until the task is cancelled."""
@@ -351,28 +360,26 @@ class Agent:
         await self._ensure_started()
         parsed: OnParsedCtx | None = None
         connectors = self.connector_manager.resolve()
+        self.logger.debug("Handling event connectors=%d", len(connectors))
         for connector in connectors:
             parsed = await connector.parse(raw)
             if parsed is not None:
                 break
         if parsed is None:
-            print("[Agent DEBUG] handle no connector parsed the event", file=sys.stderr)
+            self.logger.warning("No connector parsed the incoming event")
             return []
 
-        print(
-            f"[Agent DEBUG] handle parsed items={len(parsed.dialog_items)} previous_external_id={parsed.previous_external_id!r} ids={[item.item_id for item in parsed.dialog_items]}",
-            file=sys.stderr
-        )
+        self.logger.debug("Event parsed connector=%s items=%d has_previous=%s", type(parsed.connector).__name__, len(parsed.dialog_items), bool(parsed.previous_external_id))
         await self._resolve_previous_item(parsed)
         await self.hook_manager.fire(HookEventType.ON_PARSED, parsed)
 
         tasks: list[asyncio.Task] = []
         for run, history in self._split_runs(parsed):
-            print(f"[Agent DEBUG] submit run origin={run.origin} user={run.user!r} history_ids={[item.item_id for item in history]}", file=sys.stderr)
+            self.logger.debug("Submitting run run_id=%s items=%d", run.run_id, len(history))
             task = await self.runner.submit(self.runner.make_key(run.origin, run.user), self.run(run, history=history))
             if task is not None:
                 tasks.append(task)
-        print(f"[Agent DEBUG] handle submitted tasks={len(tasks)}", file=sys.stderr)
+        self.logger.debug("Event submitted tasks=%d", len(tasks))
         return tasks
 
     async def submit_run(
@@ -432,6 +439,7 @@ class Agent:
         """Run: LLM call -> tools -> send until no calls remain."""
         await self._ensure_started()
         error: Exception | None = None
+        self.logger.info("Run started run_id=%s history_items=%d", run.run_id, len(history or ()))
 
         try:
             last_item_id = await self._store_history(run, history)
@@ -441,12 +449,15 @@ class Agent:
                 run.chain_state["allowed_tools"] = run.state["allowed_tools"]
 
             if (await self._before_run(run)).abort:
+                self.logger.warning("Run aborted by hook run_id=%s", run.run_id)
                 return None
             self._select_model(run)
+            self.logger.debug("Run model selected run_id=%s model=%s adapter=%s", run.run_id, run.llm.model_name if run.llm else None, type(run.adapter).__name__ if run.adapter else None)
 
             async with self._typing(run):
                 while True:
                     run.iteration += 1
+                    self.logger.debug("Run iteration run_id=%s iteration=%d", run.run_id, run.iteration)
                     run.tool_output_tail = None
 
                     dialog = await self._load_dialog(last_item_id)
@@ -518,6 +529,7 @@ class Agent:
                     after_llm_ctx = AfterLlmCallCtx(run=run, response=llm_response)
                     await self.hook_manager.fire(HookEventType.AFTER_LLM_CALL, after_llm_ctx)
                     self._validate_response(after_llm_ctx.response)
+                    self.logger.info("LLM response received run_id=%s blocks=%d stop_reason=%s", run.run_id, len(llm_response.content), llm_response.stop_reason)
 
                     for block, parent_item_id in zip(tool_calls, tool_parent_item_ids):
                         run.state["child_parent_item_id"] = parent_item_id
@@ -547,12 +559,15 @@ class Agent:
                 except Exception:
                     run.dialog_items = []
             await self.hook_manager.fire(HookEventType.AFTER_RUN, AfterRunCtx(run=run, error=error))
+            self.logger.info("Run finished run_id=%s failed=%s", run.run_id, error is not None)
 
     async def _ensure_started(self) -> None:
         """Lazy init: load .env, add defaults, start lifecycle, fire on_agent_start."""
         load_dotenv()
         async with self._start_lock:
             if not self._started:
+                self.logger = get_agent_logger(self, "Agent")
+                self.logger.info("Starting agent")
                 Path(self.config.get(commamatrix_dir)).mkdir(parents=True, exist_ok=True)
                 if self._auto_load_main:
                     await self.add_extensions("__main__")
@@ -579,6 +594,7 @@ class Agent:
                     OnAgentStartCtx(agent=self),
                 )
                 self._started = True
+                self.logger.info("Agent started lifecycle_components=%d active_modules=%d", len(self.lifecycle._children), len(self._extension_scope))
             await self.refresh_extensions()
 
     async def _before_run(self, run: RunCtx) -> BeforeRunCtx:
@@ -636,14 +652,14 @@ class Agent:
                     if last_item_id is not None and item.previous_item_id is None:
                         item.previous_item_id = last_item_id
                     item.meta.setdefault("chain", {}).update(run.chain_state)
-                    print(f"[Agent DEBUG] save input item_type={item.item_type.value} previous_item_id={item.previous_item_id} external_id={item.external_id!r} origin={item.origin}", file=sys.stderr)
+                    self.logger.debug("Saving input item type=%s has_previous=%s", item.item_type.value, item.previous_item_id is not None)
                     last_item_id = await self.storage.save_event(item)
-                    print(f"[Agent DEBUG] saved input item_id={last_item_id}", file=sys.stderr)
+                    self.logger.debug("Saved input item has_id=%s", last_item_id is not None)
                     if last_item_id is not None:
                         item.item_id = last_item_id
                         run.last_item_id = last_item_id
                         connector = self.connector_manager.resolve_for_origin(item.origin)
-                        print(f"[Agent DEBUG] publish input item_id={item.item_id} connector={type(connector).__name__}", file=sys.stderr)
+                        self.logger.debug("Publishing input item connector=%s", type(connector).__name__)
                         await connector.publish_item(item.origin, item)
                 else:
                     last_item_id = item.item_id
@@ -657,7 +673,7 @@ class Agent:
                 parsed.previous_external_id,
                 parsed.dialog_items[0].origin,
             )
-            print(f"[Agent DEBUG] resolve previous external_id={parsed.previous_external_id!r} -> item_id={replied_item_id}", file=sys.stderr)
+            self.logger.debug("Resolved previous item found=%s", replied_item_id is not None)
             if replied_item_id is not None:
                 parsed.dialog_items[0].previous_item_id = replied_item_id
 
@@ -755,13 +771,13 @@ class Agent:
         await self.hook_manager.fire(HookEventType.BEFORE_SEND, before_send_ctx)
 
         connector = self.connector_manager.resolve_for_origin(run.origin)
-        print(f"[Agent DEBUG] send item_type={dialog_item.item_type.value} previous_item_id={dialog_item.previous_item_id} connector={type(connector).__name__}", file=sys.stderr)
+        self.logger.debug("Sending item type=%s connector=%s", dialog_item.item_type.value, type(connector).__name__)
         external_id = await connector.send(run.origin, dialog_item)
         dialog_item.external_id = external_id or None
-        print(f"[Agent DEBUG] sent external_id={dialog_item.external_id!r}", file=sys.stderr)
+        self.logger.debug("Item delivered external_id_present=%s", dialog_item.external_id is not None)
 
         saved_id = await self.storage.save_event(dialog_item)
-        print(f"[Agent DEBUG] saved output item_id={saved_id} external_id={dialog_item.external_id!r}", file=sys.stderr)
+        self.logger.debug("Saved output item id_present=%s", saved_id is not None)
         if saved_id is not None:
             dialog_item.item_id = saved_id
             run.last_item_id = saved_id
@@ -771,7 +787,7 @@ class Agent:
 
     async def _handle_error(self, run: RunCtx, error: Exception) -> None:
         """Fire on_error hook; re-raise unless suppressed."""
-        print(f"[Agent] ERROR in run {run.origin}: {type(error).__name__}: {error}\n{format_exc()}", file=sys.stderr)
+        self.logger.error("Run failed run_id=%s error_type=%s", run.run_id, type(error).__name__, exc_info=error)
         ctx = OnErrorCtx(run=run, error=error)
         await self.hook_manager.fire(HookEventType.ON_ERROR, ctx)
         if not ctx.suppress:
@@ -819,4 +835,3 @@ class Agent:
             )
             result.append((run, items))
         return result
-

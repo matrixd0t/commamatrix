@@ -1,4 +1,4 @@
-﻿# components/file_storage.py
+# components/file_storage.py
 
 from __future__ import annotations
 
@@ -87,13 +87,19 @@ class FileStorageManager(ActiveServiceInstanceManager[FileStorage]):
         super().__init__(agent, source=PythonFileStorageSource(), **kwargs)
 
     async def save(self, data: bytes, ext: str | None = None) -> str:
-        return await self._active.save(data, ext)
+        file_id = await self._active.save(data, ext)
+        self.logger.debug("File storage saved size=%d", len(data))
+        return file_id
 
     async def get(self, file_id: str) -> bytes | None:
-        return await self._active.get(file_id)
+        data = await self._active.get(file_id)
+        self.logger.debug("File storage loaded found=%s", data is not None)
+        return data
 
     async def delete(self, file_id: str) -> bool:
-        return await self._active.delete(file_id)
+        deleted = await self._active.delete(file_id)
+        self.logger.debug("File storage deleted=%s", deleted)
+        return deleted
 
     def url(self, file_id: str) -> str:
         return self.agent.http_server.file_url(file_id)

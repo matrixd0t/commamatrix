@@ -55,12 +55,14 @@ class HttpClient(AbstractService):
                 follow_redirects=True,
                 timeout=self.config.get(http_timeout),
             )
+            self.logger.info("Shared HTTP client initialized timeout=%s", self.config.get(http_timeout))
         return self._client
 
     async def stop(self) -> None:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
+            self.logger.info("Shared HTTP client closed")
 
 
 __all__ = [

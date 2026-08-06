@@ -94,6 +94,7 @@ class Server(AbstractService):
             name=name,
         )
         self._registrations.append(registration)
+        self.logger.debug("HTTP route registered method=%s path=%s", ",".join(registration.methods), registration.path)
         if self._app is not None:
             registration.route = self._make_route(registration)
             self._app.routes.append(registration.route)
@@ -109,6 +110,7 @@ class Server(AbstractService):
             app=app,
         )
         self._registrations.append(registration)
+        self.logger.debug("HTTP mount registered path=%s", registration.path)
         if self._app is not None:
             registration.route = self._make_mount(registration)
             self._app.routes.append(registration.route)
@@ -125,6 +127,7 @@ class Server(AbstractService):
             except ValueError:
                 pass
         registration.route = None
+        self.logger.debug("HTTP registration removed path=%s", registration.path)
 
     def _build_app(self) -> None:
         from starlette.applications import Starlette
@@ -169,12 +172,14 @@ class Server(AbstractService):
         try:
             payload = await request.json()
         except Exception:
+            self.logger.warning("HTTP handle request contained invalid JSON")
             return JSONResponse({"error": "Invalid JSON"}, status_code=400)
         if not isinstance(payload, dict):
             return JSONResponse({"error": "Body must be a JSON object"}, status_code=400)
         try:
             tasks = await self.agent.handle(payload)
         except Exception as exc:
+            self.logger.exception("HTTP handle request failed")
             return JSONResponse({"error": str(exc)}, status_code=500)
         return JSONResponse({"accepted": len(tasks)}, status_code=202)
 
@@ -188,6 +193,7 @@ class Server(AbstractService):
         try:
             file_data = await read_file(file_id, file_storage=self.agent.file_storage)
         except Exception as exc:
+            self.logger.exception("HTTP file read failed")
             return JSONResponse({"error": f"Could not read file: {exc}"}, status_code=503)
         if file_data is None:
             return JSONResponse({"error": "File not found"}, status_code=404)
@@ -204,7 +210,9 @@ class Server(AbstractService):
             app = self.app
             import uvicorn
         except ImportError:
+            self.logger.warning("HTTP server dependency uvicorn is unavailable")
             return
+        self.logger.info("HTTP server starting host=%s port=%d", self._host, self._port)
         config = uvicorn.Config(app=app, host=self._host, port=self._port, log_level="warning")
         self._uvicorn_server = uvicorn.Server(config)
         listener_task = asyncio.create_task(self._uvicorn_server.serve())
@@ -212,13 +220,16 @@ class Server(AbstractService):
         while not self._uvicorn_server.started:
             if self._uvicorn_server.should_exit:
                 await asyncio.gather(listener_task, return_exceptions=True)
+                self.logger.error("HTTP server failed to start host=%s port=%d", self._host, self._port)
                 raise RuntimeError(f"HTTP http_server failed to start on {self._host}:{self._port}")
             await asyncio.sleep(0.01)
         if self._uvicorn_server.servers:
             self._bound_port = self._uvicorn_server.servers[0].sockets[0].getsockname()[1]
+        self.logger.info("HTTP server started host=%s port=%d", self._host, self._bound_port or self._port)
         print(f"CommaMatrix web http_server running on {self.base_url}")
 
     async def stop(self) -> None:
+        self.logger.info("HTTP server stopping")
         server = self._uvicorn_server
         self._uvicorn_server = None
         self._bound_port = None
@@ -232,3 +243,4 @@ class Server(AbstractService):
             except asyncio.TimeoutError:
                 task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+        self.logger.info("HTTP server stopped")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-import sys
+import time
 from collections.abc import AsyncIterator
 from typing import Any, TYPE_CHECKING
 from urllib.parse import quote, urlparse
@@ -84,12 +84,19 @@ class LLMHTTPAdapter(LLMAdapter):
             self.config.get(llm_api_base),
             self.codec.models_endpoint,
         )
-        return await self.codec.get_models(
-            client=self.agent.http_client,
-            url=url,
-            headers=self._model_headers(),
-            timeout=self._request_timeout,
-        )
+        started = time.perf_counter()
+        try:
+            models = await self.codec.get_models(
+                client=self.agent.http_client,
+                url=url,
+                headers=self._model_headers(),
+                timeout=self._request_timeout,
+            )
+        except Exception:
+            self.logger.exception("Model refresh failed endpoint=%s", self._safe_endpoint(url))
+            raise
+        self.logger.info("Models refreshed protocol=%s count=%d duration_ms=%.1f", self.config.get(llm_api_protocol), len(models), (time.perf_counter() - started) * 1000)
+        return models
 
     async def get_model_info(self, model_name: str) -> LLM | None:
         encoded_name = quote(model_name, safe="/:@-._~")
@@ -128,6 +135,11 @@ class LLMHTTPAdapter(LLMAdapter):
             return self.codec_registry[protocol]
         except KeyError:
             raise RuntimeError(f"No codec registered for protocol: {protocol}")
+
+    @staticmethod
+    def _safe_endpoint(url: str) -> str:
+        parsed = urlparse(url)
+        return f"{parsed.netloc}{parsed.path}" or "<unknown>"
 
     @staticmethod
     def _resolve_model(ctx: BeforeLlmCallCtx) -> LLM:
@@ -171,6 +183,8 @@ class LLMHTTPAdapter(LLMAdapter):
         body = await codec.build_request(model=effective_model, ctx=ctx)
 
         actual_stream = stream and codec.can_stream
+        started = time.perf_counter()
+        self.logger.debug("LLM request started model=%s protocol=%s stream=%s endpoint=%s", effective_model.model_name, protocol.value, actual_stream, self._safe_endpoint(url))
 
         if actual_stream:
             body = codec.enable_streaming(body)
@@ -179,7 +193,7 @@ class LLMHTTPAdapter(LLMAdapter):
                 async with self.agent.http_client.stream("POST", url, json=body, headers=headers, timeout=self._stream_timeout) as resp:
                     if resp.status_code >= 400:
                         err_body = (await resp.aread()).decode(errors="replace")
-                        print(f"[LLM] ERROR: stream failed ({resp.status_code}): {err_body[:500]}", file=sys.stderr)
+                        self.logger.error("LLM stream failed status=%d endpoint=%s", resp.status_code, self._safe_endpoint(url))
                         raise LLMResponseError(f"LLM HTTP stream failed ({resp.status_code}): {err_body}")
                     acc: dict[str, Any] = {}
                     event_count = 0
@@ -192,13 +206,14 @@ class LLMHTTPAdapter(LLMAdapter):
                     for block in blocks:
                         yield block
                     yield end
+                    self.logger.info("LLM stream completed model=%s events=%d duration_ms=%.1f", effective_model.model_name, event_count, (time.perf_counter() - started) * 1000)
             except LLMResponseError:
                 raise
             except HTTPError as exc:
-                print(f"[LLM] ERROR: stream HTTP error: {exc}", file=sys.stderr)
+                self.logger.error("LLM stream HTTP error endpoint=%s error_type=%s", self._safe_endpoint(url), type(exc).__name__, exc_info=exc)
                 raise LLMResponseError(f"LLM HTTP stream failed: {exc}") from exc
             except Exception as exc:
-                print(f"[LLM] ERROR: unexpected stream error: {type(exc).__name__}: {exc}", file=sys.stderr)
+                self.logger.error("Unexpected LLM stream error endpoint=%s error_type=%s", self._safe_endpoint(url), type(exc).__name__, exc_info=exc)
                 raise
         else:
             try:
@@ -207,13 +222,13 @@ class LLMHTTPAdapter(LLMAdapter):
                 payload = response.json()
             except HTTPStatusError as exc:
                 err_body = exc.response.text if exc.response else "no response"
-                print(f"[LLM] ERROR: request failed ({exc.response.status_code}): {err_body[:500]}", file=sys.stderr)
+                self.logger.error("LLM request failed status=%d endpoint=%s", exc.response.status_code, self._safe_endpoint(url))
                 raise LLMResponseError(f"LLM HTTP request failed ({exc.response.status_code}): {err_body}") from exc
             except HTTPError as exc:
-                print(f"[LLM] ERROR: request HTTP error: {exc}", file=sys.stderr)
+                self.logger.error("LLM request HTTP error endpoint=%s error_type=%s", self._safe_endpoint(url), type(exc).__name__, exc_info=exc)
                 raise LLMResponseError(f"LLM HTTP request failed: {exc}") from exc
             except ValueError as exc:
-                print(f"[LLM] ERROR: invalid JSON response: {exc}", file=sys.stderr)
+                self.logger.error("LLM returned invalid JSON endpoint=%s", self._safe_endpoint(url), exc_info=exc)
                 raise LLMResponseError("LLM returned invalid JSON") from exc
 
             llm_response = codec.parse_response(payload)
@@ -224,9 +239,9 @@ class LLMHTTPAdapter(LLMAdapter):
                 usage=llm_response.usage,
                 meta=llm_response.meta,
             )
+            self.logger.info("LLM request completed model=%s blocks=%d duration_ms=%.1f", effective_model.model_name, len(llm_response.content), (time.perf_counter() - started) * 1000)
 
-    @staticmethod
-    async def _iter_sse_events(response: httpx.Response) -> AsyncIterator[tuple[str | None, dict[str, Any]]]:
+    async def _iter_sse_events(self, response: httpx.Response) -> AsyncIterator[tuple[str | None, dict[str, Any]]]:
         event_type: str | None = None
         data_lines: list[str] = []
 
@@ -240,7 +255,7 @@ class LLMHTTPAdapter(LLMAdapter):
                     try:
                         yield event_type, json.loads(data_str)
                     except json.JSONDecodeError:
-                        print(f"[LLM] WARNING: failed to parse SSE JSON: {data_str[:200]}", file=sys.stderr)
+                        self.logger.warning("Failed to parse SSE JSON event")
                     data_lines = []
                 event_type = None
                 continue
@@ -256,7 +271,7 @@ class LLMHTTPAdapter(LLMAdapter):
                 try:
                     yield event_type, json.loads(data_str)
                 except json.JSONDecodeError:
-                    print(f"[LLM] WARNING: trailing SSE JSON parse error: {data_str[:200]}", file=sys.stderr)
+                    self.logger.warning("Failed to parse trailing SSE JSON event")
 
     @property
     def _stream_timeout(self) -> httpx.Timeout:

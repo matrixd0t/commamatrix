@@ -1,4 +1,4 @@
-﻿# components/llm_adapter.py
+# components/llm_adapter.py
 
 from __future__ import annotations
 
@@ -255,6 +255,7 @@ class LLMAdapter(AbstractService):
 
     async def start(self) -> None:
         self.llms = await self.refresh_llms()
+        self.logger.info("LLM adapter started adapter=%s models=%d", type(self).__name__, len(self.llms))
 
     @abstractmethod
     async def refresh_llms(self) -> list[LLM]:
@@ -322,6 +323,3 @@ class LLMAdapterManager(ServiceInstanceManager[LLMAdapter]):
         if adapter is None:
             raise RuntimeError("No LLM adapter selected for the current run")
         return adapter.ask_llm(ctx, stream=stream)
-
-
-

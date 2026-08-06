@@ -97,8 +97,7 @@ uv add "commamatrix[http,sqlite]"
 
 The following example starts an authenticated HTTP agent backed by an
 OpenAI-compatible API. The same adapter can be configured for other supported
-providers by changing `LLM_API_BASE`, `LLM_API_PROTOCOL`, and the API key
-field.
+providers by changing `LLM_API_BASE`, `llm_api_protocol`, and the API key field.
 
 Set the provider configuration in the environment. CommaMatrix also loads a
 `.env` file when `python-dotenv` is installed:
@@ -121,18 +120,19 @@ Create `quickstart.py`:
 import asyncio
 import os
 
-from commamatrix import *
+from commamatrix import Agent, agentic_model, presets
+from commamatrix.builtin.llm_http_adapter import llm_api_base, openai_api_key
 
 
 async def main() -> None:
     agent = Agent(name="my_lovely_assistant")
     await agent.add_extensions(presets.minimal)
 
-    # See every ConfigField declared by the two active extensions.
+    # See every ConfigField declared by the active extensions.
     print(agent.config_fields_info())
 
     agent.config.set(agentic_model, "deepseek-v4-flash")
-    agent.config.set(api_base, os.environ["LLM_API_BASE"])
+    agent.config.set(llm_api_base, os.environ["LLM_API_BASE"])
     agent.config.set(openai_api_key, os.environ["OPENAI_API_KEY"])
 
     # __aenter__ starts the agent; __aexit__ stops it reliably on exit.
@@ -159,7 +159,7 @@ Start it with uv:
 uv run quickstart.py
 ```
 
-Open `http://127.0.0.1:8338/commamatrix` in a browser. On the first start, the HTTP connector creates an administrator account and prints its generated password once. Save that password. The default SQLite database and uploaded files are stored at `.commamatrix/`.
+Open `http://127.0.0.1:8338/commamatrix` in a browser. The default `http_host` is `0.0.0.0`, so set it to `127.0.0.1` in local or otherwise untrusted environments. On the first start, the HTTP connector creates an administrator account and prints its generated password once. Save that password. The default SQLite database and uploaded files are stored at `.commamatrix/`.
 
 The health endpoint does not require authentication:
 
@@ -184,7 +184,7 @@ curl -X POST http://127.0.0.1:8338/commamatrix/api/messages \
   -d '{"content":"Explain what CommaMatrix does in one sentence."}'
 ```
 
-The response contains the new dialog items, including the assistant output. For streaming, add `?stream=1` to the messages endpoint and consume events from `/commamatrix/api/events`.
+The response contains the new dialog items, including the assistant output. For streaming, add `?stream=1` to the messages endpoint and consume authenticated SSE events from `/commamatrix/api/events` with the same bearer token.
 
 `agent.config_fields_markdown()` returns Markdown sections for the currently active extension modules. Each field is rendered as `## name: type (default: value)`, followed by its declaring module and description; the parenthesized default is omitted when no default is declared. Defaults created by a callable are shown as `computed`; configuration values are never included in the output. Call the helper after `add_extensions()` and before `start()` when you want to inspect only the extensions selected by the application. Core fields such as `agentic_model`, `http_host`, and `http_port` are not extension fields and can be imported and configured separately as shown above.
 
@@ -197,27 +197,33 @@ The LLM HTTP adapter reads these environment variables by default:
 | `OPENAI_API_KEY` | Key for OpenAI-compatible and OpenAI Responses APIs |
 | `ANTHROPIC_API_KEY` | Key for the Anthropic Messages API |
 | `LLM_API_BASE` | Provider base URL |
-| `LLM_API_PROTOCOL` | `chat_completions`, `responses`, or `anthropic_messages` |
+
+Set `llm_api_protocol` to `chat_completions`, `responses`, or
+`anthropic_messages` in the agent configuration when the provider does not use
+the default Chat Completions protocol.
 
 The provider must expose a compatible models endpoint. The adapter discovers available models during startup, and `agentic_model` filters the discovered models by substring. The quickstart selects `deepseek-v4-flash`; replace that value with a model available from your provider.
+
+For file uploads sent to an external LLM provider, configure the `http_external_url` field with a public base URL that reaches this HTTP server. Without it, the connector keeps external file uploads disabled.
 
 Configuration fields are ordinary Python objects and can be passed as keys in an agent's `config` dictionary on init:
 
 ```python
-from commamatrix import *
+from commamatrix import Agent, agentic_model
+from commamatrix.builtin.llm_http_adapter import llm_api_base
 
 agent = Agent(
     "my-agent",
     config={
         agentic_model: "my-model",
-        api_base: "https://llm.example.com",
+        llm_api_base: "https://llm.example.com",
     },
 )
 ```
 
 ## Extensions
 
-Extensions are imported and then added to an agent's scope. The recommended preset lists containig built-in features are available in `commamatrix.presets`:
+Extensions are imported and then added to an agent's scope. The recommended preset lists containing built-in features are available in `commamatrix.presets`:
 
 ```python
 from commamatrix import Agent

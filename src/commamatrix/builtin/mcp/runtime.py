@@ -93,6 +93,7 @@ class MCPServerRuntime(AbstractService):
         if self._session is not None:
             return
 
+        self.logger.info("MCP connection starting server_id=%s transport=%s", self.spec.server_id, self.spec.transport)
         sdk = _sdk()
         stack = AsyncExitStack()
         await stack.__aenter__()
@@ -113,7 +114,9 @@ class MCPServerRuntime(AbstractService):
             )
             await self._with_timeout(self._session.initialize())
             await self.refresh_tools()
+            self.logger.info("MCP connection initialized server_id=%s tools=%d", self.spec.server_id, len(self._tools))
         except BaseException:
+            self.logger.exception("MCP connection failed server_id=%s", self.spec.server_id)
             await self.stop()
             raise
 
@@ -179,6 +182,7 @@ class MCPServerRuntime(AbstractService):
                 break
 
         self._tools = tuple(tools)
+        self.logger.debug("MCP tools listed server_id=%s tools=%d", self.spec.server_id, len(self._tools))
         return self._tools
 
     async def refresh(self) -> None:
@@ -187,13 +191,19 @@ class MCPServerRuntime(AbstractService):
     async def call_tool(self, remote_name: str, arguments: dict[str, Any]) -> Any:
         if self._session is None:
             raise MCPRuntimeError(f"MCP server {self.spec.server_id!r} is not connected")
-        result = await self._with_timeout(
-            self._session.call_tool(
-                remote_name,
-                arguments=arguments,
-                read_timeout_seconds=self.spec.timeout,
+        self.logger.debug("MCP tool call started server_id=%s tool=%s", self.spec.server_id, remote_name)
+        try:
+            result = await self._with_timeout(
+                self._session.call_tool(
+                    remote_name,
+                    arguments=arguments,
+                    read_timeout_seconds=self.spec.timeout,
+                )
             )
-        )
+        except Exception:
+            self.logger.exception("MCP tool call failed server_id=%s tool=%s", self.spec.server_id, remote_name)
+            raise
+        self.logger.debug("MCP tool call completed server_id=%s tool=%s", self.spec.server_id, remote_name)
         return normalize_call_result(result)
 
     async def stop(self) -> None:
@@ -203,6 +213,7 @@ class MCPServerRuntime(AbstractService):
         self._exit_stack = None
         if stack is not None:
             await stack.aclose()
+        self.logger.info("MCP connection stopped server_id=%s", self.spec.server_id)
 
     async def _with_timeout(self, awaitable: Awaitable[Any]) -> Any:
         async with asyncio.timeout(self.spec.timeout):
@@ -211,6 +222,7 @@ class MCPServerRuntime(AbstractService):
     async def _handle_message(self, message: Any) -> None:
         sdk = _sdk()
         if isinstance(message, sdk["ToolListChangedNotification"]):
+            self.logger.debug("MCP tool list changed server_id=%s", self.spec.server_id)
             self._on_tools_changed()
 
 

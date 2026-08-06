@@ -5,6 +5,7 @@ from __future__ import annotations
 import functools
 import inspect
 import sys
+import time
 import weakref
 from abc import ABC
 
@@ -474,13 +475,21 @@ class ToolManager(Manager[ToolDescriptor]):
         return self._by_alias.get(alias, [])
 
     async def invoke(self, descriptor: ToolDescriptor, kwargs: dict[str, Any], ctx: BeforeToolCallCtx | None = None) -> Any:
-        return await self._source_of(descriptor).invoke(descriptor, kwargs, ctx=ctx)
+        started = time.perf_counter()
+        try:
+            return await self._source_of(descriptor).invoke(descriptor, kwargs, ctx=ctx)
+        except Exception:
+            self.logger.exception("Tool invocation failed name=%s", descriptor.name)
+            raise
+        finally:
+            self.logger.debug("Tool invocation completed name=%s duration_ms=%.1f", descriptor.name, (time.perf_counter() - started) * 1000)
 
     async def call(
         self, tool_call: ToolCall, ctx: BeforeToolCallCtx | None = None
     ) -> ToolCallResult:
         descriptor = self.resolve(tool_call.tool_name)
         if descriptor is None:
+            self.logger.warning("Tool not found name=%s", tool_call.tool_name)
             return ToolCallResult(
                 tool_call_id=tool_call.tool_call_id,
                 content=f"Tool not found: {tool_call.tool_name!r}",
@@ -490,6 +499,7 @@ class ToolManager(Manager[ToolDescriptor]):
             tool_source: ToolSource = self._source_of(descriptor)
             result = await tool_source.invoke(descriptor, tool_call.tool_args, ctx=ctx)
         except Exception as exc:
+            self.logger.exception("Tool call failed name=%s", tool_call.tool_name)
             return ToolCallResult(
                 tool_call_id=tool_call.tool_call_id,
                 content=f"Error executing tool {tool_call.tool_name!r}: {exc}",
@@ -521,6 +531,7 @@ class ToolManager(Manager[ToolDescriptor]):
             schema = dict(descriptor.schema)
             schema["name"] = self.public_name(descriptor)
             self._schemas.append(schema)
+        self.logger.debug("Tool index rebuilt descriptors=%d", len(self._by_id))
 
     @staticmethod
     def build_tool_tree(descriptors: Iterable[ToolDescriptor]) -> dict[str, Any]:
