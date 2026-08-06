@@ -605,6 +605,7 @@ __all__ = [
     "PatchError",
     "PatchOperationResult",
     "PatchResult",
+    "max_patch_chars",
     "apply_patch",
     "apply_patch_guidance",
     "apply_patch_text",

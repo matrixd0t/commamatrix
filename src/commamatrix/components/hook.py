@@ -118,6 +118,7 @@ class BeforeLlmCallCtx(BaseEventCtx):
     run: RunCtx
     api_base: str | None = None
     api_protocol: str | None = None
+    reasoning: str | None = None
     dialog: list[DialogItem]
     tools: list[ToolDescriptor]
     llm_call_params: dict = field(default_factory=dict)
@@ -366,7 +367,7 @@ Example::
 
 before_llm_call = Hook[BeforeLlmCallCtx](HookEventType.BEFORE_LLM_CALL, BeforeLlmCallCtx)
 """Fired before the LLM is called.  Mutate ``ctx.dialog``, ``ctx.run.adapter``, ``ctx.run.llm``,
-``ctx.api_base``, ``ctx.tools``, or ``ctx.llm_call_params`` to influence the call.
+``ctx.reasoning``, ``ctx.llm_api_base``, ``ctx.tools``, or ``ctx.llm_call_params`` to influence the call.
 
 The decorated function must accept ``BeforeLlmCallCtx`` and return ``None``.
 

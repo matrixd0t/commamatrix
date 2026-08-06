@@ -37,43 +37,43 @@ def _detect_backend() -> type[ExecutionBackend]:
     return SubprocessBackend
 
 
-backend_cls = ConfigField[type | None](
-    name="codeact.backend",
-    default=None,
-    description="Execution backend class. Auto-detected if not set.",
+codeact_backend = ConfigField[type | None](
+    name="codeact_backend",
+    default=SubprocessBackend,
+    description="Execution backend class. Default one is intentionally NOT a security sandbox.",
 )
-searcher_cls = ConfigField[type](
-    name="codeact.searcher",
+codeact_searcher = ConfigField[type](
+    name="codeact_searcher",
     default=BM25ToolSearcher,
     description="Tool search engine class",
 )
-execution_timeout = ConfigField[float](
-    name="codeact.execution_timeout",
-    default=30.0,
+codeact_execution_timeout = ConfigField[float](
+    name="codeact_execution_timeout",
+    default=120.0,
     description="Timeout in seconds for a single code execution",
 )
-rpc_timeout = ConfigField[float](
-    name="codeact.rpc_timeout",
+codeact_rpc_timeout = ConfigField[float](
+    name="codeact_rpc_timeout",
     default=10.0,
     description="Timeout in seconds for a single RPC tool call",
 )
-shutdown_timeout = ConfigField[float](
-    name="codeact.shutdown_timeout",
+codeact_shutdown_timeout = ConfigField[float](
+    name="codeact_shutdown_timeout",
     default=5.0,
     description="Grace period in seconds for worker shutdown",
 )
-max_output_bytes = ConfigField[int](
-    name="codeact.max_output_bytes",
+codeact_max_output_bytes = ConfigField[int](
+    name="codeact_max_output_bytes",
     default=1_000_000,
     description="Maximum bytes of stdout/stderr captured per execution",
 )
-max_search_results = ConfigField[int](
-    name="codeact.max_search_results",
+codeact_max_search_results = ConfigField[int](
+    name="codeact_max_search_results",
     default=5,
     description="Maximum number of tools shown in tool_search results",
 )
-max_tools_list = ConfigField[int](
-    name="codeact.max_tools_list",
+codeact_max_tools_list = ConfigField[int](
+    name="codeact_max_tools_list",
     default=50,
     description="Maximum number of tools shown in tools_list output",
 )
@@ -94,18 +94,18 @@ class CodeActService(Service):
 
     def __init__(self, agent: Agent) -> None:
         super().__init__(agent)
-        cls = self.config.get(backend_cls)
+        cls = self.config.get(codeact_backend)
         backend_cls_resolved = cls or _detect_backend()
         if backend_cls_resolved is SubprocessBackend:
             self.backend = SubprocessBackend(
-                execution_timeout=self.config.get(execution_timeout),
-                shutdown_timeout=self.config.get(shutdown_timeout),
-                max_output_bytes=self.config.get(max_output_bytes),
-                rpc_timeout=self.config.get(rpc_timeout),
+                execution_timeout=self.config.get(codeact_execution_timeout),
+                shutdown_timeout=self.config.get(codeact_shutdown_timeout),
+                max_output_bytes=self.config.get(codeact_max_output_bytes),
+                rpc_timeout=self.config.get(codeact_rpc_timeout),
             )
         else:
             self.backend = backend_cls_resolved()
-        self.searcher = self.config.get(searcher_cls)()
+        self.searcher = self.config.get(codeact_searcher)()
 
     async def start(self) -> None:
         await self.backend.start()

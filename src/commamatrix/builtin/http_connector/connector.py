@@ -32,6 +32,7 @@ from ...components.file_storage import DataType, normalize_file_id, read_file
 from ...components.hook import OnParsedCtx
 from ...components.llm_adapter import LLMModalities, StreamDelta
 from ...components.server import SERVER_ROOT, http_external_url
+from ...utils import commamatrix_dir
 from .auth import AuthError, Authorizer
 
 if TYPE_CHECKING:
@@ -39,29 +40,35 @@ if TYPE_CHECKING:
 
 http_ui_path = ConfigField[str](name="http_ui_path", default=str(Path(__file__).parent / "ui" / "index.html"), description="Path to the HTTP connector UI HTML file")
 http_auth_app_name = ConfigField[str](name="http_auth_app_name", default="commamatrix", description="Application name used to isolate HTTP users")
-_http_jwt_secret_cache: str | None = None
+_http_jwt_secret_cache: dict[Path, str] = {}
 
 
-def _resolve_jwt_secret() -> str:
-    global _http_jwt_secret_cache
-    if _http_jwt_secret_cache is not None:
-        return _http_jwt_secret_cache
+def _resolve_jwt_secret(data_dir: str | os.PathLike[str]) -> str:
     env_secret = os.environ.get("JWT_SECRET")
     if env_secret:
-        _http_jwt_secret_cache = env_secret
         return env_secret
-    secret_path = Path(".jwt_secret")
+
+    secret_path = (Path(data_dir) / ".jwt_secret").resolve()
+    cached_secret = _http_jwt_secret_cache.get(secret_path)
+    if cached_secret is not None:
+        return cached_secret
     if secret_path.exists():
-        _http_jwt_secret_cache = secret_path.read_text().strip()
-        if _http_jwt_secret_cache:
-            return _http_jwt_secret_cache
+        secret = secret_path.read_text(encoding="utf-8").strip()
+        if secret:
+            _http_jwt_secret_cache[secret_path] = secret
+            return secret
+
+    secret_path.parent.mkdir(parents=True, exist_ok=True)
     secret = secrets.token_urlsafe(32)
-    secret_path.write_text(secret)
-    _http_jwt_secret_cache = secret
+    secret_path.write_text(secret, encoding="utf-8")
+    _http_jwt_secret_cache[secret_path] = secret
     return secret
 
 
-http_auth_jwt_secret = ConfigField[str](name="http_auth_jwt_secret", default=_resolve_jwt_secret, description="Secret used to sign HTTP authentication tokens")
+http_auth_jwt_secret = ConfigField[str](
+    name="http_auth_jwt_secret",
+    description="Secret used to sign HTTP authentication tokens; generated in commamatrix_dir/.jwt_secret when omitted",
+)
 http_auth_token_ttl_seconds = ConfigField[int](name="http_auth_token_ttl_seconds", default=24 * 60 * 60, description="HTTP authentication token lifetime in seconds")
 
 
@@ -117,7 +124,12 @@ class HttpConnector(Connector[HttpOrigin]):
     def __init__(self, agent: Agent) -> None:
         super().__init__(agent)
         self._ui_path = Path(self.config.get(http_ui_path))
-        self.authorizer = Authorizer(agent=agent, app_name=self.config.get(http_auth_app_name), jwt_secret=self.config.get(http_auth_jwt_secret), token_ttl_seconds=self.config.get(http_auth_token_ttl_seconds))
+        jwt_secret = (
+            self.config.get(http_auth_jwt_secret)
+            if http_auth_jwt_secret in self.config
+            else _resolve_jwt_secret(self.config.get(commamatrix_dir))
+        )
+        self.authorizer = Authorizer(agent=agent, app_name=self.config.get(http_auth_app_name), jwt_secret=jwt_secret, token_ttl_seconds=self.config.get(http_auth_token_ttl_seconds))
         self._sessions: dict[str, HTTPSession] = {}
         self._sessions_by_user: dict[int, set[str]] = {}
         self._timezones_by_user: dict[int, tzinfo] = {}

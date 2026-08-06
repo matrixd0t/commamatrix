@@ -1,6 +1,8 @@
 # components/__init__.py
 
 from .dialog import (
+    DEFAULT_PLATFORM,
+    DEFAULT_USER,
     DialogItem,
     DialogOrigin,
     DialogItemType,
@@ -13,8 +15,16 @@ from .connector import (
     ConnectorDescriptor,
     CONNECTOR_ATTRIBUTE,
     OnRecv,
+    PythonConnectorSource,
+    ConnectorManager,
 )
-from .storage import Storage, STORAGE_ATTRIBUTE, active_storage
+from .storage import (
+    Storage,
+    STORAGE_ATTRIBUTE,
+    active_storage,
+    PythonStorageSource,
+    StorageManager,
+)
 from .table import (
     TABLE_ATTRIBUTE,
     BaseTable,
@@ -30,6 +40,8 @@ from .file_storage import (
     DataType,
     FileData,
     FileContext,
+    PythonFileStorageSource,
+    FileStorageManager,
     read_file,
     file_to_context,
     ext_to_mime,
@@ -39,6 +51,7 @@ from .llm_adapter import (
     LLM,
     LLMModalities,
     Cost,
+    reasoning,
     LLMAdapter,
     LLM_ADAPTER_ATTRIBUTE,
     LLMResponse,
@@ -57,6 +70,8 @@ from .llm_adapter import (
     LLMError,
     LLMResponseError,
     LLMTruncatedError,
+    PythonLLMAdapterSource,
+    LLMAdapterManager,
 )
 from .config import ConfigField, Config
 from .server import (
@@ -64,15 +79,27 @@ from .server import (
     Server,
     http_external_url,
     http_host,
-    http_port
+    http_port,
 )
 from .http_client import HTTP_BASE_HEADERS, HttpClient, http_default_headers, http_timeout
 from ..core.agent.agent import agentic_model
-from .tool import tool, ToolSource, ToolDescriptor, DEFAULT_TOOL_SEARCH_AMOUNT
+from .tool import (
+    tool,
+    ToolSource,
+    ToolDescriptor,
+    DEFAULT_TOOL_SEARCH_AMOUNT,
+    TOOL_ATTRIBUTE,
+    AmbiguousToolError,
+    PythonToolSource,
+    RunTools,
+    ToolManager,
+)
 from .hook import (
     Hook,
     HookEventType,
     HookDescriptor,
+    HOOK_ATTRIBUTE,
+    BaseEventCtx,
     RunCtx,
     OnParsedCtx,
     on_parsed,
@@ -96,6 +123,8 @@ from .hook import (
     on_error,
     AfterRunCtx,
     after_run,
+    PythonHookSource,
+    HookManager,
 )
 from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.ordering import ConstraintRef
@@ -107,10 +136,14 @@ from .instruction import (
     instruction,
     add_instructions,
     INSTRUCTION_ATTRIBUTE,
+    PythonInstructionSource,
+    connector_modalities,
 )
 from ..core.classes.service import AbstractService, ServiceDescriptor, SERVICE_ATTRIBUTE, Service
 
 __all__ = [
+    "DEFAULT_PLATFORM",
+    "DEFAULT_USER",
     "DialogItem",
     "DialogOrigin",
     "DialogItemType",
@@ -121,8 +154,13 @@ __all__ = [
     "ConnectorDescriptor",
     "CONNECTOR_ATTRIBUTE",
     "OnRecv",
+    "PythonConnectorSource",
+    "ConnectorManager",
     "Storage",
     "STORAGE_ATTRIBUTE",
+    "active_storage",
+    "PythonStorageSource",
+    "StorageManager",
     "TABLE_ATTRIBUTE",
     "BaseTable",
     "TableDescriptor",
@@ -131,9 +169,12 @@ __all__ = [
     "TableManager",
     "FileStorage",
     "FILE_STORAGE_ATTRIBUTE",
+    "active_file_storage",
     "DataType",
     "FileData",
     "FileContext",
+    "PythonFileStorageSource",
+    "FileStorageManager",
     "read_file",
     "file_to_context",
     "ext_to_mime",
@@ -141,8 +182,11 @@ __all__ = [
     "LLM",
     "LLMModalities",
     "Cost",
+    "reasoning",
     "LLMAdapter",
     "LLM_ADAPTER_ATTRIBUTE",
+    "PythonLLMAdapterSource",
+    "LLMAdapterManager",
     "LLMResponse",
     "LLMResponseTextBlock",
     "LLMResponseImageBlock",
@@ -163,20 +207,25 @@ __all__ = [
     "Config",
     "SERVER_ROOT",
     "Server",
-    "HttpClient",
     "http_external_url",
     "http_host",
     "http_port",
     "HTTP_BASE_HEADERS",
-    "agentic_model",
+    "HttpClient",
     "http_default_headers",
     "http_timeout",
-    "active_storage",
-    "active_file_storage",
+    "agentic_model",
     "tool",
+    "TOOL_ATTRIBUTE",
     "ToolSource",
     "ToolDescriptor",
+    "AmbiguousToolError",
+    "PythonToolSource",
+    "RunTools",
+    "ToolManager",
     "DEFAULT_TOOL_SEARCH_AMOUNT",
+    "HOOK_ATTRIBUTE",
+    "BaseEventCtx",
     "Hook",
     "HookEventType",
     "HookDescriptor",
@@ -197,10 +246,14 @@ __all__ = [
     "after_llm_call",
     "BeforeSendCtx",
     "before_send",
+    "AfterSendCtx",
+    "after_send",
     "OnErrorCtx",
     "on_error",
     "AfterRunCtx",
     "after_run",
+    "PythonHookSource",
+    "HookManager",
     "ConstraintRef",
     "lifecycle_component",
     "Instruction",
@@ -210,6 +263,8 @@ __all__ = [
     "instruction",
     "add_instructions",
     "INSTRUCTION_ATTRIBUTE",
+    "PythonInstructionSource",
+    "connector_modalities",
     "AbstractService",
     "Service",
     "SERVICE_ATTRIBUTE",

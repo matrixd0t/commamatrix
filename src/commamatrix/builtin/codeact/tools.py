@@ -3,7 +3,7 @@
 """LLM-visible CodeAct tools: execute code, search and list available tools."""
 
 from __future__ import annotations
-from .service import CodeActService, max_search_results, max_tools_list
+from .service import CodeActService, codeact_max_search_results, codeact_max_tools_list
 from ...components.hook import BeforeToolCallCtx
 from ...components.tool import ToolDescriptor, tool
 
@@ -30,7 +30,7 @@ async def execute(code: str, ctx: BeforeToolCallCtx) -> str:
 async def tool_search(query: str, ctx: BeforeToolCallCtx, limit: int = 5) -> str:
     """Semantically search for tools by description and signature."""
     codeact: CodeActService = ctx.run.agent.services.require(CodeActService)
-    effective_limit = min(limit, codeact.config.get(max_search_results))
+    effective_limit = min(limit, codeact.config.get(codeact_max_search_results))
     results = codeact.searcher.search(query, limit=effective_limit)
     if not results:
         return f"No tools found for query '{query}'."
@@ -41,7 +41,7 @@ async def tool_search(query: str, ctx: BeforeToolCallCtx, limit: int = 5) -> str
 async def tools_list(ctx: BeforeToolCallCtx, alias: str | None = None, limit: int = 50) -> str:
     """List available tool names, grouped by and optionally filtered by alias."""
     codeact: CodeActService = ctx.run.agent.services.require(CodeActService)
-    limit = min(limit, codeact.config.get(max_tools_list))
+    limit = min(limit, codeact.config.get(codeact_max_tools_list))
     tool_descriptors = codeact.searcher.descriptors
     if not tool_descriptors:
         return "No tools available."

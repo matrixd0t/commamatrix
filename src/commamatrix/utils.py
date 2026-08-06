@@ -16,6 +16,25 @@ from typing import Any
 from .components.config import ConfigField
 
 
+__all__ = [
+    "framework_prefix",
+    "commamatrix_dir",
+    "allow_absolute_paths",
+    "PathResolutionError",
+    "TextFileFormat",
+    "TextFileSnapshot",
+    "resolve_path",
+    "read_text_file",
+    "write_bytes_file",
+    "write_text_file",
+    "read_text_file_async",
+    "write_bytes_file_async",
+    "write_text_file_async",
+    "await_if_needed",
+    "to_jsonable",
+]
+
+
 def framework_prefix() -> str:
     """Return the import prefix used by the framework package."""
     parts = __name__.split(".")
@@ -32,7 +51,7 @@ commamatrix_dir = ConfigField[str](
 
 allow_absolute_paths = ConfigField[bool](
     name="allow_absolute_paths",
-    default=False,
+    default=True,
     description="Allow agent to access absolute paths outside the CWD.",
 )
 

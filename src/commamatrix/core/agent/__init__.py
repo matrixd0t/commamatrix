@@ -1,3 +1,17 @@
-from .agent import Agent, agent_by_name, get_subagent_by_name
+# core/agent/__init__.py
 
-__all__ = ["Agent", "agent_by_name", "get_subagent_by_name"]
+from .agent import Agent, AgentRegistry, agent_by_name, agentic_model, get_subagent_by_name, plugins_dir, reasoning
+from .lifecycle import AgentLifecycle
+from .runner import AgentRunner
+
+__all__ = [
+    "Agent",
+    "AgentLifecycle",
+    "AgentRegistry",
+    "AgentRunner",
+    "agent_by_name",
+    "agentic_model",
+    "reasoning",
+    "get_subagent_by_name",
+    "plugins_dir",
+]

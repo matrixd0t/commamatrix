@@ -9,14 +9,14 @@ from __future__ import annotations
 
 from . import instructions, tools
 from .security import validate_url
-from .tools import search, search_max_limit, search_max_output_chars, search_timeout
+from .tools import search, web_search_max_limit, web_search_max_output_chars, web_search_timeout
 
 __all__ = [
     "instructions",
     "search",
-    "search_max_limit",
-    "search_max_output_chars",
-    "search_timeout",
+    "web_search_max_limit",
+    "web_search_max_output_chars",
+    "web_search_timeout",
     "tools",
     "validate_url",
 ]

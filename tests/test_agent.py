@@ -46,6 +46,41 @@ class TestAgentInit:
         agent = Agent("test", config=cfg, auto_load_main=False)
         assert agent.config is cfg
 
+    def test_config_fields_markdown_uses_sections_and_omits_missing_defaults(self):
+        module_name = "_config_fields_markdown_test"
+        module = types.ModuleType(module_name)
+        with_default = ConfigField[bool](
+            name="codeact_enabled",
+            default=False,
+            description="Global CodeAct switch.",
+        )
+        without_default = ConfigField[str](name="required_value", description="Required value.")
+        with_default._declaration_module = module_name
+        without_default._declaration_module = module_name
+        module.codeact_enabled = with_default
+        module.required_value = without_default
+        previous_module = sys.modules.get(module_name)
+        sys.modules[module_name] = module
+
+        try:
+            agent = Agent("test", config={}, auto_load_main=False)
+            agent._extension_scope.append(module_name)
+
+            assert agent.config_fields_markdown() == (
+                "# Active Configuration Fields\n\n"
+                "## codeact_enabled: bool (default: False)\n"
+                "From: _config_fields_markdown_test\n"
+                "Global CodeAct switch.\n\n"
+                "## required_value: str\n"
+                "From: _config_fields_markdown_test\n"
+                "Required value."
+            )
+        finally:
+            if previous_module is None:
+                sys.modules.pop(module_name, None)
+            else:
+                sys.modules[module_name] = previous_module
+
     def test_not_started_initially(self):
         agent = Agent("test", config={}, auto_load_main=False)
         assert agent._started is False
@@ -483,3 +518,4 @@ class TestAgentValidateResponse:
         agent = Agent("test", config={}, auto_load_main=False)
         resp = LLMResponse(stop_reason=StopReason.END_TURN)
         agent._validate_response(resp, None)
+

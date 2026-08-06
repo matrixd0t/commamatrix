@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")
@@ -22,12 +23,14 @@ class ConfigField(Generic[T]):
         def factory(*args, **kwargs):
             obj = cls.__new__(cls)
             obj._type_hint = item
+            obj._declaration_module = sys._getframe(1).f_globals.get("__name__")
             obj.__init__(*args, **kwargs)
             return obj
 
         return factory
 
     def __init__(self, name: str = "", default: T | None | object = _MISSING, *, description: str = "") -> None:
+        self._declaration_module = getattr(self, "_declaration_module", sys._getframe(1).f_globals.get("__name__"))
         self._default = default
         self._description = description
         self._name: str | None = name or None

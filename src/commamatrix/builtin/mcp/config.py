@@ -126,19 +126,19 @@ def normalize_server_specs(value: Any) -> tuple[MCPServerSpec, ...]:
 
 
 mcp_config_path = ConfigField[str](
-    name="mcp.config_path",
+    name="mcp_config_path",
     default=".commamatrix/mcp.json",
     description="Path to the built-in MCP JSON configuration file",
 )
 
 mcp_client_name = ConfigField[str](
-    name="mcp.client_name",
+    name="mcp_client_name",
     default="commamatrix",
     description="Client name sent during MCP initialization",
 )
 
 mcp_client_version = ConfigField[str](
-    name="mcp.client_version",
+    name="mcp_client_version",
     default="0.1.0",
     description="Client version sent during MCP initialization",
 )

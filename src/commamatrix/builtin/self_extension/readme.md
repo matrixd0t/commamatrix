@@ -402,8 +402,8 @@ import os
 
 from commamatrix import ConfigField
 
-api_key = ConfigField[str](name="my_extension.api_key", default=lambda: os.getenv("MY_EXTENSION_API_KEY", ""), description="API key for the external service")
-request_timeout = ConfigField[float](name="my_extension.request_timeout", default=20.0, description="HTTP timeout in seconds")
+api_key = ConfigField[str](name="my_extension_api_key", default=lambda: os.getenv("MY_EXTENSION_API_KEY", ""), description="API key for the external service")
+request_timeout = ConfigField[float](name="my_extension_request_timeout", default=20.0, description="HTTP timeout in seconds")
 ```
 
 Read fields through `self.config.get(field)` or

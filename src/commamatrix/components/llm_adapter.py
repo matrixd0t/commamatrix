@@ -14,6 +14,7 @@ from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.service import AbstractService
 from ..core.classes.manager import ServiceInstanceManager
 from ..core.classes.source import PythonServiceSource
+from .config import ConfigField
 from .dialog import DialogItem, DialogItemType, DialogRole, DialogOrigin
 from .file_storage import DataType
 
@@ -22,6 +23,12 @@ if TYPE_CHECKING:
     from ..core.agent import Agent
 
 LLM_ADAPTER_ATTRIBUTE = "__commamatrix_llm_adapter__"
+
+reasoning = ConfigField[str](
+    name="reasoning",
+    default="",
+    description="Default reasoning mode (if applicable to the model). Values 'max' / 'highest' / 'lowest' are universal",
+)
 
 
 class LLMError(Exception):
@@ -71,6 +78,7 @@ class LLM:
     model_name: str
     modalities: LLMModalities | dict[str, Any] = field(default_factory=LLMModalities)
     cost: Cost | dict[str, Any] = field(default_factory=Cost)
+    reasoning_modes: list[str] = field(default_factory=list)
     meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -250,7 +258,22 @@ class LLMAdapter(AbstractService):
 
     @abstractmethod
     async def refresh_llms(self) -> list[LLM]:
-        """Return the models currently provided by this adapter."""
+        """Return models with adapter-provided, ascending reasoning_modes."""
+
+    def resolve_reasoning_mode(self, llm: LLM) -> str | None:
+        """Resolve the configured reasoning mode for a model."""
+        modes = llm.reasoning_modes
+        if len(modes) <= 1:
+            return None
+
+        configured = self.config.get(reasoning)
+        if configured in modes:
+            return configured
+        if configured in {"max", "highest"}:
+            return modes[-1]
+        if configured == "lowest":
+            return modes[0]
+        return None
 
     def ask_llm(self, ctx: BeforeLlmCallCtx, *, stream: bool = False) -> AsyncIterator[StreamDelta | LLMResponseBlock | StreamEnd]:
         raise NotImplementedError

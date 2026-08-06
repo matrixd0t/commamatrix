@@ -57,7 +57,7 @@ class SubprocessBackend(ExecutionBackend):
             "code": code,
             "namespace": {"__name__": "__codeact__"},
             "timeout": self._execution_timeout,
-            "rpc_timeout": self._rpc_timeout,
+            "codeact_rpc_timeout": self._rpc_timeout,
             "tool_tree": tm.build_tool_tree(public_descriptors),
         }
 

@@ -156,7 +156,7 @@ def _payload(code: str, tool_tree: dict | None = None) -> dict:
     return {
         "code": code,
         "namespace": {"__name__": "__codeact__"},
-        "rpc_timeout": 2.0,
+        "codeact_rpc_timeout": 2.0,
         "tool_tree": tool_tree or {},
     }
 

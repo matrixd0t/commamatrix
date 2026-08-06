@@ -40,25 +40,25 @@ anthropic_api_key = ConfigField[str](
     description="Anthropic API key",
 )
 
-api_base = ConfigField[str](
+llm_api_base = ConfigField[str](
     name="llm_api_base",
     default=lambda: os.getenv("LLM_API_BASE", ""),
     description="Default API base URL",
 )
 
-api_protocol = ConfigField[str](
+llm_api_protocol = ConfigField[str](
     name="llm_api_protocol",
     default=ApiProtocol.CHAT_COMPLETIONS.value,
     description="Default API protocol (see ApiProtocol enum for builtin values)",
 )
 
-stream_read_timeout = ConfigField[float](
+llm_stream_read_timeout = ConfigField[float](
     name="llm_stream_read_timeout",
     default=60.0,
     description="Streaming read timeout in seconds",
 )
 
-request_timeout = ConfigField[float](
+llm_request_timeout = ConfigField[float](
     name="llm_request_timeout",
     default=300.0,
     description="Non-streaming request timeout in seconds",
@@ -73,7 +73,7 @@ class LLMHTTPAdapter(LLMAdapter):
 
     @property
     def codec(self) -> ApiCodec:
-        return self._resolve_codec(self.config.get(api_protocol))
+        return self._resolve_codec(self.config.get(llm_api_protocol))
 
     @staticmethod
     def _model_headers() -> dict[str, str]:
@@ -81,7 +81,7 @@ class LLMHTTPAdapter(LLMAdapter):
 
     async def refresh_llms(self) -> list[LLM]:
         url = self._join_url(
-            self.config.get(api_base),
+            self.config.get(llm_api_base),
             self.codec.models_endpoint,
         )
         return await self.codec.get_models(
@@ -93,7 +93,7 @@ class LLMHTTPAdapter(LLMAdapter):
 
     async def get_model_info(self, model_name: str) -> LLM | None:
         encoded_name = quote(model_name, safe="/:@-._~")
-        base = self.config.get(api_base)
+        base = self.config.get(llm_api_base)
         for endpoint in self.codec.model_endpoints:
             url = self._join_url(
                 base,
@@ -136,7 +136,7 @@ class LLMHTTPAdapter(LLMAdapter):
         return ctx.run.llm
 
     def _resolve_api_base(self, ctx: BeforeLlmCallCtx) -> str:
-        return ctx.api_base or self.config.get(api_base)
+        return ctx.api_base or self.config.get(llm_api_base)
 
     def _resolve_protocol(self, ctx: BeforeLlmCallCtx) -> ApiProtocol:
         if ctx.api_protocol:
@@ -150,7 +150,7 @@ class LLMHTTPAdapter(LLMAdapter):
         model_name = llm if isinstance(llm, str) else llm.model_name
         if "claude" in model_name:
             return ApiProtocol.ANTHROPIC_MESSAGES
-        return ApiProtocol(self.config.get(api_protocol))
+        return ApiProtocol(self.config.get(llm_api_protocol))
 
     def _build_headers(self, protocol: ApiProtocol) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -260,8 +260,8 @@ class LLMHTTPAdapter(LLMAdapter):
 
     @property
     def _stream_timeout(self) -> httpx.Timeout:
-        return httpx.Timeout(connect=10.0, read=self.config.get(stream_read_timeout), write=10.0, pool=10.0)
+        return httpx.Timeout(connect=10.0, read=self.config.get(llm_stream_read_timeout), write=10.0, pool=10.0)
 
     @property
     def _request_timeout(self) -> float:
-        return self.config.get(request_timeout)
+        return self.config.get(llm_request_timeout)

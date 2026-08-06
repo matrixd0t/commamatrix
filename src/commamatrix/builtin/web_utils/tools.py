@@ -13,20 +13,20 @@ from ...components.config import ConfigField
 from ...components.hook import BeforeToolCallCtx
 from ...components.tool import tool
 
-search_max_limit = ConfigField[int](
-    name="web_utils.search_max_limit",
+web_search_max_limit = ConfigField[int](
+    name="web_search_max_limit",
     default=50,
     description="Maximum number of search results allowed.",
 )
 
-search_timeout = ConfigField[int](
-    name="web_utils.search_timeout",
+web_search_timeout = ConfigField[int](
+    name="web_search_timeout",
     default=10,
-    description="Timeout in seconds for a single DDGS text search.",
+    description="Timeout in seconds for a single text search.",
 )
 
-search_max_output_chars = ConfigField[int](
-    name="web_utils.search_max_output_chars",
+web_search_max_output_chars = ConfigField[int](
+    name="web_search_max_output_chars",
     default=20_000,
     description="Maximum character count for the search tool output.",
 )
@@ -127,8 +127,8 @@ async def search(query: str, limit: int = 5, sites: list[str] | None = None, *, 
         return f"Error: limit must be positive."
     return await do_search(
         query=query,
-        limit=min(limit, config.get(search_max_limit)),
+        limit=min(limit, config.get(web_search_max_limit)),
         sites=sites,
-        timeout=config.get(search_timeout),
-        max_output=config.get(search_max_output_chars),
+        timeout=config.get(web_search_timeout),
+        max_output=config.get(web_search_max_output_chars),
     )

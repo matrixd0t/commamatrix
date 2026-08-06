@@ -18,8 +18,8 @@ from ...components.tool import tool
 
 _GUIDE_PATH = str(Path(__file__).parent / "readme.md")
 
-guide_path = ConfigField[str](
-    name="self_extension.guide_path",
+self_extension_guide_path = ConfigField[str](
+    name="self_extension_guide_path",
     default=_GUIDE_PATH,
     description="Path to the extension authoring guide file.",
 )
@@ -76,7 +76,7 @@ async def list_all(*, ctx: BeforeToolCallCtx) -> str:
 @tool(alias="self_extension", filesystem=True)
 async def read_guide(ctx: BeforeToolCallCtx) -> str:
     """Returns self-modification guide together with runtime and installation information."""
-    path = ctx.run.agent.config.get(guide_path)
+    path = ctx.run.agent.config.get(self_extension_guide_path)
     version = sys.version_info
     environment = (
         f"CommaMatrix path: {Path(__file__).resolve().parents[2]}\n"

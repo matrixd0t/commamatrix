@@ -176,6 +176,8 @@ class ChatCompletionsCodec(ApiCodec):
 
         flush_assistant()
         request = {"model": self._model_name(model), "messages": messages, **ctx.llm_call_params}
+        if ctx.reasoning is not None:
+            request["reasoning_effort"] = ctx.reasoning
         if ctx.tools:
             request["tools"] = self.serialize_tools(ctx)
         return request

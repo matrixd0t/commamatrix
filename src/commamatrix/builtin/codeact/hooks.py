@@ -13,7 +13,7 @@ from .rpc.server import is_codeact_internal
 from .service import CodeActService
 
 codeact_enabled = ConfigField[bool](
-    name="codeact.enabled",
+    name="codeact_enabled",
     default=True,
     description="Global CodeAct switch. When True, only CodeAct tools are shown to the LLM and the rest are indexed for BM25 search. When False, CodeAct tools are hidden.",
 )

@@ -47,6 +47,7 @@ from ...components.hook import (
     RunCtx,
 )
 from ...components.llm_adapter import (
+    reasoning,
     LLMResponse,
     LLMResponseBlock,
     LLMResponseToolCallBlock,
@@ -207,6 +208,53 @@ class Agent:
     def extension_scope(self) -> tuple[str, ...]:
         """Return the module names currently active for this agent."""
         return self._extension_runtime.scope
+
+    def config_fields_markdown(self) -> str:
+        """Return active extension configuration fields as Markdown sections."""
+        def markdown_cell(value: object) -> str:
+            return str(value).replace("|", r"\|").replace("\n", "<br>")
+
+        fields: list[tuple[str, str, ConfigField[Any]]] = []
+        seen: set[int] = set()
+        for module_name in self._extension_scope:
+            module = sys.modules.get(module_name)
+            if module is None:
+                continue
+            for object_name, field in vars(module).items():
+                if object_name.startswith("_") or not isinstance(field, ConfigField):
+                    continue
+                declaring_module = getattr(field, "_declaration_module", None)
+                if declaring_module is not None and declaring_module != module_name:
+                    continue
+                if id(field) in seen:
+                    continue
+                seen.add(id(field))
+                fields.append((module_name, object_name, field))
+
+        if not fields:
+            return "# Active Configuration Fields\n\nNo `ConfigField` declarations found in the active extension scope."
+
+        lines = ["# Active Configuration Fields", ""]
+        for module_name, object_name, field in fields:
+            type_hint = getattr(field, "_type_hint", Any)
+            type_name = getattr(type_hint, "__name__", str(type_hint).replace("typing.", ""))
+            field_name = field.name or object_name
+            heading = f"## {markdown_cell(field_name)}: {markdown_cell(type_name)}"
+            if field.has_default:
+                if callable(getattr(field, "_default", None)) and not isinstance(field._default, type):
+                    default = "computed"
+                else:
+                    default = repr(field._default)
+                heading += f" (default: {markdown_cell(default)})"
+            lines.extend((heading, f"From: {markdown_cell(module_name)}"))
+            if field.description:
+                lines.append(markdown_cell(field.description))
+            lines.append("")
+        return "\n".join(lines).rstrip()
+
+    def config_fields_info(self) -> str:
+        """Return active extension configuration fields as Markdown."""
+        return self.config_fields_markdown()
 
     def __getattr__(self, name: str) -> Any:
         lifecycle = self.__dict__.get("lifecycle")
@@ -403,9 +451,18 @@ class Agent:
 
                     dialog = await self._load_dialog(last_item_id)
                     tools_list = list(self.tool_manager.descriptors)
-                    before_llm_ctx = BeforeLlmCallCtx(run=run, dialog=dialog, tools=tools_list)
+                    selected_adapter = run.adapter
+                    selected_llm = run.llm
+                    before_llm_ctx = BeforeLlmCallCtx(
+                        run=run,
+                        dialog=dialog,
+                        tools=tools_list,
+                        reasoning=self._resolve_reasoning(run),
+                    )
 
                     await self.hook_manager.fire(HookEventType.BEFORE_LLM_CALL, before_llm_ctx)
+                    if run.adapter is not selected_adapter or run.llm is not selected_llm:
+                        before_llm_ctx.reasoning = self._resolve_reasoning(run)
 
                     connector = self.connector_manager.resolve_for_origin(run.origin)
                     stream = connector.supports_streaming
@@ -529,6 +586,12 @@ class Agent:
         ctx = BeforeRunCtx(run=run)
         await self.hook_manager.fire(HookEventType.BEFORE_RUN, ctx)
         return ctx
+
+    @staticmethod
+    def _resolve_reasoning(run: RunCtx) -> str | None:
+        if run.adapter is None or run.llm is None:
+            return None
+        return run.adapter.resolve_reasoning_mode(run.llm)
 
     def _select_model(self, run: RunCtx) -> None:
         if run.adapter is not None and run.llm is not None:
@@ -756,3 +819,4 @@ class Agent:
             )
             result.append((run, items))
         return result
+

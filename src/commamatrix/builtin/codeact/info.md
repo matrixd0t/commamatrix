@@ -403,9 +403,9 @@ await execute("print(x)")  # → NameError: name 'x' is not defined
 | Code execution timeout | Worker is terminated via `terminate()` → `kill()`; `ExecutionResult` with `returncode=124` |
 | RPC call timeout | Worker receives RPC error `-32001` |
 | Parent cancellation | Worker transport is closed; remaining RPC Futures get `CancelledError` |
-| Graceful shutdown | `terminate()` sent first; after `shutdown_timeout`, `kill()` is used |
-| Large stderr | Read concurrently, truncated at `max_output_bytes` |
-| Large stdout | Truncated at `max_output_bytes` |
+| Graceful shutdown | `terminate()` sent first; after `codeact_shutdown_timeout`, `kill()` is used |
+| Large stderr | Read concurrently, truncated at `codeact_max_output_bytes` |
+| Large stdout | Truncated at `codeact_max_output_bytes` |
 
 No child process is left alive after any of these scenarios — `_cleanup()` guarantees process reaping.
 

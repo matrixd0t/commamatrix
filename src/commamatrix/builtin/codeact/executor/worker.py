@@ -346,7 +346,7 @@ async def main(host: str, port: int, token: str) -> None:
     code = payload["code"]
     namespace = payload.get("namespace") or {"__name__": "__codeact__"}
     tool_tree = payload.get("tool_tree") or {}
-    rpc_timeout = payload.get("rpc_timeout", 10.0)
+    rpc_timeout = payload.get("codeact_rpc_timeout", 10.0)
 
     client = AsyncRPCClient(reader, writer, rpc_timeout=rpc_timeout)
     reader_task = asyncio.create_task(client.read_responses())

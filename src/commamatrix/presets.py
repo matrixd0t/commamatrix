@@ -32,7 +32,7 @@ coding = [
     f"{FP}.builtin.codeact",
     f"{FP}.builtin.apply_patch",
     f"{FP}.builtin.self_extension",
-    f"{FP}.builtin.instructions.coding",
+    f"{FP}.builtin.mcp",
 ]
 
 deep_research = [
@@ -40,20 +40,16 @@ deep_research = [
     f"{FP}.builtin.codeact",
     f"{FP}.builtin.subagent",
     f"{FP}.builtin.instructions.deep_research",
+    f"{FP}.builtin.mcp",
 ]
 
-roleplay = [
-    f"{FP}.builtin.llm_http_adapter",
-    f"{FP}.builtin.http_connector",
-    f"{FP}.builtin.multi_user",
-    f"{FP}.builtin.instructions.roleplay",
-]
 
 data_analysis = [
     *assistant,
     f"{FP}.builtin.filesystem",
     f"{FP}.builtin.codeact",
     f"{FP}.builtin.instructions.data_analysis",
+    f"{FP}.builtin.mcp",
 ]
 
 automation = [
@@ -63,7 +59,16 @@ automation = [
     f"{FP}.builtin.planner",
     f"{FP}.builtin.self_extension",
     f"{FP}.builtin.instructions.automation",
+    f"{FP}.builtin.mcp",
 ]
+
+roleplay = [
+    f"{FP}.builtin.llm_http_adapter",
+    f"{FP}.builtin.http_connector",
+    f"{FP}.builtin.multi_user",
+    f"{FP}.builtin.instructions.roleplay",
+]
+
 
 
 __all__ = [
@@ -72,7 +77,6 @@ __all__ = [
     "coding",
     "data_analysis",
     "deep_research",
-    "essentials",
     "minimal",
     "roleplay",
 ]

@@ -116,6 +116,7 @@ class ApiCodec(ABC):
         if not isinstance(pricing, dict):
             pricing = {}
 
+        reasoning_modes = self._parse_reasoning_modes(data)
         return LLM(
             model_name=model_name,
             modalities=modalities,
@@ -129,8 +130,33 @@ class ApiCodec(ABC):
                     pricing.get("input_cache_write", pricing.get("cache_write"))
                 ),
             },
+            reasoning_modes=reasoning_modes,
             meta=dict(data),
         )
+
+    @classmethod
+    def _parse_reasoning_modes(cls, data: dict[str, Any]) -> list[str]:
+        value: Any = None
+        for key in (
+            "reasoning_modes",
+            "supported_reasoning_modes",
+            "reasoning_efforts",
+            "supported_reasoning_efforts",
+        ):
+            if key in data:
+                value = data[key]
+                break
+        if value is None and isinstance(data.get("reasoning"), dict):
+            reasoning_data = data["reasoning"]
+            value = reasoning_data.get("modes", reasoning_data.get("efforts"))
+        if isinstance(value, str):
+            value = (value,)
+        if not isinstance(value, Iterable):
+            return []
+
+        modes = {mode for mode in value if isinstance(mode, str)}
+        order = {"none": 0, "minimal": 1, "low": 2, "medium": 3, "high": 4, "xhigh": 5, "xxhigh": 6, "max": 7}
+        return sorted(modes, key=lambda mode: (order.get(mode, len(order)), mode))
 
     @staticmethod
     def _parse_modalities(value: Any) -> set[DataType]:
@@ -204,7 +230,7 @@ class ApiCodec(ABC):
 
         resolved = await read_file(
             ref,
-            file_storage=ctx.run.agent.file_storage,
+            file_storage=ctx.run.agent.file_storage.active,
             name=name,
             ext=ext,
             mime_type=mime_type,
