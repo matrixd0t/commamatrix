@@ -11,18 +11,11 @@ import sys
 from pathlib import Path
 from typing import Literal
 
-from ...components.config import ConfigField
 from ...components.hook import BeforeToolCallCtx
 from ...components.instruction import InstructionCtx, instruction
 from ...components.tool import tool
 
-_GUIDE_PATH = str(Path(__file__).parent / "readme.md")
-
-self_extension_guide_path = ConfigField[str](
-    name="self_extension_guide_path",
-    default=_GUIDE_PATH,
-    description="Path to the extension authoring guide file.",
-)
+_GUIDES_PATH = (Path(__file__).parent / "guides").resolve()
 
 
 @instruction(priority=-200)
@@ -36,10 +29,11 @@ Use this when:
 - !!!Do NOT refuse to do stuff until 100% sure you can't make an extension to do it!!!
 How to use:
 - Suggest to write an extension, if user accepts, proceed to following
-- Call readme
+- Call self_extension.read_guide() without sections for the general guide
+- Call self_extension.read_guide(sections=[...]) for the relevant detailed guides
 - Steps: layout -> abstractions and contracts -> logic -> implementation
 - Example usage: make @instruction to save a note about specific user, or a @tool for new action / capability
-- Use manage_extension to activate new capabilities
+- Use self_extension.manage to activate new capabilities
 '''
 
 
@@ -74,9 +68,14 @@ async def list_all(*, ctx: BeforeToolCallCtx) -> str:
 
 
 @tool(alias="self_extension", filesystem=True)
-async def read_guide(ctx: BeforeToolCallCtx) -> str:
-    """Returns self-modification guide together with runtime and installation information."""
-    path = ctx.run.agent.config.get(self_extension_guide_path)
+async def read_guide(sections: list[str] = []) -> str:
+    """Read the general extension guide or selected detailed guide sections.
+
+    ``sections`` defaults to an empty list.
+    Call this tool once without sections first to read ``main.md``.
+    Then call it again with one or more section names when the implementation requires more detail.
+    Detailed guides contain links to the relevant library source files.
+    """
     version = sys.version_info
     environment = (
         f"CommaMatrix path: {Path(__file__).resolve().parents[2]}\n"
@@ -84,8 +83,20 @@ async def read_guide(ctx: BeforeToolCallCtx) -> str:
         f"Python {version.major}.{version.minor}.{version.micro} | "
         f"CWD: {os.getcwd()}\n\n"
     )
+    paths: list[Path] = []
+    for section in sections or ["main"]:
+        filename = section if section.endswith(".md") else f"{section}.md"
+        path = (_GUIDES_PATH / filename).resolve()
+        if path.parent != _GUIDES_PATH or path.suffix != ".md":
+            return environment + f"Invalid guide section: {section}"
+        paths.append(path)
+
     try:
-        content = await asyncio.to_thread(Path(path).read_text, encoding="utf-8")
+        content = "\n\n".join(
+            await asyncio.gather(*(
+                asyncio.to_thread(path.read_text, encoding="utf-8") for path in paths
+            ))
+        )
         return environment + content
-    except FileNotFoundError:
-        return environment + f"Guide file not found: {path}"
+    except FileNotFoundError as exc:
+        return environment + f"Guide section not found: {exc.filename}"

@@ -242,7 +242,7 @@ Custom or external extensions can expose normal Python declarations and be activ
 await agent.add_extensions("my_project.my_extension")
 ```
 
-Common declarations include `@tool`, `@instruction`, lifecycle hooks, service subclasses, provider implementations, and `BaseTable` subclasses. See the [extension authoring guide](https://github.com/matrixd0t/commamatrix/blob/master/src/commamatrix/builtin/self_extension/readme.md) for the complete extension API.
+Common declarations include `@tool`, `@instruction`, lifecycle hooks, service subclasses, provider implementations, and `BaseTable` subclasses. See the [extension authoring guide](https://github.com/matrixd0t/commamatrix/blob/master/src/commamatrix/builtin/self_extension/guides) for the complete extension API.
 
 ## Security Notes
 
