@@ -1,4 +1,4 @@
-![CommaMatrix logo](https://raw.githubusercontent.com/matrixd0t/commamatrix/v0.1.1/logo.png)
+![CommaMatrix logo](https://raw.githubusercontent.com/matrixd0t/commamatrix/v0.1.2/logo.png)
 
 # CommaMatrix
 
@@ -252,4 +252,3 @@ Common declarations include `@tool`, `@instruction`, lifecycle hooks, service su
 - HTTP connector passwords are hashed; generated administrator credentials are printed only during initial account creation.
 - CodeAct executes arbitrary Python code with access to the standard library, installed dependencies, and the system terminal. Default subprocess backend is intentionally NOT a security sandbox and must NOT be exposed to untrusted users without an external isolation layer. To enforce configurable limits on the agent’s execution privileges, prefer systemd or Docker-backed implementations.
 - Validate the reverse proxy, TLS, CORS, and network policy before exposing the HTTP connector to the Internet.
-
