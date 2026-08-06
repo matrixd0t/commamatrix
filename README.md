@@ -1,4 +1,4 @@
-<img src="logo.svg" alt="CommaMatrix logo" width="256">
+![CommaMatrix logo](https://raw.githubusercontent.com/matrixd0t/commamatrix/v0.1.1/logo.png)
 
 # CommaMatrix
 
@@ -37,7 +37,7 @@ Install the complete built-in integration set. This is the recommended
 installation for trying CommaMatrix or building a first agent:
 
 ```bash
-uv pip install "commamatrix[all]"
+uv add "commamatrix[all]"
 ```
 
 The `[all]` extra installs optional dependencies. It does not automatically
@@ -90,7 +90,7 @@ The declared dependency groups are:
 For example:
 
 ```bash
-uv pip install "commamatrix[http,sqlite]"
+uv add "commamatrix[http,sqlite]"
 ```
 
 ## Quickstart
