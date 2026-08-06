@@ -362,6 +362,7 @@ class TestHttpServerRoutes:
             health = await client.get("/commamatrix/health")
             index = await client.get("/commamatrix/")
             script = await client.get("/commamatrix/ui/app.js")
+            stylesheet = await client.get("/commamatrix/ui/styles.css")
             old_health = await client.get("/health")
             old_index = await client.get("/")
 
@@ -371,5 +372,7 @@ class TestHttpServerRoutes:
         assert '<base href="/commamatrix/ui/">' in index.text
         assert script.status_code == 200
         assert 'const SERVER_ROOT="/commamatrix"' in script.text
+        assert stylesheet.status_code == 200
+        assert "--bg:#0d1117" in stylesheet.text
         assert old_health.status_code == 404
         assert old_index.status_code == 404
