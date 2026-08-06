@@ -1,3 +1,5 @@
+<img src="logo.svg" alt="CommaMatrix logo" width="256">
+
 # CommaMatrix
 
 CommaMatrix is an async-native Python framework for building conversational

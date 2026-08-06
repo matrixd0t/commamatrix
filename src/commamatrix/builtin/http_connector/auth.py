@@ -105,6 +105,17 @@ class Authorizer:
         async with self._init_lock:
             if self._initialized:
                 return
+            await self.agent.storage.execute(
+                f"CREATE TABLE IF NOT EXISTS {_AUTH_TABLE} ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "app_name TEXT NOT NULL, "
+                "username TEXT NOT NULL, "
+                "password_hash TEXT NOT NULL, "
+                "is_admin INTEGER NOT NULL, "
+                "created_at TEXT NOT NULL, "
+                "UNIQUE (app_name, username)"
+                ")"
+            )
             admins = await self.agent.storage.execute(
                 f"SELECT id FROM {_AUTH_TABLE} WHERE app_name = ? AND is_admin = 1 LIMIT 1",
                 (self.app_name,),
@@ -310,5 +321,6 @@ class Authorizer:
 
     async def stop(self) -> None:
         self._invites.clear()
+
 
 

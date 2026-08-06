@@ -12,12 +12,13 @@ from commamatrix.builtin.multi_dialog import get_user_info
 from commamatrix.builtin.multi_user import (
     add_user_message_headers,
     describe_user_message_headers,
+    update_user_name,
     user_header_datetime_format,
     user_header_template,
 )
 from commamatrix.components.config import Config
 from commamatrix.components.dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
-from commamatrix.components.hook import BeforeLlmCallCtx, RunCtx
+from commamatrix.components.hook import BeforeLlmCallCtx, BeforeRunCtx, RunCtx
 from commamatrix.components.instruction import InstructionCtx
 
 
@@ -48,6 +49,16 @@ def _item() -> DialogItem:
         user="telegram:Елена",
         created_at=datetime(2026, 5, 24, 11, 0, 0, tzinfo=timezone.utc),
     )
+
+
+class _Storage:
+    def __init__(self, rows=None):
+        self.rows = rows or []
+        self.calls = []
+
+    async def execute(self, query, params=()):
+        self.calls.append((query, params))
+        return self.rows
 
 
 @pytest.mark.asyncio
@@ -81,6 +92,50 @@ async def test_user_message_header_uses_connector_timezone():
     await add_user_message_headers(ctx)
 
     assert ctx.dialog[0].content == "[14:00:00 24.05.2026 | telegram:Елена]\n\nпривет"
+
+
+@pytest.mark.asyncio
+async def test_user_name_is_not_filled_with_user_id_without_connector():
+    agent = _agent(Config())
+    agent.storage = _Storage()
+    item = _item()
+    ctx = BeforeRunCtx(run=RunCtx(agent=agent, origin=item.origin, user=item.user))
+
+    await update_user_name(ctx)
+
+    assert ctx.run.state == {}
+    assert agent.storage.calls == []
+
+
+@pytest.mark.asyncio
+async def test_user_name_is_not_stored_when_connector_cannot_resolve_it():
+    async def get_user_name(_origin):
+        return None
+
+    connector = SimpleNamespace(get_user_name=get_user_name)
+    agent = _agent(Config(), connector)
+    agent.storage = _Storage()
+    item = _item()
+    ctx = BeforeRunCtx(run=RunCtx(agent=agent, origin=item.origin, user=item.user))
+
+    await update_user_name(ctx)
+
+    assert ctx.run.state == {}
+    assert agent.storage.calls == []
+
+
+@pytest.mark.asyncio
+async def test_user_message_header_uses_empty_name_when_name_is_unavailable():
+    agent = _agent(Config({
+        user_header_template: "[{datetime} | {user} | {name}]",
+        user_header_datetime_format: "%H:%M:%S %d.%m.%Y",
+    }))
+    item = _item()
+    ctx = BeforeLlmCallCtx(run=RunCtx(agent=agent, origin=item.origin, user=item.user), dialog=[item], tools=[])
+
+    await add_user_message_headers(ctx)
+
+    assert ctx.dialog[0].content == "[11:00:00 24.05.2026 | telegram:Елена | ]\n\nпривет"
 
 
 @pytest.mark.asyncio

@@ -107,4 +107,4 @@ asyncio_mode = "strict"
 packages = ["src/commamatrix"]
 
 [tool.hatch.build]
-include = ["src/commamatrix/**/*.py", "src/commamatrix/**/*.md", "src/commamatrix/**/*.html"]
+include = ["src/commamatrix/**/*.py", "src/commamatrix/**/*.md", "src/commamatrix/**/*.html", "src/commamatrix/**/*.svg"]

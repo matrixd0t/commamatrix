@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CommaMatrix</title>
 <base href="/commamatrix/ui/">
+<link rel="icon" type="image/svg+xml" href="logo.svg">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 <link rel="stylesheet" href="styles.css?v=15">
 </head>
@@ -12,7 +13,10 @@
 <div id="app-shell">
   <header>
     <button id="branch-open" class="mobile-only icon-button" type="button" aria-label="Open branches" title="Open branches">☰</button>
-    <h1>CommaMatrix</h1>
+    <div class="brand">
+      <img class="brand-logo" src="logo.svg" alt="" aria-hidden="true">
+      <h1>CommaMatrix</h1>
+    </div>
     <div id="server-status-wrap" class="server-status-wrap">
       <button id="http-server-status-btn" class="http-server-status-btn" type="button" aria-label="Server status" aria-expanded="false" title="Server status">
         <span id="http-server-status-light" class="http-server-status-light gray" aria-hidden="true"></span>

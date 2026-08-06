@@ -158,6 +158,20 @@ class TestHttpConnectorRoutes:
         assert response.json() == {"status": "ok"}
 
     @pytest.mark.asyncio
+    async def test_ui_includes_logo_and_serves_svg_asset(self):
+        conn = _make_connector()
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=conn.app), base_url="http://test") as client:
+            index = await client.get("/commamatrix/")
+            logo = await client.get("/commamatrix/ui/logo.svg")
+
+        assert index.status_code == 200
+        assert '<link rel="icon" type="image/svg+xml" href="logo.svg">' in index.text
+        assert 'class="brand-logo" src="logo.svg"' in index.text
+        assert logo.status_code == 200
+        assert logo.headers["content-type"].startswith("image/svg+xml")
+        assert logo.text.startswith("<svg")
+
+    @pytest.mark.asyncio
     async def test_message_requires_authentication(self):
         conn = _make_connector()
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=conn.app), base_url="http://test") as client:

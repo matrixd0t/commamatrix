@@ -27,12 +27,12 @@ assistant = [*_assistant]
 
 coding = [
     *assistant,
-    f"{FP}.builtin.instructions.coding",
     f"{FP}.builtin.filesystem",
     f"{FP}.builtin.codeact",
     f"{FP}.builtin.apply_patch",
     f"{FP}.builtin.self_extension",
     f"{FP}.builtin.mcp",
+    f"{FP}.builtin.instructions.coding",
 ]
 
 deep_research = [
@@ -70,7 +70,6 @@ roleplay = [
 ]
 
 
-
 __all__ = [
     "assistant",
     "automation",
@@ -80,3 +79,4 @@ __all__ = [
     "minimal",
     "roleplay",
 ]
+

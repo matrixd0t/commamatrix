@@ -57,22 +57,21 @@ async def update_user_name(ctx: BeforeRunCtx) -> None:
     if "user_name" in ctx.run.state:
         return
 
-    rows = await ctx.run.agent.storage.execute(
-        "SELECT name, alternatives FROM commamatrix_user_names WHERE user = ?",
-        (ctx.run.user,),
-    )
-
     connector = ctx.run.connector
     if connector is None:
         try:
             connector = ctx.run.agent.connector_manager.resolve_for_origin(ctx.run.origin)
         except LookupError:
-            ctx.run.state["user_name"] = ctx.run.user
             return
 
     current_name = await await_if_needed(connector.get_user_name(ctx.run.origin))
     if not isinstance(current_name, str) or not current_name:
-        current_name = ctx.run.user
+        return
+
+    rows = await ctx.run.agent.storage.execute(
+        "SELECT name, alternatives FROM commamatrix_user_names WHERE user = ?",
+        (ctx.run.user,),
+    )
 
     if rows:
         row = rows[0]
@@ -126,7 +125,7 @@ async def add_user_message_headers(ctx: BeforeLlmCallCtx) -> None:
         if item.role != DialogRole.USER:
             continue
         user_timezone = await _user_timezone(ctx, item)
-        user_name = ctx.run.state.get("user_name", item.user)
+        user_name = ctx.run.state.get("user_name", "")
         header = _render_header(item, template, datetime_format, user_timezone, str(user_name))
         prefix = f"{header}\n\n"
         if item.content.startswith(prefix):
