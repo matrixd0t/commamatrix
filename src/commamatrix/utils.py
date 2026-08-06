@@ -31,6 +31,7 @@ __all__ = [
     "write_bytes_file_async",
     "write_text_file_async",
     "await_if_needed",
+    "_row_value",
     "to_jsonable",
 ]
 
@@ -227,6 +228,13 @@ async def await_if_needed(result: Any) -> Any:
     return result
 
 
+def _row_value(row: object, field_name: str) -> object:
+    try:
+        return row[field_name]
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
 def to_jsonable(obj: Any) -> Any:
     if obj is None or isinstance(obj, (str, int, float, bool)):
         return obj
@@ -250,3 +258,4 @@ def to_jsonable(obj: Any) -> Any:
             if not key.startswith("_")
         }
     return str(obj)
+

@@ -11,7 +11,10 @@ from typing import TYPE_CHECKING
 
 import bcrypt
 import jwt
+from pydantic import BaseModel
 from starlette.responses import JSONResponse
+
+from ...components.table import BaseTable
 
 if TYPE_CHECKING:
     from ...core.agent import Agent
@@ -23,6 +26,41 @@ class AuthUser:
     username: str
     app_name: str
     is_admin: bool
+
+
+class UserName(BaseModel):
+    user: str
+    name: str
+    alternatives: list[str]
+
+
+class UserNamesTable(BaseTable[UserName]):
+    table_id = "commamatrix.http_user_names"
+    table_name = "commamatrix_user_names"
+    row_model = UserName
+    primary_key = "user"
+    indexes = (("name",),)
+
+
+_AUTH_TABLE = "commamatrix_http_auth"
+
+
+class HttpAuthRow(BaseModel):
+    id: int
+    app_name: str
+    username: str
+    password_hash: str
+    is_admin: bool
+    created_at: str
+
+
+class HttpAuthTable(BaseTable[HttpAuthRow]):
+    table_id = "commamatrix.http_auth"
+    table_name = _AUTH_TABLE
+    row_model = HttpAuthRow
+    primary_key = "id"
+    auto_increment = "id"
+    unique_indexes = (("app_name", "username"),)
 
 
 class AuthError(Exception):
@@ -67,33 +105,20 @@ class Authorizer:
         async with self._init_lock:
             if self._initialized:
                 return
-            await self.agent.storage.execute(
-                """
-                CREATE TABLE IF NOT EXISTS commamatrix_users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    app_name TEXT NOT NULL,
-                    username TEXT NOT NULL,
-                    password_hash TEXT NOT NULL,
-                    is_admin INTEGER NOT NULL DEFAULT 0,
-                    created_at TEXT NOT NULL,
-                    UNIQUE(app_name, username)
-                )
-                """
-            )
             admins = await self.agent.storage.execute(
-                "SELECT id FROM commamatrix_users WHERE app_name = ? AND is_admin = 1 LIMIT 1",
+                f"SELECT id FROM {_AUTH_TABLE} WHERE app_name = ? AND is_admin = 1 LIMIT 1",
                 (self.app_name,),
             )
             if not admins:
                 password = secrets.token_urlsafe(18)
                 password_hash = self._hash_password(password)
                 existing_admin = await self.agent.storage.execute(
-                    "SELECT id FROM commamatrix_users WHERE app_name = ? AND username = ? LIMIT 1",
+                    f"SELECT id FROM {_AUTH_TABLE} WHERE app_name = ? AND username = ? LIMIT 1",
                     (self.app_name, "admin"),
                 )
                 if existing_admin:
                     await self.agent.storage.execute(
-                        "UPDATE commamatrix_users SET password_hash = ?, is_admin = 1 WHERE id = ? AND app_name = ?",
+                        f"UPDATE {_AUTH_TABLE} SET password_hash = ?, is_admin = 1 WHERE id = ? AND app_name = ?",
                         (password_hash, existing_admin[0]["id"], self.app_name),
                     )
                 else:
@@ -105,7 +130,7 @@ class Authorizer:
         password_hash = self._hash_password(password)
         try:
             await self.agent.storage.execute(
-                "INSERT INTO commamatrix_users (app_name, username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)",
+                f"INSERT INTO {_AUTH_TABLE} (app_name, username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)",
                 (self.app_name, username, password_hash, int(is_admin), datetime.now(timezone.utc).isoformat()),
             )
         except Exception as exc:
@@ -113,7 +138,7 @@ class Authorizer:
                 raise AuthError("Username already taken for this app") from exc
             raise
         rows = await self.agent.storage.execute(
-            "SELECT id, is_admin FROM commamatrix_users WHERE app_name = ? AND username = ?",
+            f"SELECT id, is_admin FROM {_AUTH_TABLE} WHERE app_name = ? AND username = ?",
             (self.app_name, username),
         )
         return self._user_from_row(rows[0], username)
@@ -153,7 +178,7 @@ class Authorizer:
         if not isinstance(username, str) or not isinstance(password, str):
             raise AuthError("Invalid username or password")
         rows = await self.agent.storage.execute(
-            "SELECT id, password_hash FROM commamatrix_users WHERE app_name = ? AND username = ?",
+            f"SELECT id, password_hash FROM {_AUTH_TABLE} WHERE app_name = ? AND username = ?",
             (self.app_name, username),
         )
         if not rows:
@@ -196,7 +221,7 @@ class Authorizer:
         except (KeyError, TypeError, ValueError) as exc:
             raise AuthError("Invalid token") from exc
         rows = await self.agent.storage.execute(
-            "SELECT id, username, is_admin FROM commamatrix_users WHERE id = ? AND app_name = ?",
+            f"SELECT id, username, is_admin FROM {_AUTH_TABLE} WHERE id = ? AND app_name = ?",
             (user_id, self.app_name),
         )
         if not rows:
@@ -207,11 +232,25 @@ class Authorizer:
         await self.init_db()
         if isinstance(user, bool) or not isinstance(user, (int, str)):
             raise ValueError("User must be an integer ID or username")
-        field = "id" if isinstance(user, int) else "username"
-        rows = await self.agent.storage.execute(
-            f"SELECT id, username, is_admin FROM commamatrix_users WHERE {field} = ? AND app_name = ?",
-            (user, self.app_name),
-        )
+        if isinstance(user, int):
+            rows = await self.agent.storage.execute(
+                f"SELECT id, username, is_admin FROM {_AUTH_TABLE} WHERE id = ? AND app_name = ?",
+                (user, self.app_name),
+            )
+        else:
+            user = user.strip()
+            try:
+                user_id = int(user)
+            except ValueError:
+                rows = await self.agent.storage.execute(
+                    f"SELECT id, username, is_admin FROM {_AUTH_TABLE} WHERE LOWER(username) = LOWER(?) AND app_name = ?",
+                    (user, self.app_name),
+                )
+            else:
+                rows = await self.agent.storage.execute(
+                    f"SELECT id, username, is_admin FROM {_AUTH_TABLE} WHERE id = ? AND app_name = ?",
+                    (user_id, self.app_name),
+                )
         return self._user_from_row(rows[0]) if rows else None
 
     async def change_password(self, user: AuthUser, old_password: str, new_password: str) -> None:
@@ -219,7 +258,7 @@ class Authorizer:
         self._check_credentials(user.username, old_password)
         self._check_credentials(user.username, new_password)
         rows = await self.agent.storage.execute(
-            "SELECT password_hash FROM commamatrix_users WHERE id = ? AND app_name = ?",
+            f"SELECT password_hash FROM {_AUTH_TABLE} WHERE id = ? AND app_name = ?",
             (user.id, self.app_name),
         )
         if not rows:
@@ -228,7 +267,7 @@ class Authorizer:
             raise AuthError("Invalid current password")
         password_hash = self._hash_password(new_password)
         await self.agent.storage.execute(
-            "UPDATE commamatrix_users SET password_hash = ? WHERE id = ? AND app_name = ?",
+            f"UPDATE {_AUTH_TABLE} SET password_hash = ? WHERE id = ? AND app_name = ?",
             (password_hash, user.id, self.app_name),
         )
 
@@ -271,3 +310,5 @@ class Authorizer:
 
     async def stop(self) -> None:
         self._invites.clear()
+
+

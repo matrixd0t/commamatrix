@@ -1,6 +1,14 @@
 # builtin/http_connector/__init__.py
 
-from .auth import AuthError, AuthUser, Authorizer
+from .auth import (
+    AuthError,
+    AuthUser,
+    Authorizer,
+    HttpAuthRow,
+    HttpAuthTable,
+    UserName,
+    UserNamesTable,
+)
 from .connector import (
     HttpConnector,
     HttpOrigin,
@@ -16,6 +24,10 @@ __all__ = [
     "AuthError",
     "AuthUser",
     "Authorizer",
+    "HttpAuthRow",
+    "HttpAuthTable",
+    "UserName",
+    "UserNamesTable",
     "HttpConnector",
     "HttpOrigin",
     "HttpStatusMessage",
@@ -25,3 +37,5 @@ __all__ = [
     "http_auth_jwt_secret",
     "http_auth_token_ttl_seconds",
 ]
+
+

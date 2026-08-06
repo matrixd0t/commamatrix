@@ -90,6 +90,10 @@ class Connector(AbstractService, Generic[OrgT]):
     async def send(self, origin: DialogOrigin, item: DialogItem) -> str:
         """Render an item and return its external ID, or an empty string."""
 
+    @abstractmethod
+    async def get_user_name(self, origin: DialogOrigin) -> str | None:
+        """Return the current display name for a platform user."""
+
     async def publish_item(self, origin: DialogOrigin, item: DialogItem) -> None:
         """Publish a persisted item to passive subscribers when supported."""
         return None
@@ -162,3 +166,4 @@ class ConnectorManager(ServiceInstanceManager[Connector]):
 
     def _create_instance(self, descriptor: ConnectorDescriptor) -> Connector:
         return descriptor.connector_cls(agent=self.agent)
+

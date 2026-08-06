@@ -41,6 +41,18 @@ def python_type_to_sql(t: type) -> str:
     return "TEXT"
 
 
+def _sql_literal(value: Any) -> str | None:
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return "'" + value.replace("'", "''") + "'"
+    return None
+
+
 def _field_is_nullable(field_info) -> bool:
     ann = field_info.annotation
     if ann is type(None):
@@ -364,11 +376,18 @@ class SqlStorage(Storage):
 
         columns: list[str] = []
         for name, field_info in fields.items():
-            column = f"{self._quote_ident(name)} {python_type_to_sql(field_info.annotation)}"
-            if name == table_cls.primary_key:
+            if name == table_cls.auto_increment:
+                column = f"{self._quote_ident(name)} {self._pk_type()}"
+            else:
+                column = f"{self._quote_ident(name)} {python_type_to_sql(field_info.annotation)}"
+            if name == table_cls.primary_key and name != table_cls.auto_increment:
                 column += " PRIMARY KEY"
             elif not _field_is_nullable(field_info):
-                column += " NOT NULL"
+                if name != table_cls.auto_increment:
+                    column += " NOT NULL"
+            if not field_info.is_required() and field_info.default_factory is None:
+                if (default := _sql_literal(field_info.default)) is not None:
+                    column += f" DEFAULT {default}"
             columns.append(column)
         return columns
 
@@ -381,6 +400,13 @@ class SqlStorage(Storage):
             await self._execute(
                 db,
                 f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({index_columns})",
+            )
+        for index_number, index_fields in enumerate(table_cls.unique_indexes):
+            index_name = self._quote_ident(f"uidx_{table_cls.table_name}_{index_number}")
+            index_columns = ", ".join(self._quote_ident(name) for name in index_fields)
+            await self._execute(
+                db,
+                f"CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON {table_name} ({index_columns})",
             )
         await self._commit(db)
 
@@ -443,3 +469,5 @@ class SqlStorage(Storage):
 
     async def stop(self) -> None:
         await self._close()
+
+

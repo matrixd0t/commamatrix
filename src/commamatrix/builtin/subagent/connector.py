@@ -45,6 +45,9 @@ class InternalConnector(Connector[InternalOrigin]):
         self._items.setdefault(internal_origin.task_id, []).append(item)
         return ""
 
+    async def get_user_name(self, origin: DialogOrigin) -> str | None:
+        return None
+
     def register(self, origin: InternalOrigin, *, wait_for_result: bool, on_error: Callable[[Exception], Any] | None = None) -> None:
         future = asyncio.get_running_loop().create_future() if wait_for_result else None
         self._pending[origin.task_id] = _PendingRun(future=future, on_error=on_error)
@@ -101,3 +104,4 @@ class InternalConnector(Connector[InternalOrigin]):
 
 
 __all__ = ["InternalConnector", "InternalOrigin"]
+

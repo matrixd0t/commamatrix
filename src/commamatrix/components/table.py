@@ -36,7 +36,9 @@ class BaseTable(Generic[RowT], ABC):
     table_name: ClassVar[str] = ""
     row_model: ClassVar[type[BaseModel]]
     primary_key: ClassVar[str | None] = None
+    auto_increment: ClassVar[str | None] = None
     indexes: ClassVar[tuple[tuple[str, ...], ...]] = ()
+    unique_indexes: ClassVar[tuple[tuple[str, ...], ...]] = ()
     version: ClassVar[int] = 1
 
     @classmethod
@@ -75,7 +77,9 @@ class TableDescriptor(Descriptor):
             "row_model": f"{table_cls.row_model.__module__}.{table_cls.row_model.__qualname__}",
             "row_fields": tuple(table_cls.row_model.model_fields),
             "primary_key": table_cls.primary_key,
+            "auto_increment": table_cls.auto_increment,
             "indexes": table_cls.indexes,
+            "unique_indexes": table_cls.unique_indexes,
             "version": table_cls.version,
         }
 
@@ -103,10 +107,22 @@ class PythonTableSource(PythonSource[TableDescriptor]):
         if primary_key is not None and primary_key not in fields:
             raise ValueError(f"Primary key {primary_key!r} is not a field of {row_model.__name__}")
 
+        auto_increment = getattr(obj, "auto_increment", None)
+        if auto_increment is not None:
+            if not isinstance(auto_increment, str) or auto_increment not in fields:
+                raise ValueError(f"Autoincrement field {auto_increment!r} is not a field of {row_model.__name__}")
+            if primary_key != auto_increment:
+                raise ValueError("Autoincrement field must also be the primary key")
+
         indexes = tuple(tuple(index) for index in getattr(obj, "indexes", ()))
         for index in indexes:
             if not index or any(field_name not in fields for field_name in index):
                 raise ValueError(f"Invalid index declaration on {obj.__module__}.{object_name}: {index!r}")
+
+        unique_indexes = tuple(tuple(index) for index in getattr(obj, "unique_indexes", ()))
+        for index in unique_indexes:
+            if not index or any(field_name not in fields for field_name in index):
+                raise ValueError(f"Invalid unique index declaration on {obj.__module__}.{object_name}: {index!r}")
 
         version = getattr(obj, "version", 1)
         if not isinstance(version, int) or version < 1:
@@ -194,3 +210,5 @@ __all__ = [
     "SchemaBackend",
     "TableManager",
 ]
+
+

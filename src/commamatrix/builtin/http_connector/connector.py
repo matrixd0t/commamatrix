@@ -32,7 +32,7 @@ from ...components.file_storage import DataType, normalize_file_id, read_file
 from ...components.hook import OnParsedCtx
 from ...components.llm_adapter import LLMModalities, StreamDelta
 from ...components.server import SERVER_ROOT, http_external_url
-from ...utils import commamatrix_dir
+from ...utils import _row_value, commamatrix_dir
 from .auth import AuthError, Authorizer
 
 if TYPE_CHECKING:
@@ -354,11 +354,66 @@ class HttpConnector(Connector[HttpOrigin]):
             return None
         return self._timezones_by_user.get(origin.http_user_id)
 
-    async def get_user_info(self, user: int | str) -> dict[str, int | str] | None:
-        found = await self.authorizer.find_user(user)
+    async def get_user_name(self, origin: DialogOrigin) -> str | None:
+        if not isinstance(origin, HttpOrigin):
+            return None
+        found = await self.authorizer.find_user(origin.http_user_id)
+        return found.username if found is not None else None
+
+    async def _find_name_record(self, name: str) -> tuple[object, str | None] | None:
+        try:
+            rows = await self.agent.storage.execute(
+                "SELECT user, name, alternatives FROM commamatrix_user_names"
+            )
+        except Exception as exc:
+            if "no such table" in str(exc).lower() or "does not exist" in str(exc).lower():
+                return None
+            raise
+        normalized = name.casefold()
+        for row in rows:
+            current_name = _row_value(row, "name")
+            if isinstance(current_name, str) and current_name.casefold() == normalized:
+                return row, None
+            try:
+                alternatives = json.loads(_row_value(row, "alternatives") or "[]")
+            except (TypeError, ValueError):
+                alternatives = []
+            if not isinstance(alternatives, list):
+                continue
+            if any(isinstance(value, str) and value.casefold() == normalized for value in alternatives):
+                return row, name
+        return None
+
+    async def get_user_info(self, user: int | str) -> dict[str, object] | None:
+        matched_name: str | None = None
+        lookup: int | str = user
+        search_name = user
+        if isinstance(user, str):
+            lookup = user.strip()
+            if ":" in lookup:
+                platform, _, identifier = lookup.partition(":")
+                if platform.casefold() == "http":
+                    lookup = identifier.strip()
+                    search_name = lookup
+            try:
+                lookup = int(lookup)
+            except ValueError:
+                pass
+        found = await self.authorizer.find_user(lookup)
+        if found is None and isinstance(user, str):
+            name_record = await self._find_name_record(str(search_name).strip())
+            if name_record is not None:
+                row, matched_name = name_record
+                stored_user = _row_value(row, "user")
+                if isinstance(stored_user, str):
+                    found = await self.authorizer.find_user(stored_user.removeprefix("http:"))
         if found is None:
             return None
-        return {"id": found.id, "username": found.username}
+        result: dict[str, object] = {"id": found.id, "username": found.username}
+        if matched_name is not None:
+            result["matched_name"] = matched_name
+            result["name_changed"] = matched_name.casefold() != found.username.casefold()
+        return result
 
     def _sessions_for_user(self, user_id: int) -> list[HTTPSession]:
         return [self._sessions[session_id] for session_id in self._sessions_by_user.get(user_id, ()) if session_id in self._sessions and not self._sessions[session_id].closed]
@@ -1029,3 +1084,8 @@ async def _sse_generator(queue: asyncio.Queue[dict | None], on_disconnect=None):
 def _serialize_item(item: DialogItem) -> dict:
     meta = {key: value for key, value in item.meta.items() if key != "llm"}
     return {"type": "dialog_item", "item_id": item.item_id, "previous_item_id": item.previous_item_id, "item_type": item.item_type.value, "role": item.role.value, "content": item.content, "user": item.user, "origin": item.origin.model_dump(mode="json"), "external_id": item.external_id, "created_at": item.created_at.isoformat() if item.created_at else None, "meta": meta}
+
+
+
+
+

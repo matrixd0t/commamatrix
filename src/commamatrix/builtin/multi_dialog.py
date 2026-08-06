@@ -92,20 +92,24 @@ async def get_origins(platform: str = "any") -> str:
 
 
 @tool(alias="dialogs")
-async def get_user_info(user_names_or_ids: list[str], ctx: BeforeToolCallCtx) -> dict[str, dict[str, int | str]]:
+async def get_user_info(user_names_or_ids: list[str | int], ctx: BeforeToolCallCtx) -> dict[str, dict[str, object]]:
     """Get user information keyed by each name or id from the input list.
 
     Usage: "user_names_or_ids": ["Alice", "http:42", "telegram:bob"]
+    If a historical name matches, ``matched_name`` identifies the old name and ``username`` contains the user's current name.
     """
-    results: dict[str, dict[str, int | str]] = {}
+    results: dict[str, dict[str, object]] = {}
     connectors = ctx.run.agent.connector_manager.resolve()
 
     for user_name_or_id in user_names_or_ids:
         request_key = str(user_name_or_id)
-        if not isinstance(user_name_or_id, str) or not user_name_or_id.strip():
+        if isinstance(user_name_or_id, bool) or not isinstance(user_name_or_id, (str, int)):
             results[request_key] = {"error": "invalid input"}
             continue
-        user_name_or_id = user_name_or_id.strip()
+        user_name_or_id = str(user_name_or_id).strip()
+        if not user_name_or_id:
+            results[request_key] = {"error": "invalid input"}
+            continue
 
         platform_filter = None
         user_identifier = user_name_or_id
@@ -140,7 +144,7 @@ async def get_user_info(user_names_or_ids: list[str], ctx: BeforeToolCallCtx) ->
             continue
 
         search_key = numeric if numeric is not None else user_identifier
-        result: dict[str, int | str] | None = None
+        result: dict[str, object] | None = None
         for connector in candidate_connectors:
             found = await await_if_needed(connector.get_user_info(search_key))
             if not isinstance(found, dict):
@@ -165,6 +169,10 @@ async def get_user_info(user_names_or_ids: list[str], ctx: BeforeToolCallCtx) ->
                 "username": username,
                 "platform": platform,
             }
+            if isinstance(found.get("matched_name"), str):
+                result["matched_name"] = found["matched_name"]
+            if found.get("name_changed"):
+                result["name_changed"] = True
             break
 
         results[request_key] = result or {"error": "User not found"}
@@ -241,3 +249,6 @@ __all__ = [
     "get_user_info",
     "switch",
 ]
+
+
+
