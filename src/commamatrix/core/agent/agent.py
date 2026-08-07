@@ -748,6 +748,7 @@ class Agent:
                 if run.tool_output_tail is not None
                 else last_item_id
             )
+            codeact_meta = before_ctx.meta.get("codeact")
             result_item = DialogItem(
                 content=after_ctx.result.dump_json(),
                 item_type=DialogItemType.TOOL_CALL_RESULT,
@@ -755,6 +756,7 @@ class Agent:
                 role=DialogRole.TOOL,
                 origin=run.origin,
                 previous_item_id=tail,
+                meta={"codeact": dict(codeact_meta)} if isinstance(codeact_meta, dict) else {},
             )
             last_item_id = await self._send_and_store_item(run, result_item, tail)
             for follow_up_item in follow_up_items:
@@ -835,3 +837,5 @@ class Agent:
             )
             result.append((run, items))
         return result
+
+

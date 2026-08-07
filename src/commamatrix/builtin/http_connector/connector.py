@@ -127,19 +127,34 @@ class HttpFileRecord:
     user_id: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class HttpStatusMessage:
-    message: str
+    text: str | None = None
+    code: str | None = None
     severity: str = "yellow"
 
+    def __init__(self, text: str | None = None, severity: str = "yellow", *, code: str | None = None, message: str | None = None) -> None:
+        if text is None:
+            text = message
+        object.__setattr__(self, "text", text)
+        object.__setattr__(self, "code", code)
+        object.__setattr__(self, "severity", severity)
+        self.__post_init__()
+
     def __post_init__(self) -> None:
-        if not self.message.strip():
-            raise ValueError("Status message must not be empty")
+        if not any(isinstance(value, str) and value.strip() for value in (self.code, self.text)):
+            raise ValueError("Status message must have code or text")
         if self.severity not in {"yellow", "red"}:
             raise ValueError("Status severity must be 'yellow' or 'red'")
 
+    @property
+    def message(self) -> str | None:
+        """Return the legacy text alias for configured status messages."""
+        return self.text
 
-_NO_PUBLIC_ADDRESS_MESSAGE = "You cannot upload files for LLM: CommaMatrix is not visible from the Internet."
+
+_NO_PUBLIC_ADDRESS_CODE = "public_address_required"
+_NO_PUBLIC_ADDRESS_TEXT = "You cannot upload files for LLM: CommaMatrix is not visible from the Internet."
 _OUTPUT_ATTACHMENT_MARKER = re.compile(r"\[(image|file):([^\]\r\n]+)\]", re.IGNORECASE)
 
 
@@ -166,6 +181,7 @@ class HttpConnector(Connector[HttpOrigin]):
         self._status_messages: list[HttpStatusMessage] = []
         self._history_cache: dict[int, list[DialogItem]] = {}
         self._stream_tasks: dict[str, asyncio.Task] = {}
+        self._stream_users: dict[str, int] = {}
         self._route_handles: list[object] = []
         self._request_streaming: ContextVar[bool] = ContextVar(f"http_streaming:{id(self)}", default=True)
         self._register_routes()
@@ -264,24 +280,31 @@ class HttpConnector(Connector[HttpOrigin]):
                 normalized.append(HttpStatusMessage(value))
                 continue
             if isinstance(value, Mapping):
-                message = value.get("message")
+                text = value.get("text", value.get("message"))
+                code = value.get("code")
                 severity = value.get("severity", "yellow")
-                if isinstance(message, str) and isinstance(severity, str):
-                    normalized.append(HttpStatusMessage(message, severity))
+                if (isinstance(text, str) or isinstance(code, str)) and isinstance(severity, str):
+                    normalized.append(HttpStatusMessage(text=text, code=code if isinstance(code, str) else None, severity=severity))
         self._status_messages = normalized
 
     def _status_payload(self) -> dict[str, object]:
         messages = []
         if not self.file_upload_allowed:
-            messages.append({"message": _NO_PUBLIC_ADDRESS_MESSAGE, "severity": "yellow"})
-        messages.extend({"message": item.message, "severity": item.severity} for item in self._status_messages)
+            messages.append({"code": _NO_PUBLIC_ADDRESS_CODE, "text": _NO_PUBLIC_ADDRESS_TEXT, "severity": "yellow"})
+        for item in self._status_messages:
+            message: dict[str, str] = {"severity": item.severity}
+            if item.code:
+                message["code"] = item.code
+            if item.text:
+                message["text"] = item.text
+            messages.append(message)
         return {"messages": messages, "file_upload_allowed": self.file_upload_allowed, "poll_after": 3}
 
     async def _status(self, _request: Request) -> Response:
         return JSONResponse(self._status_payload())
 
     def _file_upload_blocked(self) -> JSONResponse:
-        return JSONResponse({"error": _NO_PUBLIC_ADDRESS_MESSAGE, "code": "public_address_required"}, status_code=403)
+        return JSONResponse({"code": _NO_PUBLIC_ADDRESS_CODE, "text": _NO_PUBLIC_ADDRESS_TEXT}, status_code=403)
 
     async def _change_password(self, request: Request) -> Response:
         try:
@@ -345,6 +368,7 @@ class HttpConnector(Connector[HttpOrigin]):
                 task.cancel()
         await asyncio.gather(*self._stream_tasks.values(), return_exceptions=True)
         self._stream_tasks.clear()
+        self._stream_users.clear()
         for session in tuple(self._sessions.values()):
             self._close_session(session)
         self._sessions.clear()
@@ -565,6 +589,9 @@ class HttpConnector(Connector[HttpOrigin]):
 
     def _open_session(self, user_id: int) -> HTTPSession:
         session = HTTPSession(session_id=uuid.uuid4().hex, user_id=user_id, queue=asyncio.Queue())
+        for stream_id, stream_user_id in self._stream_users.items():
+            if stream_user_id == user_id and stream_id in self._stream_tasks:
+                session.queue.put_nowait({"type": "stream_started", "stream_id": stream_id})
         self._sessions[session.session_id] = session
         self._sessions_by_user.setdefault(user_id, set()).add(session.session_id)
         self.logger.debug("HTTP event session opened user_id=%d active_sessions=%d", user_id, len(self._sessions))
@@ -1067,9 +1094,11 @@ class HttpConnector(Connector[HttpOrigin]):
             finally:
                 await self._publish(user.id, {"type": "message_done", "stream_id": stream_id})
                 self._stream_tasks.pop(stream_id, None)
+                self._stream_users.pop(stream_id, None)
 
         wrapper_task = asyncio.create_task(_run_wrapper(), name=f"http-stream:{stream_id}")
         self._stream_tasks[stream_id] = wrapper_task
+        self._stream_users[stream_id] = user.id
         self.logger.info("HTTP message stream started user_id=%d", user.id)
         return JSONResponse({"stream_id": stream_id}, status_code=202)
 
@@ -1137,4 +1166,7 @@ async def _sse_generator(queue: asyncio.Queue[dict | None], on_disconnect=None):
 def _serialize_item(item: DialogItem) -> dict:
     meta = {key: value for key, value in item.meta.items() if key != "llm"}
     return {"type": "dialog_item", "item_id": item.item_id, "previous_item_id": item.previous_item_id, "item_type": item.item_type.value, "role": item.role.value, "content": item.content, "user": item.user, "origin": item.origin.model_dump(mode="json"), "external_id": item.external_id, "created_at": item.created_at.isoformat() if item.created_at else None, "meta": meta}
+
+
+
 

@@ -13,13 +13,13 @@ const LANGUAGE_STORAGE_KEY="commamatrix_ui_language";
 const translations={
   en:{
     "common.cancel":"Cancel","common.close":"Close","common.save":"Save",
-    "language.english":"English","language.russian":"Russian","language.switchTo":"Switch to {{language}}",
+    "language.english":"English","language.russian":"Русский","language.switchTo":"Switch to {{language}}",
     "header.openBranches":"Open branches","header.closeBranches":"Close branches","header.serverStatus":"Server status","header.openAccountMenu":"Open account menu","header.closeAccountMenu":"Close account menu",
     "account.changePassword":"Change password","account.changeUsername":"Change name","account.addUser":"Add user","account.logOut":"Log out",
     "status.signInRequired":"Sign in required","status.ready":"Ready","status.connecting":"Connecting...","status.disconnected":"Disconnected","status.processing":"Processing...","status.streaming":"Streaming...","status.sending":"Sending...","status.waitUploads":"Wait for uploads to finish","status.removeFailedUploads":"Remove failed uploads",
     "branches.panelLabel":"Conversation branches","branches.title":"Branches","branches.description":"Choose a conversation","branches.new":"+ New branch","branches.filters":"Branch filters","branches.active":"Active","branches.deleted":"Deleted branches","branches.select":"Select branch","branches.collapse":"Collapse branch","branches.expand":"Expand branch","branches.restore":"Restore branch","branches.hide":"Hide branch","branches.noDeleted":"No deleted conversations.","branches.empty":"No conversations yet.","branches.emptyMessage":"[empty message]","branches.today":"today","branches.yesterday":"yesterday","branches.thisWeek":"this week","branches.thisMonth":"this month","branches.older":"older",
     "chat.messageLabel":"Message","chat.placeholder":"Type a message...","chat.send":"Send","chat.cancel":"Cancel",
-    "attachments.dropHere":"Drop a link or file here","attachments.add":"Add a link or file","attachments.addToMessage":"Add to message","attachments.chooseHow":"Choose how to add content to your message.","attachments.insertLink":"Insert link","attachments.uploadFile":"Upload file","attachments.linkDescription":"The link will be added as an attachment and sent directly to the LLM without being saved on the server.","attachments.url":"URL","attachments.uploadRequirement":"File uploads require a public http-server address",
+    "attachments.dropHere":"Drop a link or file here","attachments.add":"Add a link or file","attachments.addToMessage":"Add to message","attachments.chooseHow":"Choose how to add content to your message.","attachments.insertLink":"Insert link","attachments.uploadFile":"Upload file","attachments.linkDescription":"The link will be added as an attachment and sent directly without saving contents.","attachments.url":"URL","attachments.uploadRequirement":"File uploads require a public http-server address",
     "auth.signIn":"Sign in","auth.createAccount":"Create account","auth.loginDescription":"Use your CommaMatrix account to connect to this agent.","auth.registerDescription":"Use the one-time invitation to create an account.","auth.username":"Username","auth.password":"Password","auth.confirmPassword":"Confirm password","auth.show":"Show","auth.hide":"Hide","auth.register":"Register",
     "password.title":"Change password","password.description":"Set a new password for the current account.","password.current":"Current password","password.new":"New password","password.confirmNew":"Confirm new password",
     "username.title":"Change name","username.description":"Use 2-32 Unicode characters. Letters from any language are allowed; spaces, digits, underscores, hyphens, dots and apostrophes can separate words.","username.label":"New name",
@@ -33,22 +33,24 @@ const translations={
     "language.english":"English","language.russian":"Русский","language.switchTo":"Переключить на язык: {{language}}",
     "header.openBranches":"Открыть ветки","header.closeBranches":"Закрыть ветки","header.serverStatus":"Состояние сервера","header.openAccountMenu":"Открыть меню аккаунта","header.closeAccountMenu":"Закрыть меню аккаунта",
     "account.changePassword":"Сменить пароль","account.changeUsername":"Сменить имя","account.addUser":"Добавить пользователя","account.logOut":"Выйти",
-    "status.signInRequired":"Требуется войти","status.ready":"Готово","status.connecting":"Подключение...","status.disconnected":"Нет соединения","status.processing":"Обработка...","status.streaming":"Передача данных...","status.sending":"Отправка...","status.waitUploads":"Дождитесь завершения загрузки","status.removeFailedUploads":"Удалите неудачные загрузки",
-    "branches.panelLabel":"Ветки диалогов","branches.title":"Ветки","branches.description":"Выберите диалог","branches.new":"+ Новая ветка","branches.filters":"Фильтры веток","branches.active":"Активные","branches.deleted":"Удалённые ветки","branches.select":"Выбрать ветку","branches.collapse":"Свернуть ветку","branches.expand":"Развернуть ветку","branches.restore":"Восстановить ветку","branches.hide":"Скрыть ветку","branches.noDeleted":"Удалённых диалогов нет.","branches.empty":"Диалогов пока нет.","branches.emptyMessage":"[пустое сообщение]","branches.today":"сегодня","branches.yesterday":"вчера","branches.thisWeek":"на этой неделе","branches.thisMonth":"в этом месяце","branches.older":"раньше",
+    "status.signInRequired":"Нужно войти","status.ready":"Готов","status.connecting":"Подключение...","status.disconnected":"Нет соединения","status.processing":"Обработка...","status.streaming":"Отвечаю...","status.sending":"Отправка...","status.waitUploads":"Дождитесь завершения загрузки","status.removeFailedUploads":"Удалить неудачные загрузки",
+    "branches.panelLabel":"Диалоги","branches.title":"Диалоги","branches.description":"Выберите диалог","branches.new":"+ Новый диалог","branches.filters":"Фильтры диалогов","branches.active":"Активные","branches.deleted":"Удалённые диалоги","branches.select":"Выбрать диалог","branches.collapse":"Свернуть диалог","branches.expand":"Развернуть диалог","branches.restore":"Восстановить диалог","branches.hide":"Скрыть диалог","branches.noDeleted":"Удалённых диалогов нет.","branches.empty":"Диалогов пока нет.","branches.emptyMessage":"[пустое сообщение]","branches.today":"сегодня","branches.yesterday":"вчера","branches.thisWeek":"на этой неделе","branches.thisMonth":"в этом месяце","branches.older":"раньше",
     "chat.messageLabel":"Сообщение","chat.placeholder":"Введите сообщение...","chat.send":"Отправить","chat.cancel":"Отменить",
-    "attachments.dropHere":"Перетащите сюда ссылку или файл","attachments.add":"Добавить ссылку или файл","attachments.addToMessage":"Добавить к сообщению","attachments.chooseHow":"Выберите, как добавить содержимое к сообщению.","attachments.insertLink":"Вставить ссылку","attachments.uploadFile":"Загрузить файл","attachments.linkDescription":"Ссылка будет добавлена как вложение и отправлена напрямую LLM без сохранения на сервере.","attachments.url":"URL","attachments.uploadRequirement":"Для загрузки файлов HTTP-сервер должен быть доступен из интернета",
+    "attachments.dropHere":"Перетащите сюда ссылку или файл","attachments.add":"Добавить ссылку или файл","attachments.addToMessage":"Добавить к сообщению","attachments.chooseHow":"Выберите, как добавить содержимое к сообщению.","attachments.insertLink":"Вставить ссылку","attachments.uploadFile":"Загрузить файл","attachments.linkDescription":"Ссылка будет добавлена как вложение и отправлена напрямую без сохранения содержимого.","attachments.url":"URL","attachments.uploadRequirement":"Для загрузки файлов HTTP-сервер должен быть доступен из интернета",
     "auth.signIn":"Войти","auth.createAccount":"Создать аккаунт","auth.loginDescription":"Используйте аккаунт CommaMatrix для подключения к этому агенту.","auth.registerDescription":"Используйте одноразовое приглашение для создания аккаунта.","auth.username":"Имя пользователя","auth.password":"Пароль","auth.confirmPassword":"Подтвердите пароль","auth.show":"Показать","auth.hide":"Скрыть","auth.register":"Зарегистрироваться",
     "password.title":"Сменить пароль","password.description":"Задайте новый пароль для текущего аккаунта.","password.current":"Текущий пароль","password.new":"Новый пароль","password.confirmNew":"Подтвердите новый пароль",
     "username.title":"Сменить имя","username.description":"Используйте от 2 до 32 символов Unicode. Разрешены буквы любых языков; пробелы, цифры, подчёркивания, дефисы, точки и апострофы могут разделять слова.","username.label":"Новое имя",
     "invite.title":"Приглашение нового пользователя","invite.description":"Передайте эту одноразовую ссылку пользователю, который должен зарегистрироваться.","invite.ready":"Ссылка-приглашение готова. Отправьте её пользователю.","invite.copy":"Копировать ссылку","invite.copied":"Скопировано",
     "attachment.image":"ИЗОБРАЖЕНИЕ","attachment.file":"ФАЙЛ","attachment.link":"ССЫЛКА","attachment.imageUnavailable":"Изображение недоступно","attachment.fileUnavailable":"Файл недоступен","attachment.uploading":"Загрузка...","attachment.uploadFailed":"Не удалось загрузить","attachment.externalLink":"Внешняя ссылка","attachment.ready":"Готово","attachment.remove":"Удалить {{name}}",
     "message.assistant":"Ассистент","message.reasoning":"Рассуждение","message.codeAct":"Сессия CodeAct","message.codeActElapsed":" ({{seconds}} с)","message.scrollToBottom":"Прокрутить вниз","message.result":"Результат","message.tool":"Инструмент: {{name}}","message.toolPlaceholder":"Инструмент: ...","message.toolResult":"Результат инструмента","message.thinking":"Обработка","message.streamingHelp":"Если поток завис, перезагрузите страницу (F5).","message.previousBranch":"Предыдущая ветка","message.nextBranch":"Следующая ветка","message.regenerate":"Сгенерировать ответ заново","message.edit":"Изменить","message.imageInput":"[изображение]","message.fileInput":"[файл]","message.output":"[результат]",
-    "error.interface":"Ошибка интерфейса: {{message}}","error.unknown":"Неизвестная ошибка","error.sessionExpired":"Срок действия сессии истёк. Войдите снова.","error.authenticationRequired":"Требуется аутентификация","error.fileRequestFailed":"Не удалось получить файл","error.noPublicAddress":"Нельзя загрузить файлы для LLM: CommaMatrix недоступен из интернета.","error.uploadFailed":"Не удалось загрузить файл","error.messageRejected":"Сообщение отклонено","error.network":"Ошибка сети: {{message}}","error.cancelRequest":"Не удалось отменить запрос: {{message}}","error.server":"Ошибка сервера","error.couldNotLoadBranch":"Не удалось загрузить ветку: {{message}}","error.couldNotLoadHistory":"Не удалось загрузить историю: {{message}}","error.historyRequest":"Не удалось запросить историю","error.passwordMismatch":"Пароли не совпадают","error.credentialsRequired":"Введите имя пользователя и пароль","error.usernameRequired":"Введите имя","error.usernameLength":"Имя должно содержать от 2 до 32 символов","error.usernameLetter":"Имя должно содержать хотя бы одну букву","error.usernameEdges":"Имя должно начинаться и заканчиваться буквой или цифрой","error.usernameCharacters":"Имя содержит недопустимые символы","error.usernameTaken":"Это имя уже занято","error.usernameChange":"Не удалось сменить имя","error.registration":"Не удалось зарегистрироваться","error.signIn":"Не удалось войти","error.accountCreated":"Аккаунт создан. Войдите с новым паролем.","error.passwordChange":"Не удалось сменить пароль","error.invitation":"Не удалось создать приглашение","error.invalidUrl":"Введите корректный HTTP- или HTTPS-адрес","error.eventsStream":"Поток событий вернул HTTP {{status}}","error.eventsFailed":"Поток событий завершился с ошибкой","error.eventsDisconnected":"Поток событий отключён","error.eventsAborted":"Поток событий прерван"
+    "error.interface":"Ошибка интерфейса: {{message}}","error.unknown":"Неизвестная ошибка","error.sessionExpired":"Срок действия сессии истёк. Войдите снова.","error.authenticationRequired":"Требуется аутентификация","error.fileRequestFailed":"Не удалось получить файл","error.noPublicAddress":"Невозможно загрузить файлы для LLM: CommaMatrix недоступен из интернета.","error.uploadFailed":"Не удалось загрузить файл","error.messageRejected":"Сообщение отклонено","error.network":"Ошибка сети: {{message}}","error.cancelRequest":"Не удалось отменить запрос: {{message}}","error.server":"Ошибка сервера","error.couldNotLoadBranch":"Не удалось загрузить ветку: {{message}}","error.couldNotLoadHistory":"Не удалось загрузить историю: {{message}}","error.historyRequest":"Не удалось запросить историю","error.passwordMismatch":"Пароли не совпадают","error.credentialsRequired":"Введите имя пользователя и пароль","error.usernameRequired":"Введите имя","error.usernameLength":"Имя должно содержать от 2 до 32 символов","error.usernameLetter":"Имя должно содержать хотя бы одну букву","error.usernameEdges":"Имя должно начинаться и заканчиваться буквой или цифрой","error.usernameCharacters":"Имя содержит недопустимые символы","error.usernameTaken":"Это имя уже занято","error.usernameChange":"Не удалось сменить имя","error.registration":"Не удалось зарегистрироваться","error.signIn":"Не удалось войти","error.accountCreated":"Аккаунт создан. Войдите с новым паролем.","error.passwordChange":"Не удалось сменить пароль","error.invitation":"Не удалось создать приглашение","error.invalidUrl":"Введите корректный HTTP- или HTTPS-адрес","error.eventsStream":"Поток событий вернул HTTP {{status}}","error.eventsFailed":"Поток событий завершился с ошибкой","error.eventsDisconnected":"Поток событий отключён","error.eventsAborted":"Поток событий прерван"
   }
 };
+const serverErrorTranslations={"public_address_required":"error.noPublicAddress"};
 let locale=(()=>{try{const stored=localStorage.getItem(LANGUAGE_STORAGE_KEY);if(stored&&translations[stored])return stored}catch{}return navigator.language?.toLowerCase().startsWith("ru")?"ru":"en"})();
 function translationAttributeKey(attribute){return "i18n"+attribute.split("-").map(part=>part[0].toUpperCase()+part.slice(1)).join("")}
 function t(key,values={}){const template=translations[locale][key]??translations.en[key]??String(key??"");return String(template).replace(/\{\{(\w+)\}\}/g,(_,name)=>String(values[name]??""))}
+function localizedServerMessage(item){const code=typeof item?.code==="string"?item.code.trim():"";const text=[item?.text,item?.message,item?.error,item?.detail,item?.content].find(value=>typeof value==="string"&&value.trim())?.trim()||"";if(code){const key=serverErrorTranslations[code]||(code.startsWith("error.")?code:"error."+code);if(translations[locale]?.[key]||translations.en?.[key])return t(key)}return text||code}
 function setI18nText(element,key,values={}){element.dataset.i18n=key;if(Object.keys(values).length)element.dataset.i18nValues=JSON.stringify(values);else delete element.dataset.i18nValues;element.textContent=t(key,values)}
 function setI18nAttribute(element,attribute,key,values={}){element.dataset[translationAttributeKey(attribute)]=key;if(Object.keys(values).length)element.dataset.i18nValues=JSON.stringify(values);element.setAttribute(attribute,t(key,values))}
 function applyTranslations(){
@@ -63,7 +65,7 @@ function applyTranslations(){
   document.documentElement.lang=locale;
 }
 function updateLanguageButton(){const target=locale==="ru"?"english":"russian";languageBtn.textContent=t("language."+target);const label=t("language.switchTo",{language:t("language."+target)});languageBtn.title=label;languageBtn.setAttribute("aria-label",label)}
-function setLocale(nextLocale){if(!translations[nextLocale]||nextLocale===locale)return;locale=nextLocale;try{localStorage.setItem(LANGUAGE_STORAGE_KEY,locale)}catch{}applyTranslations();updateLanguageButton();setAuthMode(authMode);renderAttachmentPreviews();renderBranchPanel();updateCodeActElapsed();if(currentStatusKey)setUiStatus(currentStatusKey)}
+function setLocale(nextLocale){if(!translations[nextLocale]||nextLocale===locale)return;locale=nextLocale;try{localStorage.setItem(LANGUAGE_STORAGE_KEY,locale)}catch{}applyTranslations();updateLanguageButton();setAuthMode(authMode);renderAttachmentPreviews();renderServerStatusMessages();renderBranchPanel();updateCodeActElapsed();if(currentStatusKey)setUiStatus(currentStatusKey)}
 window.__commamatrixUiLoaded=true;
 window.addEventListener("error",event=>{console.error("[CommaMatrix UI] uncaught error",event.error||event.message);const error=document.getElementById("auth-error");if(error)error.textContent=t("error.interface",{message:event.message})});
 window.addEventListener("unhandledrejection",event=>{console.error("[CommaMatrix UI] unhandled rejection",event.reason);const error=document.getElementById("auth-error");if(error)error.textContent=t("error.interface",{message:event.reason?.message||event.reason||t("error.unknown")})});
@@ -147,6 +149,8 @@ let activeStreams={};
 let streamingPreviews={};
 let messagesPinnedToBottom=true;
 let scrollFrame=null;
+let smoothScrollInProgress=false;
+let userScrollPending=false;
 const SCROLL_BOTTOM_THRESHOLD=24;
 /** @type {Map<number, DialogItem>} */
 let itemsById=new Map();
@@ -209,7 +213,7 @@ function renderServerStatusMessages(){
   const messages=statusPanelOverride?[statusPanelOverride]:serverStatusMessages;
   serverStatusPanel.replaceChildren();
   for(const item of messages){
-    const message=document.createElement("div");message.className="http-server-status-message "+item.severity;message.textContent=item.message;serverStatusPanel.appendChild(message);
+    const text=localizedServerMessage(item);if(!text)continue;const message=document.createElement("div");message.className="http-server-status-message "+item.severity;message.textContent=text;serverStatusPanel.appendChild(message);
   }
 }
 
@@ -228,7 +232,7 @@ function setServerConnected(connected){
 }
 
 function updateServerStatus(data){
-  serverStatusMessages=Array.isArray(data.messages)?data.messages.filter(item=>item&&typeof item.message==="string"&&["yellow","red"].includes(item.severity)).map(item=>({message:item.message,severity:item.severity})):[];
+  serverStatusMessages=Array.isArray(data.messages)?data.messages.filter(item=>item&&["yellow","red"].includes(item.severity)&&localizedServerMessage(item)).map(item=>({code:typeof item.code==="string"?item.code:undefined,text:typeof item.text==="string"?item.text:typeof item.message==="string"?item.message:undefined,severity:item.severity})):[];
   fileUploadAllowed=data.file_upload_allowed===true;
   uploadFileChoice.disabled=!fileUploadAllowed;
   setI18nAttribute(uploadFileChoice,"title",fileUploadAllowed?"attachments.uploadFile":"attachments.uploadRequirement");
@@ -237,14 +241,14 @@ function updateServerStatus(data){
 }
 
 function showTemporaryStatus(message,severity="yellow"){
-  statusPanelOverride={message,severity};
+  statusPanelOverride={...(typeof message==="string"?{text:message}:message),severity};
   updateServerStatusLight();
   renderServerStatusMessages();setStatusPanelVisible(true);
   if(statusOverrideTimer)clearTimeout(statusOverrideTimer);
   statusOverrideTimer=setTimeout(()=>{statusPanelOverride=null;statusOverrideTimer=null;updateServerStatusLight();renderServerStatusMessages();setStatusPanelVisible(false)},5000);
 }
 
-function showUploadBlocked(){showTemporaryStatus(t("error.noPublicAddress"));}
+function showUploadBlocked(){showTemporaryStatus({code:"public_address_required"});}
 
 function stopStatusPolling(){if(statusPollTimer){clearInterval(statusPollTimer);statusPollTimer=null}if(statusOverrideTimer){clearTimeout(statusOverrideTimer);statusOverrideTimer=null}}
 
@@ -430,7 +434,7 @@ async function uploadFile(file){
   try{
     const {response,data,unauthorized}=await authJson(serverUrl("/v1/files"),{method:"POST",body:form});
     if(unauthorized)return false
-    if(!response.ok){attachment.status="failed";attachment.error=data.error||data.detail||t("attachment.uploadFailed");renderAttachmentPreviews();return false}
+    if(!response.ok){attachment.status="failed";attachment.error=localizedServerMessage(data)||t("attachment.uploadFailed");renderAttachmentPreviews();return false}
     attachment.file_id=data.id||data.file_id;attachment.name=data.filename||data.name||attachment.name;attachment.mime_type=data.mime_type||attachment.mime_type;attachment.size=data.bytes??data.size_bytes??attachment.size;attachment.kind=attachment.mime_type.startsWith("image/")?"image":attachment.kind;attachment.url=data.content_url||data.url||fileContentUrl(attachment.file_id);attachment.ext=attachment.name.includes(".")?attachment.name.split(".").pop().toLowerCase():"";attachment.status="ready";
   }catch(error){attachment.status="failed";attachment.error=error.message||t("attachment.uploadFailed")}
   renderAttachmentPreviews();return attachment.status==="ready";
@@ -818,9 +822,13 @@ function renderBranchNode(item,depth){
 }
 
 function renderHistory(){
+  const stickToBottom=shouldFollowMessagesBottom()&&!smoothScrollInProgress;const previousScrollTop=messagesEl.scrollTop;
+  messagesPinnedToBottom=stickToBottom;
+  if(!stickToBottom&&scrollFrame!==null){cancelAnimationFrame(scrollFrame);scrollFrame=null}
   hideTyping();hideCodeActSpinner();messagesEl.replaceChildren();activeStreams={};streamingPreviews={};codeactActiveEl=null;codeactStreamArgs="";codeactStreamToolId=null;lastWasCodeAct=false;
   for(const item of currentChain())if(isVisibleItem(item))renderItem(item);
-  rememberCurrentSelection();renderBranchPanel();syncActionState();scrollToBottom();
+  rememberCurrentSelection();renderBranchPanel();syncActionState();
+  restoreMessagesScroll(stickToBottom,previousScrollTop);
 }
 
 /** @param {DialogItem} item */
@@ -914,7 +922,7 @@ function addReasoning(content){
 
 function scheduleCodeHighlight(codeEl){
   if(codeEl._highlightScheduled)return;codeEl._highlightScheduled=true;
-  const render=()=>{if(!document.body.contains(codeEl)){codeEl._highlightScheduled=false;return}if(typeof hljs==="undefined"){setTimeout(render,50);return}codeEl._highlightScheduled=false;delete codeEl.dataset.highlighted;hljs.highlightElement(codeEl)};
+  const render=()=>{if(!document.body.contains(codeEl)){codeEl._highlightScheduled=false;return}if(typeof hljs==="undefined"){setTimeout(render,50);return}const stickToBottom=!smoothScrollInProgress&&shouldFollowMessagesBottom();const previousScrollTop=messagesEl.scrollTop;codeEl._highlightScheduled=false;delete codeEl.dataset.highlighted;hljs.highlightElement(codeEl);restoreMessagesScroll(stickToBottom,previousScrollTop)};
   requestAnimationFrame(render);
 }
 
@@ -938,18 +946,19 @@ function startCodeActTimer(){
   codeactTimer=setInterval(updateCodeActElapsed,250);
 }
 
-function stopCodeActTimer(){
-  if(codeactStartedAt!==null)updateCodeActElapsed();
+function stopCodeActTimer(elapsedSeconds=null){
+  const hasElapsed=elapsedSeconds!==null&&elapsedSeconds!==undefined&&Number.isFinite(Number(elapsedSeconds))&&Number(elapsedSeconds)>=0;
+  if(hasElapsed)codeactElapsedSeconds=Number(elapsedSeconds);else if(codeactStartedAt!==null)updateCodeActElapsed();
   if(codeactTimer){clearInterval(codeactTimer);codeactTimer=null}
   for(const element of document.querySelectorAll(".codeact-elapsed.codeact-current")){element.dataset.elapsedSeconds=String(codeactElapsedSeconds);element.classList.remove("codeact-current")}
   codeactStartedAt=null;
 }
 
 function showCodeActSpinner(){
-  if(codeactSpinnerEl)return;startCodeActTimer();codeactSpinnerEl=document.createElement("div");codeactSpinnerEl.className="typing";codeactSpinnerEl.innerHTML='<span class="codeact-spinner"></span><span class="codeact-label"></span><span class="codeact-elapsed codeact-current"></span><span>.</span><span>.</span><span>.</span>';setI18nText(codeactSpinnerEl.querySelector(".codeact-label"),"message.codeAct");updateCodeActElapsed();messagesEl.appendChild(codeactSpinnerEl);scrollToBottom();
+  if(codeactSpinnerEl)return;startCodeActTimer();codeactSpinnerEl=document.createElement("div");codeactSpinnerEl.className="typing";codeactSpinnerEl.innerHTML='<span class="codeact-spinner"></span><span class="codeact-label"></span><span>.</span><span>.</span><span>.</span>';setI18nText(codeactSpinnerEl.querySelector(".codeact-label"),"message.codeAct");messagesEl.appendChild(codeactSpinnerEl);scrollToBottom();
 }
 
-function hideCodeActSpinner(){if(codeactSpinnerEl){codeactSpinnerEl.remove();codeactSpinnerEl=null}stopCodeActTimer()}
+function hideCodeActSpinner(elapsedSeconds=null){if(codeactSpinnerEl){codeactSpinnerEl.remove();codeactSpinnerEl=null}stopCodeActTimer(elapsedSeconds)}
 
 function addCodeActCall(args){
   let code;if(typeof args==="string"){try{const parsed=JSON.parse(args);code=parsed.code||args}catch{code=args}}else code=args&&typeof args.code==="string"?args.code:JSON.stringify(args,null,2);
@@ -974,11 +983,11 @@ function updateCodeActPreview(data){
   const meta=data.meta||{};if(meta.tool_name!=="execute")return false;const streamKey=data.stream_id||meta.tool_call_id||null;
   if(codeactStreamToolId&&streamKey&&streamKey!==codeactStreamToolId){codeactStreamArgs="";codeactActiveEl=null}
   if(!codeactActiveEl)addCodeActCall({code:""});codeactStreamToolId=streamKey;codeactStreamArgs+=data.content||"";const code=codeActPreviewContent(codeactStreamArgs);const codeEl=codeactActiveEl&&codeactActiveEl.querySelector("pre code");
-  if(codeEl)codeEl.textContent=code;streamingPreviews[streamPreviewKey(data)]=codeactActiveEl;scrollToBottom();return true;
+  if(codeEl)codeEl.textContent=code;streamingPreviews[streamPreviewKey(data)]=codeactActiveEl;return true;
 }
 
-function finishCodeActSession(content){
-  updateCodeActElapsed();hideCodeActSpinner();if(codeactActiveEl){const codeEl=codeactActiveEl.querySelector("pre code");if(codeEl)scheduleCodeHighlight(codeEl);const spinner=codeactActiveEl.querySelector(".codeact-spinner");if(spinner)spinner.remove();const summary=codeactActiveEl.querySelector("summary");if(summary){const label=summary.querySelector(".codeact-label");if(label)setI18nText(label,"message.codeAct");updateCodeActElapsed()}codeactActiveEl=null}
+function finishCodeActSession(content,elapsedSeconds=null){
+  updateCodeActElapsed();hideCodeActSpinner(elapsedSeconds);if(codeactActiveEl){const codeEl=codeactActiveEl.querySelector("pre code");if(codeEl)scheduleCodeHighlight(codeEl);const spinner=codeactActiveEl.querySelector(".codeact-spinner");if(spinner)spinner.remove();const summary=codeactActiveEl.querySelector("summary");if(summary){const label=summary.querySelector(".codeact-label");if(label)setI18nText(label,"message.codeAct");updateCodeActElapsed()}codeactActiveEl=null}
   if(content){const details=document.createElement("details");details.className="msg tool-result";details.open=true;const summary=document.createElement("summary");setI18nText(summary,"message.result");details.appendChild(summary);details.appendChild(createPrettyBlock(content,null));messagesEl.appendChild(details);scrollToBottom()}
   codeactStreamArgs="";codeactStreamToolId=null;lastWasCodeAct=false;
 }
@@ -1036,7 +1045,7 @@ function renderItem(item){
       if(item.role==="user")messagesEl.appendChild(createUserEntry(item));else addPlaceholder(item.item_type);break;
     case "reasoning":addReasoning(item.content);break;
     case "tool_call":try{const toolCall=JSON.parse(item.content);addToolCall(toolCall.tool_name||"unknown",toolCall.tool_args||{})}catch{addToolCall("tool",item.content)}break;
-    case "tool_call_result":if(lastWasCodeAct){try{const result=JSON.parse(item.content);finishCodeActSession(result.content)}catch{finishCodeActSession(item.content)}}else{try{const result=JSON.parse(item.content);addToolResult(result.content)}catch{addToolResult(item.content)}}break;
+    case "tool_call_result":{const elapsedSeconds=item.meta?.codeact?.elapsed_seconds;const hasCodeActElapsed=elapsedSeconds!==null&&elapsedSeconds!==undefined&&Number.isFinite(Number(elapsedSeconds));if(lastWasCodeAct||hasCodeActElapsed){try{const result=JSON.parse(item.content);finishCodeActSession(result.content,elapsedSeconds)}catch{finishCodeActSession(item.content,elapsedSeconds)}}else{try{const result=JSON.parse(item.content);addToolResult(result.content)}catch{addToolResult(item.content)}}break}
     case "output":addAssistantOutput(item);break;
      case "image_output":addImageOutput(item.content);break;
     case "file_output":addFileOutput(item.content);break;
@@ -1047,14 +1056,15 @@ function renderItem(item){
 /** @param {StreamEvent} data */
 function handleStreamChunk(data){
   if(selectedHeadId!==null&&data.previous_item_id!==null&&data.previous_item_id!==selectedHeadId)return;
+  const stickToBottom=!smoothScrollInProgress&&shouldFollowMessagesBottom();const previousScrollTop=messagesEl.scrollTop;
   hideTyping();const chunkType=data.item_type||"output";
-  if(chunkType==="tool_call"&&updateCodeActPreview(data))return;
+  if(chunkType==="tool_call"&&updateCodeActPreview(data)){restoreMessagesScroll(stickToBottom,previousScrollTop);return}
   const streamId=data.stream_id||chunkType;let stream=activeStreams[streamId];
   setUiStatus("streaming");
   if(!stream){let element;if(chunkType==="reasoning")element=addReasoning("");else if(chunkType==="tool_call"){element=document.createElement("details");element.className="msg tool-call";element.open=true;const summary=document.createElement("summary");setI18nText(summary,"message.toolPlaceholder");element.appendChild(summary);const content=document.createElement("div");element.appendChild(content);messagesEl.appendChild(element)}else element=addMessage("assistant","","Assistant");stream={element,item_type:chunkType,previous_item_id:data.previous_item_id,tool_call_id:data.meta?.tool_call_id||null,text:""};activeStreams[streamId]=stream}
   if(chunkType==="tool_call"&&data.meta?.tool_call_id)stream.tool_call_id=data.meta.tool_call_id;stream.text+=(data.content||"");const contentEl=stream.element.querySelector("div:last-child")||stream.element;
   if(chunkType==="output"||chunkType==="reasoning")renderMarkdown(contentEl,stripOutputMarkers(stream.text));else contentEl.textContent=stream.text;
-  scrollToBottom();
+  restoreMessagesScroll(stickToBottom,previousScrollTop);
 }
 
 async function submitMessage(text,parentId,branch=null,attachments=[]){
@@ -1066,7 +1076,7 @@ async function submitMessage(text,parentId,branch=null,attachments=[]){
   try{
     const {response,data,unauthorized}=await authJson(serverUrl("/api/messages?stream=1"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({content:text,attachments:attachments.map(attachmentPayload),previous_item_id:previousItemId,timezone:browserTimezone()})});
     if(unauthorized){setProcessing(false);clearPendingMessage();return false}
-    if(!response.ok){setProcessing(false);addError(data.error||data.detail||t("error.messageRejected"));clearPendingMessage();return false}
+    if(!response.ok){setProcessing(false);addError(localizedServerMessage(data)||t("error.messageRejected"));clearPendingMessage();return false}
     setProcessing(true,data.stream_id);showTyping();return true;
   }catch(error){addError(t("error.network",{message:error.message}));clearPendingMessage();setProcessing(false);return false}
 }
@@ -1120,13 +1130,14 @@ function newBranch(){
 
 /** @param {StreamEvent} data */
 async function handleServerEvent(data){
-  if(data.type==="stream_chunk")handleStreamChunk(data);
+  if(data.type==="stream_started"){if(typeof data.stream_id==="string"){setProcessing(true,data.stream_id);showTyping()}}
+  else if(data.type==="stream_chunk")handleStreamChunk(data);
   else if(data.type==="dialog_item")await applyDialogItem(data);
   else if(data.type==="typing"){
     if(data.active){showTyping();setUiStatus("processing")}else hideTyping();
   }
   else if(data.type==="message_done"){if(!activeStreamId||data.stream_id===activeStreamId){setProcessing(false);await loadHistory()}}
-  else if(data.type==="error")addError(data.content||data.error||t("error.server"));
+  else if(data.type==="error")addError(localizedServerMessage(data)||t("error.server"));
 }
 
 function historyRequestUrl(branchHeadId=null){
@@ -1218,16 +1229,21 @@ async function loadCurrentUser(){
 
 function logout(){clearAuth();showAuth()}
 function messagesAreAtBottom(){return messagesEl.scrollHeight-messagesEl.clientHeight-messagesEl.scrollTop<=SCROLL_BOTTOM_THRESHOLD}
-function updateScrollBottomButton(){scrollBottomBtn.hidden=messagesAreAtBottom()}
-function handleMessagesScroll(){messagesPinnedToBottom=messagesAreAtBottom();updateScrollBottomButton()}
+function shouldFollowMessagesBottom(){return messagesPinnedToBottom||messagesAreAtBottom()}
+function updateScrollBottomButton(){const visible=!smoothScrollInProgress&&!messagesPinnedToBottom&&!messagesAreAtBottom();scrollBottomBtn.classList.toggle("visible",visible);scrollBottomBtn.classList.toggle("is-hidden",!visible);scrollBottomBtn.setAttribute("aria-hidden",String(!visible));scrollBottomBtn.tabIndex=visible?0:-1}
+function handleMessagesScroll(){const atBottom=messagesAreAtBottom();if(atBottom){smoothScrollInProgress=false;messagesPinnedToBottom=true;userScrollPending=false}else if(!smoothScrollInProgress&&userScrollPending){messagesPinnedToBottom=false;userScrollPending=false}updateScrollBottomButton()}
+function markUserScroll(){userScrollPending=true;cancelSmoothScroll()}
+function handleMessagesPointerDown(event){cancelSmoothScroll();const rect=messagesEl.getBoundingClientRect();const scrollbarWidth=messagesEl.offsetWidth-messagesEl.clientWidth;if(scrollbarWidth>0&&event.clientX>=rect.right-scrollbarWidth)userScrollPending=true}
+function restoreMessagesScroll(stickToBottom,previousScrollTop){if(stickToBottom){messagesPinnedToBottom=true;scrollToBottom({force:true});return}if(scrollFrame!==null){cancelAnimationFrame(scrollFrame);scrollFrame=null}messagesPinnedToBottom=false;messagesEl.scrollTop=previousScrollTop;updateScrollBottomButton()}
+function cancelSmoothScroll(){if(!smoothScrollInProgress)return;smoothScrollInProgress=false;messagesPinnedToBottom=false;updateScrollBottomButton()}
 function scrollToBottom({force=false,smooth=false}={}){
-  if(force)messagesPinnedToBottom=true;
+  if(force){messagesPinnedToBottom=true;smoothScrollInProgress=false;updateScrollBottomButton()}
   if(!force&&!messagesPinnedToBottom){updateScrollBottomButton();return}
   if(scrollFrame!==null)cancelAnimationFrame(scrollFrame);
   scrollFrame=requestAnimationFrame(()=>{
     scrollFrame=null;
     if(!force&&!messagesPinnedToBottom){updateScrollBottomButton();return}
-    if(smooth)messagesEl.scrollTo({top:messagesEl.scrollHeight,behavior:"smooth"});else messagesEl.scrollTop=messagesEl.scrollHeight;
+    if(smooth){smoothScrollInProgress=true;messagesEl.scrollTo({top:messagesEl.scrollHeight,behavior:"smooth"});if(messagesAreAtBottom())smoothScrollInProgress=false}else{smoothScrollInProgress=false;messagesEl.scrollTop=messagesEl.scrollHeight}
     messagesPinnedToBottom=true;updateScrollBottomButton();
   });
 }
@@ -1294,10 +1310,28 @@ uploadFileChoice.addEventListener("click",chooseUpload);
 linkCancel.addEventListener("click",closeLinkOverlay);
 linkForm.addEventListener("submit",event=>{event.preventDefault();const url=httpUrl(linkInput.value);if(!url){linkError.textContent=t("error.invalidUrl");return}addExternalLink(url);closeLinkOverlay()});
 languageBtn.addEventListener("click",()=>setLocale(locale==="ru"?"en":"ru"));logoutBtn.addEventListener("click",logout);authForm.addEventListener("submit",event=>{void registerOrLogin(event)});sendBtn.addEventListener("click",()=>{if(activeStreamId)void cancelProcessing();else void send()});attachBtn.addEventListener("click",openAttachmentOverlay);fileInput.addEventListener("change",event=>{uploadFiles(event.target.files);fileInput.value=""});inputArea.addEventListener("drop",handleDrop);window.addEventListener("dragenter",handlePageDragEnter);window.addEventListener("dragover",handlePageDragOver);window.addEventListener("dragleave",handlePageDragLeave);window.addEventListener("drop",handlePageDrop);window.addEventListener("dragend",resetPageDrag);newBranchBtn.addEventListener("click",newBranch);activeBranchesBtn.addEventListener("click",()=>setBranchView(false));deletedBranchesBtn.addEventListener("click",()=>setBranchView(true));branchOpenBtn.addEventListener("click",openBranchPanel);branchCloseBtn.addEventListener("click",closeBranchPanel);branchBackdrop.addEventListener("click",closeBranchPanel);
-inputEl.addEventListener("keydown",event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();void send()}});inputEl.addEventListener("input",adjustInputHeight);messagesEl.addEventListener("scroll",handleMessagesScroll,{passive:true});scrollBottomBtn.addEventListener("click",()=>scrollToBottom({force:true}));window.addEventListener("resize",()=>{adjustInputHeight();updateScrollBottomPosition();handleMessagesScroll()});if(typeof ResizeObserver!=="undefined")new ResizeObserver(updateScrollBottomPosition).observe(inputArea);updateScrollBottomPosition();handleMessagesScroll();
+inputEl.addEventListener("keydown",event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();void send()}});inputEl.addEventListener("input",adjustInputHeight);messagesEl.addEventListener("scroll",handleMessagesScroll,{passive:true});messagesEl.addEventListener("wheel",markUserScroll,{passive:true});messagesEl.addEventListener("touchstart",markUserScroll,{passive:true});messagesEl.addEventListener("pointerdown",handleMessagesPointerDown);scrollBottomBtn.addEventListener("click",()=>scrollToBottom({force:true,smooth:true}));window.addEventListener("resize",()=>{adjustInputHeight();updateScrollBottomPosition();handleMessagesScroll()});if(typeof ResizeObserver!=="undefined")new ResizeObserver(updateScrollBottomPosition).observe(inputArea);updateScrollBottomPosition();handleMessagesScroll();
 
 applyTranslations();updateLanguageButton();setAuthMode(authMode);renderBranchPanel();if(inviteToken){clearAuth();showAuth()}else void loadCurrentUser();
 })();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

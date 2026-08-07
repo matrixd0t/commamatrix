@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import shutil
 import sys
+from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
 from ...components.hook import BeforeToolCallCtx, RunCtx
@@ -127,11 +128,14 @@ class CodeActService(Service):
 
     async def execute(self, code: str, ctx: BeforeToolCallCtx) -> ExecutionResult:
         self.logger.info("CodeAct execution started run_id=%s", ctx.run.run_id)
+        started = perf_counter()
         try:
             result = await self.backend.execute(code, ctx)
         except Exception:
             self.logger.exception("CodeAct execution failed run_id=%s", ctx.run.run_id)
             raise
+        finally:
+            ctx.meta["codeact"] = {"elapsed_seconds": round(perf_counter() - started, 3)}
         self.logger.info("CodeAct execution completed run_id=%s returncode=%s", ctx.run.run_id, result.returncode)
         return result
 
@@ -149,3 +153,4 @@ class CodeActService(Service):
             tool_meta={CODEACT_NESTED_TOOL_KEY: True},
         )
         return result.content
+
