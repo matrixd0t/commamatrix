@@ -12,13 +12,13 @@
 <body>
 <div id="app-shell">
   <header>
-    <button id="branch-open" class="mobile-only icon-button" type="button" aria-label="Open branches" title="Open branches">☰</button>
+    <button id="branch-open" class="mobile-only icon-button" type="button" data-i18n-aria-label="header.openBranches" data-i18n-title="header.openBranches">☰</button>
     <div class="brand">
       <img class="brand-logo" src="logo.svg" alt="" aria-hidden="true">
       <h1>CommaMatrix</h1>
     </div>
     <div id="server-status-wrap" class="server-status-wrap">
-      <button id="http-server-status-btn" class="http-server-status-btn" type="button" aria-label="Server status" aria-expanded="false" title="Server status">
+      <button id="http-server-status-btn" class="http-server-status-btn" type="button" data-i18n-aria-label="header.serverStatus" aria-expanded="false" data-i18n-title="header.serverStatus">
         <span id="http-server-status-light" class="http-server-status-light gray" aria-hidden="true"></span>
       </button>
       <div id="http-server-status-panel" class="http-server-status-panel" role="status" aria-live="polite"></div>
@@ -29,8 +29,10 @@
     </button>
     <div class="header-actions">
       <span class="status" id="user-label"></span>
+      <button id="username-btn" type="button" hidden>Change name</button>
       <button id="password-btn" type="button" hidden>Change password</button>
       <button id="invite-btn" type="button" hidden>Add user</button>
+      <button id="language-btn" type="button" aria-live="polite">English</button>
       <button id="logout-btn" type="button" hidden>Log out</button>
     </div>
   </header>
@@ -132,6 +134,19 @@
     </form>
   </div>
 </div>
+<div class="auth-overlay hidden" id="username-overlay">
+  <div class="auth-card">
+    <h2>Change name</h2>
+    <p>Use 2-32 Unicode characters. Letters from any language are allowed; spaces, digits, underscores, hyphens, dots and apostrophes can separate words.</p>
+    <form id="username-form">
+      <label for="username-input">New name</label>
+      <input id="username-input" autocomplete="username" maxlength="32" required>
+      <div class="auth-error" id="username-error"></div>
+      <button type="submit">Change name</button>
+      <button class="secondary" id="username-cancel" type="button">Cancel</button>
+    </form>
+  </div>
+</div>
 <div class="auth-overlay hidden" id="invite-overlay">
   <div class="auth-card">
     <h2>New user invitation</h2>
@@ -144,6 +159,7 @@
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" async></script>
-<script src="app.js?v=36" defer></script>
+<script src="app.js?v=38" defer></script>
 </body>
 </html>
+

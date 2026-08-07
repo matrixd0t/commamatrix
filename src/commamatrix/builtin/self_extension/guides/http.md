@@ -46,6 +46,24 @@ The server's built-in `/commamatrix/handle` endpoint forwards JSON events to
 `Agent.handle()`. The built-in HTTP connector adds authentication, UI,
 messages, events, and file routes when its extension is active.
 
+## User Frontend
+
+The HTTP connector serves its default frontend from `<CWD>/.commamatrix/ui`.
+When the agent starts, missing files are copied from the packaged `ui` template;
+existing files are preserved, so workspace edits survive restarts. The important
+default files are `index.html`, `app.js`, `styles.css`, and `logo.svg`.
+
+When a user asks to change the HTTP frontend:
+
+1. Inspect and edit the files in `<CWD>/.commamatrix/ui`, not the packaged
+   `src/commamatrix/builtin/http_connector/ui` directory.
+2. Keep the `/commamatrix` API paths and the `<base href="/commamatrix/ui/">`
+   convention unless the route setup is changed deliberately as well.
+3. Preserve existing user customizations and add only the missing asset or route
+   needed for the requested change.
+4. Reload the browser after editing; restart the agent if a missing asset must be
+   reseeded or a cached frontend must be refreshed.
+
 ## Configuration
 
 `http_host`, `http_port`, and `http_external_url` control binding and public

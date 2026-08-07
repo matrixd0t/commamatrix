@@ -152,6 +152,9 @@ system item. They are not ordinary persisted conversation history. A run's
 `state` is temporary; `chain_state` is carried across messages through dialog
 metadata.
 
+When filesystem tools are active, a non-empty `<CWD>/agents.md` is loaded as a
+separate system item immediately after the generated system instructions.
+
 Read `runtime.md` before changing run behavior, persistence, streaming, or hook
 placement.
 

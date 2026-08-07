@@ -4,13 +4,13 @@
 
 from __future__ import annotations
 
-from commamatrix.components.instruction import InstructionCtx, instruction
+from ...components.instruction import InstructionCtx, instruction
 
 
 @instruction(priority=100)
 def default_instruction(_ctx: InstructionCtx) -> str:
     """Identify the runtime environment to the model."""
-    return "# Environment\nYou operate in `commamatrix` agentic environment (github.com/matrixd0t/commamatrix)"
+    return "# Environment\nYou operate in `commamatrix` agentic environment (see github.com/matrixd0t/commamatrix)"
 
 
 __all__ = ["default_instruction"]

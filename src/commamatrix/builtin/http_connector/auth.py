@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -44,6 +45,9 @@ class UserNamesTable(BaseTable[UserName]):
 
 
 _AUTH_TABLE = "commamatrix_http_auth"
+_USERNAME_MIN_LENGTH = 2
+_USERNAME_MAX_LENGTH = 32
+_USERNAME_SEPARATORS = frozenset(" ._-'")
 
 
 class HttpAuthRow(BaseModel):
@@ -95,6 +99,29 @@ class Authorizer:
         except (ValueError, TypeError):
             return False
 
+    @staticmethod
+    def _normalize_username(username: str) -> str:
+        if not isinstance(username, str):
+            raise AuthError("Username is required")
+        return " ".join(unicodedata.normalize("NFC", username).strip().split())
+
+    @staticmethod
+    def _validate_username(username: str) -> str:
+        username = Authorizer._normalize_username(username)
+        if not _USERNAME_MIN_LENGTH <= len(username) <= _USERNAME_MAX_LENGTH:
+            raise AuthError(f"Username must be between {_USERNAME_MIN_LENGTH} and {_USERNAME_MAX_LENGTH} characters")
+        if not any(unicodedata.category(char).startswith("L") for char in username):
+            raise AuthError("Username must contain at least one letter")
+        first_category = unicodedata.category(username[0])
+        last_category = unicodedata.category(username[-1])
+        if not (first_category.startswith("L") or first_category == "Nd") or not (last_category.startswith("L") or last_category == "Nd"):
+            raise AuthError("Username must start and end with a letter or number")
+        for char in username:
+            category = unicodedata.category(char)
+            if not (category.startswith("L") or category.startswith("M") or category == "Nd" or char in _USERNAME_SEPARATORS):
+                raise AuthError("Username contains unsupported characters")
+        return username
+
     def _user_from_row(self, row, username: str | None = None) -> AuthUser:
         return AuthUser(
             id=int(row["id"]),
@@ -142,7 +169,15 @@ class Authorizer:
             self._initialized = True
             self.logger.info("HTTP auth database ready app=%s", self.app_name)
 
+    async def _ensure_username_available(self, username: str, exclude_user_id: int | None = None) -> None:
+        rows = await self.agent.storage.execute(f"SELECT id, username FROM {_AUTH_TABLE} WHERE app_name = ?", (self.app_name,))
+        if any(int(row["id"]) != exclude_user_id and self._normalize_username(str(row["username"])) == username for row in rows):
+            raise AuthError("Username already taken for this app")
+
     async def _insert_user(self, username: str, password: str, is_admin: bool = False) -> AuthUser:
+        username = self._validate_username(username)
+        self._check_password(password)
+        await self._ensure_username_available(username)
         password_hash = self._hash_password(password)
         try:
             await self.agent.storage.execute(
@@ -160,9 +195,7 @@ class Authorizer:
         return self._user_from_row(rows[0], username)
 
     @staticmethod
-    def _check_credentials(username: str, password: str) -> None:
-        if not isinstance(username, str) or not username.strip():
-            raise AuthError("Username is required")
+    def _check_password(password: str) -> None:
         if not isinstance(password, str) or not password:
             raise AuthError("Password is required")
         if len(password.encode()) > 72:
@@ -170,8 +203,6 @@ class Authorizer:
 
     async def register(self, username: str, password: str) -> AuthUser:
         await self.init_db()
-        username = username.strip() if isinstance(username, str) else username
-        self._check_credentials(username, password)
         return await self._insert_user(username, password)
 
     async def create_invite(self) -> str:
@@ -186,9 +217,10 @@ class Authorizer:
         if not isinstance(token, str) or token not in self._invites:
             self.logger.warning("HTTP invitation rejected app=%s", self.app_name)
             raise AuthError("Invalid or expired invitation")
+        username = self._validate_username(username)
+        self._check_password(password)
+        await self._ensure_username_available(username)
         self._invites.remove(token)
-        username = username.strip() if isinstance(username, str) else username
-        self._check_credentials(username, password)
         return await self._insert_user(username, password)
 
     async def login(self, username: str, password: str) -> str:
@@ -196,18 +228,19 @@ class Authorizer:
         if not isinstance(username, str) or not isinstance(password, str):
             raise AuthError("Invalid username or password")
         rows = await self.agent.storage.execute(
-            f"SELECT id, password_hash FROM {_AUTH_TABLE} WHERE app_name = ? AND username = ?",
-            (self.app_name, username),
+            f"SELECT id, username, password_hash FROM {_AUTH_TABLE} WHERE app_name = ?",
+            (self.app_name,),
         )
-        if not rows:
+        username_value = self._normalize_username(username)
+        row = next((candidate for candidate in rows if self._normalize_username(str(candidate["username"])) == username_value), None)
+        if row is None:
             self.logger.warning("HTTP login failed app=%s reason=unknown_user", self.app_name)
             raise AuthError("Invalid username or password")
-        row = rows[0]
         if not self._password_matches(password, row["password_hash"]):
             self.logger.warning("HTTP login failed app=%s reason=invalid_password", self.app_name)
             raise AuthError("Invalid username or password")
         user_id = int(row["id"])
-        token = self._issue_token(user_id, username)
+        token = self._issue_token(user_id, row["username"])
         self.logger.info("HTTP login succeeded app=%s user_id=%d", self.app_name, user_id)
         return token
 
@@ -261,14 +294,15 @@ class Authorizer:
                 (user, self.app_name),
             )
         else:
-            user = user.strip()
+            user = self._normalize_username(user)
             try:
                 user_id = int(user)
             except ValueError:
                 rows = await self.agent.storage.execute(
-                    f"SELECT id, username, is_admin FROM {_AUTH_TABLE} WHERE LOWER(username) = LOWER(?) AND app_name = ?",
-                    (user, self.app_name),
+                    f"SELECT id, username, is_admin FROM {_AUTH_TABLE} WHERE app_name = ?",
+                    (self.app_name,),
                 )
+                rows = [row for row in rows if self._normalize_username(str(row["username"])) == user]
             else:
                 rows = await self.agent.storage.execute(
                     f"SELECT id, username, is_admin FROM {_AUTH_TABLE} WHERE id = ? AND app_name = ?",
@@ -278,8 +312,8 @@ class Authorizer:
 
     async def change_password(self, user: AuthUser, old_password: str, new_password: str) -> None:
         await self.init_db()
-        self._check_credentials(user.username, old_password)
-        self._check_credentials(user.username, new_password)
+        self._check_password(old_password)
+        self._check_password(new_password)
         rows = await self.agent.storage.execute(
             f"SELECT password_hash FROM {_AUTH_TABLE} WHERE id = ? AND app_name = ?",
             (user.id, self.app_name),
@@ -293,6 +327,21 @@ class Authorizer:
             f"UPDATE {_AUTH_TABLE} SET password_hash = ? WHERE id = ? AND app_name = ?",
             (password_hash, user.id, self.app_name),
         )
+
+    async def change_username(self, user: AuthUser, username: str) -> AuthUser:
+        await self.init_db()
+        username = self._validate_username(username)
+        await self._ensure_username_available(username, exclude_user_id=user.id)
+        try:
+            await self.agent.storage.execute(
+                f"UPDATE {_AUTH_TABLE} SET username = ? WHERE id = ? AND app_name = ?",
+                (username, user.id, self.app_name),
+            )
+        except Exception as exc:
+            if "unique" in str(exc).lower() or "constraint" in str(exc).lower():
+                raise AuthError("Username already taken for this app") from exc
+            raise
+        return AuthUser(id=user.id, username=username, app_name=self.app_name, is_admin=user.is_admin)
 
     @staticmethod
     def extract_bearer_token(header: str | None) -> str:
@@ -335,3 +384,10 @@ class Authorizer:
 
     async def stop(self) -> None:
         self._invites.clear()
+
+
+
+
+
+
+

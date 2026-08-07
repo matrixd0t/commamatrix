@@ -14,9 +14,10 @@ import httpx2 as httpx
 import pytest
 from sse_starlette import EventSourceResponse
 
-from commamatrix.builtin.http_connector.connector import HttpConnector, HttpOrigin, _sse_generator
+from commamatrix.builtin.http_connector.connector import HttpConnector, HttpOrigin, _sse_generator, prepare_http_ui
 from commamatrix.components.config import Config
 from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
+from commamatrix.components.hook import OnAgentStartCtx
 from commamatrix.components.server import Server
 from tests.conftest import stub_agent
 
@@ -160,6 +161,7 @@ class TestHttpConnectorRoutes:
     @pytest.mark.asyncio
     async def test_ui_includes_logo_and_serves_svg_asset(self):
         conn = _make_connector()
+        await prepare_http_ui(OnAgentStartCtx(agent=conn.agent))
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=conn.app), base_url="http://test") as client:
             index = await client.get("/commamatrix/")
             logo = await client.get("/commamatrix/ui/logo.svg")
@@ -358,6 +360,7 @@ class TestHttpServerRoutes:
 
         agent = RouteAgent()
         HttpConnector(agent)
+        await prepare_http_ui(OnAgentStartCtx(agent=agent))
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=agent.http_server.app), base_url="http://test") as client:
             health = await client.get("/commamatrix/health")
             index = await client.get("/commamatrix/")
@@ -376,3 +379,23 @@ class TestHttpServerRoutes:
         assert "--bg:#0d1117" in stylesheet.text
         assert old_health.status_code == 404
         assert old_index.status_code == 404
+
+
+class TestHttpConnectorUiSeed:
+    @pytest.mark.asyncio
+    async def test_start_hook_copies_missing_assets_without_overwriting_custom_files(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        agent = SimpleNamespace(config=Config())
+        ui_dir = tmp_path / ".commamatrix" / "ui"
+
+        await prepare_http_ui(OnAgentStartCtx(agent=agent))
+        custom_index = ui_dir / "index.html"
+        custom_index.write_text("custom frontend", encoding="utf-8")
+        (ui_dir / "app.js").unlink()
+
+        await prepare_http_ui(OnAgentStartCtx(agent=agent))
+
+        assert custom_index.read_text(encoding="utf-8") == "custom frontend"
+        assert (ui_dir / "app.js").is_file()
+        assert (ui_dir / "styles.css").is_file()
+        assert (ui_dir / "logo.svg").is_file()

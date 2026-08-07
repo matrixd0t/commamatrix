@@ -18,6 +18,7 @@ from .connector import (
     http_auth_app_name,
     http_auth_jwt_secret,
     http_auth_token_ttl_seconds,
+    prepare_http_ui,
 )
 
 __all__ = [
@@ -36,6 +37,6 @@ __all__ = [
     "http_auth_app_name",
     "http_auth_jwt_secret",
     "http_auth_token_ttl_seconds",
+    "prepare_http_ui",
 ]
-
 

@@ -7,6 +7,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import time
 import uuid
 from collections.abc import AsyncIterator, Iterable, Mapping
@@ -29,7 +30,7 @@ from ...components.config import ConfigField
 from ...components.connector import Connector
 from ...components.dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
 from ...components.file_storage import DataType, normalize_file_id, read_file
-from ...components.hook import OnParsedCtx
+from ...components.hook import OnAgentStartCtx, OnParsedCtx, on_agent_start
 from ...components.llm_adapter import LLMModalities, StreamDelta
 from ...components.server import SERVER_ROOT, http_external_url
 from ...utils import _row_value, commamatrix_dir
@@ -38,9 +39,36 @@ from .auth import AuthError, Authorizer
 if TYPE_CHECKING:
     from ...core.agent import Agent
 
-http_ui_path = ConfigField[str](name="http_ui_path", default=str(Path(__file__).parent / "ui" / "index.html"), description="Path to the HTTP connector UI HTML file")
+http_ui_path = ConfigField[str | None](name="http_ui_path", default=None, description="Optional explicit path to the HTTP connector UI HTML file; defaults to CWD/commamatrix_dir/ui/index.html")
 http_auth_app_name = ConfigField[str](name="http_auth_app_name", default="commamatrix", description="Application name used to isolate HTTP users")
 _http_jwt_secret_cache: dict[Path, str] = {}
+_BUILTIN_UI_PATH = Path(__file__).parent / "ui"
+
+
+def _workspace_ui_path(agent: Agent) -> Path:
+    return Path.cwd() / agent.config.get(commamatrix_dir) / "ui"
+
+
+def _copy_missing_ui_files(destination: Path) -> int:
+    """Seed a workspace UI without overwriting files customized by the user."""
+    destination.mkdir(parents=True, exist_ok=True)
+    copied = 0
+    for source in _BUILTIN_UI_PATH.rglob("*"):
+        if not source.is_file():
+            continue
+        target = destination / source.relative_to(_BUILTIN_UI_PATH)
+        if target.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        copied += 1
+    return copied
+
+
+@on_agent_start
+async def prepare_http_ui(ctx: OnAgentStartCtx) -> None:
+    """Copy missing built-in HTTP UI assets into the workspace UI directory."""
+    await asyncio.to_thread(_copy_missing_ui_files, _workspace_ui_path(ctx.agent))
 
 
 def _resolve_jwt_secret(data_dir: str | os.PathLike[str]) -> str:
@@ -123,7 +151,8 @@ class HttpConnector(Connector[HttpOrigin]):
 
     def __init__(self, agent: Agent) -> None:
         super().__init__(agent)
-        self._ui_path = Path(self.config.get(http_ui_path))
+        configured_ui_path = self.config.get(http_ui_path)
+        self._ui_path = Path(configured_ui_path) if configured_ui_path else _workspace_ui_path(agent) / "index.html"
         jwt_secret = (
             self.config.get(http_auth_jwt_secret)
             if http_auth_jwt_secret in self.config
@@ -169,6 +198,7 @@ class HttpConnector(Connector[HttpOrigin]):
             server.register_route("/api/me", auth(self._me)),
             server.register_route("/api/status", auth(self._status)),
             server.register_route("/api/password", auth(self._change_password), methods=["POST"]),
+            server.register_route("/api/username", auth(self._change_username), methods=["POST"]),
             server.register_route("/api/invite", admin(self._create_invite), methods=["POST"]),
             server.register_route("/api/messages", auth(self._handle_message), methods=["POST"]),
             server.register_route("/api/messages/{stream_id:str}", auth(self._cancel_message), methods=["DELETE"]),
@@ -180,7 +210,7 @@ class HttpConnector(Connector[HttpOrigin]):
             server.register_route("/api/files/{file_id:str}", auth(self._handle_file_metadata)),
             server.register_route("/api/events", auth(self._handle_events)),
             server.register_route("/api/history", auth(self._handle_history)),
-            server.register_mount("/ui", StaticFiles(directory=str(self._ui_path.parent)), name="http-ui"),
+            server.register_mount("/ui", StaticFiles(directory=str(self._ui_path.parent), check_dir=False), name="http-ui"),
         ])
 
     async def _index(self, _request: Request) -> Response:
@@ -262,6 +292,17 @@ class HttpConnector(Connector[HttpOrigin]):
         except Exception:
             return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
         return JSONResponse({"status": "ok"})
+
+    async def _change_username(self, request: Request) -> Response:
+        try:
+            body = await request.json()
+            user = await self.authorizer.change_username(request.state.user, body.get("username", ""))
+        except AuthError as exc:
+            return JSONResponse({"detail": str(exc)}, status_code=400)
+        except Exception:
+            return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
+        request.state.user = user
+        return JSONResponse({"status": "ok", "username": user.username})
 
     async def _create_invite(self, _request: Request) -> Response:
         token = await self.authorizer.create_invite()
@@ -1096,3 +1137,4 @@ async def _sse_generator(queue: asyncio.Queue[dict | None], on_disconnect=None):
 def _serialize_item(item: DialogItem) -> dict:
     meta = {key: value for key, value in item.meta.items() if key != "llm"}
     return {"type": "dialog_item", "item_id": item.item_id, "previous_item_id": item.previous_item_id, "item_type": item.item_type.value, "role": item.role.value, "content": item.content, "user": item.user, "origin": item.origin.model_dump(mode="json"), "external_id": item.external_id, "created_at": item.created_at.isoformat() if item.created_at else None, "meta": meta}
+

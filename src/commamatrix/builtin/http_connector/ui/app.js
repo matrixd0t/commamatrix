@@ -9,9 +9,64 @@
 
 const SERVER_ROOT="/commamatrix";
 function serverUrl(path){return SERVER_ROOT+path}
+const LANGUAGE_STORAGE_KEY="commamatrix_ui_language";
+const translations={
+  en:{
+    "common.cancel":"Cancel","common.close":"Close","common.save":"Save",
+    "language.english":"English","language.russian":"Russian","language.switchTo":"Switch to {{language}}",
+    "header.openBranches":"Open branches","header.closeBranches":"Close branches","header.serverStatus":"Server status","header.openAccountMenu":"Open account menu","header.closeAccountMenu":"Close account menu",
+    "account.changePassword":"Change password","account.changeUsername":"Change name","account.addUser":"Add user","account.logOut":"Log out",
+    "status.signInRequired":"Sign in required","status.ready":"Ready","status.connecting":"Connecting...","status.disconnected":"Disconnected","status.processing":"Processing...","status.streaming":"Streaming...","status.sending":"Sending...","status.waitUploads":"Wait for uploads to finish","status.removeFailedUploads":"Remove failed uploads",
+    "branches.panelLabel":"Conversation branches","branches.title":"Branches","branches.description":"Choose a conversation","branches.new":"+ New branch","branches.filters":"Branch filters","branches.active":"Active","branches.deleted":"Deleted branches","branches.select":"Select branch","branches.collapse":"Collapse branch","branches.expand":"Expand branch","branches.restore":"Restore branch","branches.hide":"Hide branch","branches.noDeleted":"No deleted conversations.","branches.empty":"No conversations yet.","branches.emptyMessage":"[empty message]","branches.today":"today","branches.yesterday":"yesterday","branches.thisWeek":"this week","branches.thisMonth":"this month","branches.older":"older",
+    "chat.messageLabel":"Message","chat.placeholder":"Type a message...","chat.send":"Send","chat.cancel":"Cancel",
+    "attachments.dropHere":"Drop a link or file here","attachments.add":"Add a link or file","attachments.addToMessage":"Add to message","attachments.chooseHow":"Choose how to add content to your message.","attachments.insertLink":"Insert link","attachments.uploadFile":"Upload file","attachments.linkDescription":"The link will be added as an attachment and sent directly to the LLM without being saved on the server.","attachments.url":"URL","attachments.uploadRequirement":"File uploads require a public http-server address",
+    "auth.signIn":"Sign in","auth.createAccount":"Create account","auth.loginDescription":"Use your CommaMatrix account to connect to this agent.","auth.registerDescription":"Use the one-time invitation to create an account.","auth.username":"Username","auth.password":"Password","auth.confirmPassword":"Confirm password","auth.show":"Show","auth.hide":"Hide","auth.register":"Register",
+    "password.title":"Change password","password.description":"Set a new password for the current account.","password.current":"Current password","password.new":"New password","password.confirmNew":"Confirm new password",
+    "username.title":"Change name","username.description":"Use 2-32 Unicode characters. Letters from any language are allowed; spaces, digits, underscores, hyphens, dots and apostrophes can separate words.","username.label":"New name",
+    "invite.title":"New user invitation","invite.description":"Give this one-time link to the person who should register.","invite.ready":"The invitation link is ready. Send it to the user.","invite.copy":"Copy link","invite.copied":"Copied",
+    "attachment.image":"IMAGE","attachment.file":"FILE","attachment.link":"LINK","attachment.imageUnavailable":"Image unavailable","attachment.fileUnavailable":"File unavailable","attachment.uploading":"Uploading...","attachment.uploadFailed":"Upload failed","attachment.externalLink":"External link","attachment.ready":"Ready","attachment.remove":"Remove {{name}}",
+    "message.assistant":"Assistant","message.reasoning":"Reasoning","message.codeAct":"CodeAct session","message.result":"Result","message.tool":"Tool: {{name}}","message.toolPlaceholder":"Tool: ...","message.toolResult":"Tool Result","message.thinking":"Thinking","message.streamingHelp":"If streaming gets stuck, reload the page (F5).","message.previousBranch":"Previous branch","message.nextBranch":"Next branch","message.regenerate":"Regenerate response","message.edit":"Edit","message.imageInput":"[image input]","message.fileInput":"[file input]","message.output":"[output]",
+    "error.interface":"Interface error: {{message}}","error.unknown":"Unknown error","error.sessionExpired":"Your session has expired. Sign in again.","error.authenticationRequired":"Authentication required","error.fileRequestFailed":"File request failed","error.noPublicAddress":"You cannot upload files for LLM: CommaMatrix is not visible from the Internet.","error.uploadFailed":"Upload failed","error.messageRejected":"Message was rejected","error.network":"Network error: {{message}}","error.cancelRequest":"Cancel request failed: {{message}}","error.server":"Server error","error.couldNotLoadBranch":"Could not load branch: {{message}}","error.couldNotLoadHistory":"Could not load history: {{message}}","error.historyRequest":"History request failed","error.passwordMismatch":"Passwords do not match","error.credentialsRequired":"Username and password are required","error.usernameRequired":"Name is required","error.usernameLength":"Name must contain between 2 and 32 characters","error.usernameLetter":"Name must contain at least one letter","error.usernameEdges":"Name must start and end with a letter or number","error.usernameCharacters":"Name contains unsupported characters","error.usernameTaken":"That name is already taken","error.usernameChange":"Name change failed","error.registration":"Registration failed","error.signIn":"Sign in failed","error.accountCreated":"Account created. Sign in with your new password.","error.passwordChange":"Password change failed","error.invitation":"Could not create invitation","error.invalidUrl":"Enter a valid HTTP or HTTPS URL","error.eventsStream":"Events stream returned HTTP {{status}}","error.eventsFailed":"Events stream failed","error.eventsDisconnected":"Events stream disconnected","error.eventsAborted":"Events stream aborted"
+  },
+  ru:{
+    "common.cancel":"Отмена","common.close":"Закрыть","common.save":"Сохранить",
+    "language.english":"English","language.russian":"Русский","language.switchTo":"Переключить на язык: {{language}}",
+    "header.openBranches":"Открыть ветки","header.closeBranches":"Закрыть ветки","header.serverStatus":"Состояние сервера","header.openAccountMenu":"Открыть меню аккаунта","header.closeAccountMenu":"Закрыть меню аккаунта",
+    "account.changePassword":"Сменить пароль","account.changeUsername":"Сменить имя","account.addUser":"Добавить пользователя","account.logOut":"Выйти",
+    "status.signInRequired":"Требуется войти","status.ready":"Готово","status.connecting":"Подключение...","status.disconnected":"Нет соединения","status.processing":"Обработка...","status.streaming":"Поток данных...","status.sending":"Отправка...","status.waitUploads":"Дождитесь завершения загрузки","status.removeFailedUploads":"Удалите неудачные загрузки",
+    "branches.panelLabel":"Ветки диалогов","branches.title":"Ветки","branches.description":"Выберите диалог","branches.new":"+ Новая ветка","branches.filters":"Фильтры веток","branches.active":"Активные","branches.deleted":"Удалённые ветки","branches.select":"Выбрать ветку","branches.collapse":"Свернуть ветку","branches.expand":"Развернуть ветку","branches.restore":"Восстановить ветку","branches.hide":"Скрыть ветку","branches.noDeleted":"Удалённых диалогов нет.","branches.empty":"Диалогов пока нет.","branches.emptyMessage":"[пустое сообщение]","branches.today":"сегодня","branches.yesterday":"вчера","branches.thisWeek":"на этой неделе","branches.thisMonth":"в этом месяце","branches.older":"раньше",
+    "chat.messageLabel":"Сообщение","chat.placeholder":"Введите сообщение...","chat.send":"Отправить","chat.cancel":"Отменить",
+    "attachments.dropHere":"Перетащите сюда ссылку или файл","attachments.add":"Добавить ссылку или файл","attachments.addToMessage":"Добавить к сообщению","attachments.chooseHow":"Выберите, как добавить содержимое к сообщению.","attachments.insertLink":"Вставить ссылку","attachments.uploadFile":"Загрузить файл","attachments.linkDescription":"Ссылка будет добавлена как вложение и отправлена напрямую LLM без сохранения на сервере.","attachments.url":"URL","attachments.uploadRequirement":"Для загрузки файлов HTTP-сервер должен быть доступен из интернета",
+    "auth.signIn":"Войти","auth.createAccount":"Создать аккаунт","auth.loginDescription":"Используйте аккаунт CommaMatrix для подключения к этому агенту.","auth.registerDescription":"Используйте одноразовое приглашение для создания аккаунта.","auth.username":"Имя пользователя","auth.password":"Пароль","auth.confirmPassword":"Подтвердите пароль","auth.show":"Показать","auth.hide":"Скрыть","auth.register":"Зарегистрироваться",
+    "password.title":"Сменить пароль","password.description":"Задайте новый пароль для текущего аккаунта.","password.current":"Текущий пароль","password.new":"Новый пароль","password.confirmNew":"Подтвердите новый пароль",
+    "username.title":"Сменить имя","username.description":"Используйте от 2 до 32 символов Unicode. Разрешены буквы любых языков; пробелы, цифры, подчёркивания, дефисы, точки и апострофы могут разделять слова.","username.label":"Новое имя",
+    "invite.title":"Приглашение нового пользователя","invite.description":"Передайте эту одноразовую ссылку пользователю, который должен зарегистрироваться.","invite.ready":"Ссылка-приглашение готова. Отправьте её пользователю.","invite.copy":"Копировать ссылку","invite.copied":"Скопировано",
+    "attachment.image":"ИЗОБРАЖЕНИЕ","attachment.file":"ФАЙЛ","attachment.link":"ССЫЛКА","attachment.imageUnavailable":"Изображение недоступно","attachment.fileUnavailable":"Файл недоступен","attachment.uploading":"Загрузка...","attachment.uploadFailed":"Не удалось загрузить","attachment.externalLink":"Внешняя ссылка","attachment.ready":"Готово","attachment.remove":"Удалить {{name}}",
+    "message.assistant":"Ассистент","message.reasoning":"Рассуждение","message.codeAct":"Сессия CodeAct","message.result":"Результат","message.tool":"Инструмент: {{name}}","message.toolPlaceholder":"Инструмент: ...","message.toolResult":"Результат инструмента","message.thinking":"Обработка","message.streamingHelp":"Если поток завис, перезагрузите страницу (F5).","message.previousBranch":"Предыдущая ветка","message.nextBranch":"Следующая ветка","message.regenerate":"Сгенерировать ответ заново","message.edit":"Изменить","message.imageInput":"[изображение]","message.fileInput":"[файл]","message.output":"[результат]",
+    "error.interface":"Ошибка интерфейса: {{message}}","error.unknown":"Неизвестная ошибка","error.sessionExpired":"Срок действия сессии истёк. Войдите снова.","error.authenticationRequired":"Требуется аутентификация","error.fileRequestFailed":"Не удалось получить файл","error.noPublicAddress":"Нельзя загрузить файлы для LLM: CommaMatrix недоступен из интернета.","error.uploadFailed":"Не удалось загрузить файл","error.messageRejected":"Сообщение отклонено","error.network":"Ошибка сети: {{message}}","error.cancelRequest":"Не удалось отменить запрос: {{message}}","error.server":"Ошибка сервера","error.couldNotLoadBranch":"Не удалось загрузить ветку: {{message}}","error.couldNotLoadHistory":"Не удалось загрузить историю: {{message}}","error.historyRequest":"Не удалось запросить историю","error.passwordMismatch":"Пароли не совпадают","error.credentialsRequired":"Введите имя пользователя и пароль","error.usernameRequired":"Введите имя","error.usernameLength":"Имя должно содержать от 2 до 32 символов","error.usernameLetter":"Имя должно содержать хотя бы одну букву","error.usernameEdges":"Имя должно начинаться и заканчиваться буквой или цифрой","error.usernameCharacters":"Имя содержит недопустимые символы","error.usernameTaken":"Это имя уже занято","error.usernameChange":"Не удалось сменить имя","error.registration":"Не удалось зарегистрироваться","error.signIn":"Не удалось войти","error.accountCreated":"Аккаунт создан. Войдите с новым паролем.","error.passwordChange":"Не удалось сменить пароль","error.invitation":"Не удалось создать приглашение","error.invalidUrl":"Введите корректный HTTP- или HTTPS-адрес","error.eventsStream":"Поток событий вернул HTTP {{status}}","error.eventsFailed":"Поток событий завершился с ошибкой","error.eventsDisconnected":"Поток событий отключён","error.eventsAborted":"Поток событий прерван"
+  }
+};
+let locale=(()=>{try{const stored=localStorage.getItem(LANGUAGE_STORAGE_KEY);if(stored&&translations[stored])return stored}catch{}return navigator.language?.toLowerCase().startsWith("ru")?"ru":"en"})();
+function translationAttributeKey(attribute){return "i18n"+attribute.split("-").map(part=>part[0].toUpperCase()+part.slice(1)).join("")}
+function t(key,values={}){const template=translations[locale][key]??translations.en[key]??String(key??"");return String(template).replace(/\{\{(\w+)\}\}/g,(_,name)=>String(values[name]??""))}
+function setI18nText(element,key,values={}){element.dataset.i18n=key;if(Object.keys(values).length)element.dataset.i18nValues=JSON.stringify(values);else delete element.dataset.i18nValues;element.textContent=t(key,values)}
+function setI18nAttribute(element,attribute,key,values={}){element.dataset[translationAttributeKey(attribute)]=key;if(Object.keys(values).length)element.dataset.i18nValues=JSON.stringify(values);element.setAttribute(attribute,t(key,values))}
+function applyTranslations(){
+  for(const element of document.querySelectorAll("[data-i18n]")){let values={};try{values=JSON.parse(element.dataset.i18nValues||"{}")}catch{}element.textContent=t(element.dataset.i18n,values)}
+  for(const attribute of ["title","aria-label","placeholder"]){for(const element of document.querySelectorAll(`[data-i18n-${attribute}]`)){let values={};try{values=JSON.parse(element.dataset.i18nValues||"{}")}catch{}element.setAttribute(attribute,t(element.dataset[translationAttributeKey(attribute)],values))}}
+  for(const button of document.querySelectorAll(".password-toggle"))setI18nText(button,button.dataset.visible==="true"?"auth.hide":"auth.show");
+  const targets=[
+    ["#branch-open","aria-label","header.openBranches"],["#branch-open","title","header.openBranches"],["#branch-close","aria-label","header.closeBranches"],["#branch-close","title","header.closeBranches"],["#http-server-status-btn","aria-label","header.serverStatus"],["#http-server-status-btn","title","header.serverStatus"],["#header-menu-btn","aria-label","header.openAccountMenu"],["#header-menu-btn","title","header.openAccountMenu"],["#branch-panel","aria-label","branches.panelLabel"],[".branch-panel-header h2","text","branches.title"],[".branch-panel-header p","text","branches.description"],["#new-branch-btn","text","branches.new"],[".branch-tabs","aria-label","branches.filters"],["#active-branches-btn","text","branches.active"],["#deleted-branches-btn","aria-label","branches.deleted"],["#deleted-branches-btn","title","branches.deleted"],["#username-btn","text","account.changeUsername"],["#password-btn","text","account.changePassword"],["#invite-btn","text","account.addUser"],["#logout-btn","text","account.logOut"],["#status","text","status.signInRequired"],["label[for=input]","text","chat.messageLabel"],["#attach-btn","title","attachments.add"],["#attach-btn","aria-label","attachments.add"],["#drop-overlay","text","attachments.dropHere"],["#input","placeholder","chat.placeholder"],["#attachment-overlay h2","text","attachments.addToMessage"],["#attachment-overlay p","text","attachments.chooseHow"],["#insert-link-choice","text","attachments.insertLink"],["#upload-file-choice","text","attachments.uploadFile"],["#attachment-cancel","text","common.cancel"],["#link-overlay h2","text","attachments.insertLink"],["#link-overlay p","text","attachments.linkDescription"],["#link-overlay label","text","attachments.url"],["#link-form button[type=submit]","text","attachments.insertLink"],["#link-cancel","text","common.cancel"],["#auth-title","text","auth.signIn"],["#auth-description","text","auth.loginDescription"],["label[for=auth-username]","text","auth.username"],["label[for=auth-password]","text","auth.password"],["#auth-confirm-label","text","auth.confirmPassword"],["#auth-submit","text","auth.signIn"],["#password-overlay h2","text","password.title"],["#password-overlay p","text","password.description"],["label[for=old-password]","text","password.current"],["label[for=new-password]","text","password.new"],["label[for=new-password-confirm]","text","password.confirmNew"],["#password-overlay form>button[type=submit]","text","password.title"],["#password-cancel","text","common.cancel"],["#username-overlay h2","text","username.title"],["#username-overlay p","text","username.description"],["label[for=username-input]","text","username.label"],["#username-form button[type=submit]","text","username.title"],["#username-cancel","text","common.cancel"],["#invite-overlay h2","text","invite.title"],["#invite-overlay p:first-of-type","text","invite.description"],["#invite-overlay p:nth-of-type(2)","text","invite.ready"],["#invite-copy","text","invite.copy"],["#invite-close","text","common.close"]
+  ];
+  for(const [selector,attribute,key] of targets){const element=document.querySelector(selector);if(!element)continue;if(attribute==="text")setI18nText(element,key);else setI18nAttribute(element,attribute,key)}
+  if(typeof sendBtn!=="undefined")setI18nText(sendBtn,activeStreamId?"chat.cancel":"chat.send");
+  document.documentElement.lang=locale;
+}
+function updateLanguageButton(){const target=locale==="ru"?"english":"russian";languageBtn.textContent=t("language."+target);const label=t("language.switchTo",{language:t("language."+target)});languageBtn.title=label;languageBtn.setAttribute("aria-label",label)}
+function setLocale(nextLocale){if(!translations[nextLocale]||nextLocale===locale)return;locale=nextLocale;try{localStorage.setItem(LANGUAGE_STORAGE_KEY,locale)}catch{}applyTranslations();updateLanguageButton();setAuthMode(authMode);renderAttachmentPreviews();renderBranchPanel();if(currentStatusKey)setUiStatus(currentStatusKey)}
 window.__commamatrixUiLoaded=true;
-window.addEventListener("error",event=>{console.error("[CommaMatrix UI] uncaught error",event.error||event.message);const error=document.getElementById("auth-error");if(error)error.textContent="Interface error: "+event.message});
-window.addEventListener("unhandledrejection",event=>{console.error("[CommaMatrix UI] unhandled rejection",event.reason);const error=document.getElementById("auth-error");if(error)error.textContent="Interface error: "+(event.reason?.message||event.reason||"Unknown error")});
+window.addEventListener("error",event=>{console.error("[CommaMatrix UI] uncaught error",event.error||event.message);const error=document.getElementById("auth-error");if(error)error.textContent=t("error.interface",{message:event.message})});
+window.addEventListener("unhandledrejection",event=>{console.error("[CommaMatrix UI] unhandled rejection",event.reason);const error=document.getElementById("auth-error");if(error)error.textContent=t("error.interface",{message:event.reason?.message||event.reason||t("error.unknown")})});
 
 const messagesEl=document.getElementById("messages");
 const inputEl=document.getElementById("input");
@@ -27,6 +82,7 @@ const serverStatusLight=document.getElementById("http-server-status-light");
 const serverStatusPanel=document.getElementById("http-server-status-panel");
 const userLabel=document.getElementById("user-label");
 const headerMenuBtn=document.getElementById("header-menu-btn");
+const usernameBtn=document.getElementById("username-btn");
 const passwordBtn=document.getElementById("password-btn");
 const inviteBtn=document.getElementById("invite-btn");
 const logoutBtn=document.getElementById("logout-btn");
@@ -50,6 +106,10 @@ const authError=document.getElementById("auth-error");
 const passwordOverlay=document.getElementById("password-overlay");
 const passwordForm=document.getElementById("password-form");
 const passwordError=document.getElementById("password-error");
+const usernameOverlay=document.getElementById("username-overlay");
+const usernameForm=document.getElementById("username-form");
+const usernameInput=document.getElementById("username-input");
+const usernameError=document.getElementById("username-error");
 const inviteOverlay=document.getElementById("invite-overlay");
 const attachmentOverlay=document.getElementById("attachment-overlay");
 const insertLinkChoice=document.getElementById("insert-link-choice");
@@ -60,6 +120,7 @@ const linkForm=document.getElementById("link-form");
 const linkInput=document.getElementById("link-input");
 const linkError=document.getElementById("link-error");
 const linkCancel=document.getElementById("link-cancel");
+let languageBtn=document.getElementById("language-btn");if(!languageBtn){languageBtn=document.createElement("button");languageBtn.id="language-btn";languageBtn.type="button";languageBtn.setAttribute("aria-live","polite");logoutBtn.parentElement.insertBefore(languageBtn,logoutBtn)}
 
 let inviteToken=new URLSearchParams(location.search).get("token");
 let inviteLink="";
@@ -105,9 +166,8 @@ let statusPollTimer=null;
 let statusPanelOverride=null;
 let statusOverrideTimer=null;
 let serverConnected=null;
+let currentStatusKey="signInRequired";
 const STATUS_POLL_INTERVAL_MS=3000;
-const NO_PUBLIC_ADDRESS_MESSAGE="You cannot upload files for LLM: CommaMatrix is not visible from the Internet.";
-const STREAMING_STATUS_TOOLTIP="If streaming gets stuck, reload the page (F5).";
 
 function updateSendButton(){
   sendBtn.disabled=!currentUser||document.body.classList.contains("auth-locked")||(!activeStreamId&&!eventsReady);
@@ -115,7 +175,7 @@ function updateSendButton(){
 
 function setEventsReady(ready){
   eventsReady=ready;updateSendButton();
-  if(authToken&&!activeStreamId)setUiStatus(ready||serverConnected===true?"Ready":"Connecting...");
+  if(authToken&&!activeStreamId)setUiStatus(ready||serverConnected===true?"ready":"connecting");
 }
 
 function setAuthLocked(locked){
@@ -128,8 +188,8 @@ function setAuthLocked(locked){
 function setHeaderMenuOpen(open){
   document.body.classList.toggle("header-menu-open",open);
   headerMenuBtn.setAttribute("aria-expanded",String(open));
-  headerMenuBtn.setAttribute("aria-label",open?"Close account menu":"Open account menu");
-  headerMenuBtn.title=open?"Close account menu":"Open account menu";
+  setI18nAttribute(headerMenuBtn,"aria-label",open?"header.closeAccountMenu":"header.openAccountMenu");
+  setI18nAttribute(headerMenuBtn,"title",open?"header.closeAccountMenu":"header.openAccountMenu");
 }
 
 function setStatusPanelVisible(visible){
@@ -145,30 +205,25 @@ function renderServerStatusMessages(){
   }
 }
 
-function statusKind(text){
-  const value=String(text||"").toLowerCase();
-  if(value.includes("disconnect"))return "disconnected";
-  if(value.includes("connect"))return "connecting";
-  if(value.includes("process")||value.includes("stream")||value.includes("send"))return "processing";
-  if(value==="ready")return "ready";
-  return "";
-}
-function setUiStatus(text){
-  const value=serverConnected===false?"Disconnected":text;
-  const kind=statusKind(value);statusEl.textContent=value;statusEl.className="status"+(kind?" status-"+kind:"");statusEl.title=value.toLowerCase().includes("stream")?STREAMING_STATUS_TOOLTIP:"";
+function setUiStatus(key){
+  currentStatusKey=key;
+  const effectiveKey=serverConnected===false?"disconnected":key;
+  const kind=["disconnected","connecting","processing","streaming","sending","ready"].includes(effectiveKey)?effectiveKey:"";
+  setI18nText(statusEl,"status."+effectiveKey);statusEl.className="status"+(kind?" status-"+kind:"");
+  statusEl.title=effectiveKey==="streaming"?t("message.streamingHelp"):"";
 }
 function serverStatusSeverity(){return serverStatusMessages.some(item=>item.severity==="red")?"red":serverStatusMessages.length?"yellow":"green"}
 function updateServerStatusLight(){const severity=serverConnected===false?"gray":statusPanelOverride?.severity||serverStatusSeverity();serverStatusLight.className="http-server-status-light "+severity}
 function setServerConnected(connected){
-  const wasDisconnected=serverConnected===false;const wasConnecting=!activeStreamId&&statusEl.textContent==="Connecting...";serverConnected=connected;updateServerStatusLight();updateSendButton();
-  if(!connected)setUiStatus("Disconnected");else if(wasDisconnected||wasConnecting)setUiStatus("Ready");
+  const wasDisconnected=serverConnected===false;const wasConnecting=!activeStreamId&&currentStatusKey==="connecting";serverConnected=connected;updateServerStatusLight();updateSendButton();
+  if(!connected)setUiStatus("disconnected");else if(wasDisconnected||wasConnecting)setUiStatus("ready");
 }
 
 function updateServerStatus(data){
   serverStatusMessages=Array.isArray(data.messages)?data.messages.filter(item=>item&&typeof item.message==="string"&&["yellow","red"].includes(item.severity)).map(item=>({message:item.message,severity:item.severity})):[];
   fileUploadAllowed=data.file_upload_allowed===true;
   uploadFileChoice.disabled=!fileUploadAllowed;
-  uploadFileChoice.title=fileUploadAllowed?"Upload a file":"File uploads require a public http-server address";
+  setI18nAttribute(uploadFileChoice,"title",fileUploadAllowed?"attachments.uploadFile":"attachments.uploadRequirement");
   setServerConnected(true);
   renderServerStatusMessages();
 }
@@ -181,7 +236,7 @@ function showTemporaryStatus(message,severity="yellow"){
   statusOverrideTimer=setTimeout(()=>{statusPanelOverride=null;statusOverrideTimer=null;updateServerStatusLight();renderServerStatusMessages();setStatusPanelVisible(false)},5000);
 }
 
-function showUploadBlocked(){showTemporaryStatus(NO_PUBLIC_ADDRESS_MESSAGE);}
+function showUploadBlocked(){showTemporaryStatus(t("error.noPublicAddress"));}
 
 function stopStatusPolling(){if(statusPollTimer){clearInterval(statusPollTimer);statusPollTimer=null}if(statusOverrideTimer){clearTimeout(statusOverrideTimer);statusOverrideTimer=null}}
 
@@ -204,14 +259,39 @@ function startStatusPolling(){
 function setAuthMode(mode){
   authMode=mode;
   const register=mode==="register";
-  authTitle.textContent=register?"Create account":"Sign in";
-  authDescription.textContent=register?"Use the one-time invitation to create an account.":"Use your CommaMatrix account to connect to this agent.";
+  setI18nText(authTitle,register?"auth.createAccount":"auth.signIn");
+  setI18nText(authDescription,register?"auth.registerDescription":"auth.loginDescription");
   authConfirmLabel.hidden=!register;
   authConfirm.hidden=!register;
   authConfirm.required=register;
   authPassword.autocomplete=register?"new-password":"current-password";
-  authSubmit.textContent=register?"Register":"Sign in";
+  setI18nText(authSubmit,register?"auth.register":"auth.signIn");
   authError.textContent="";
+}
+
+const USERNAME_ALLOWED_RE=/^[\p{L}\p{M}\p{N} ._'-]+$/u;
+const USERNAME_EDGE_RE=/^[\p{L}\p{N}]$/u;
+function validateUsername(value){
+  const normalized=String(value??"").normalize("NFC").trim().split(/\s+/).filter(Boolean).join(" ");
+  const chars=[...normalized];
+  if(!normalized)return {value:normalized,errorKey:"error.usernameRequired"};
+  if(chars.length<2||chars.length>32)return {value:normalized,errorKey:"error.usernameLength"};
+  if(!chars.some(char=>/\p{L}/u.test(char)))return {value:normalized,errorKey:"error.usernameLetter"};
+  if(!USERNAME_EDGE_RE.test(chars[0])||!USERNAME_EDGE_RE.test(chars[chars.length-1]))return {value:normalized,errorKey:"error.usernameEdges"};
+  if(!USERNAME_ALLOWED_RE.test(normalized))return {value:normalized,errorKey:"error.usernameCharacters"};
+  return {value:normalized,errorKey:null};
+}
+function localizedAuthError(data,fallback){
+  const detail=data?.detail||data?.error;
+  const errorKeys={
+    "Username is required":"error.usernameRequired",
+    "Username must be between 2 and 32 characters":"error.usernameLength",
+    "Username must contain at least one letter":"error.usernameLetter",
+    "Username must start and end with a letter or number":"error.usernameEdges",
+    "Username contains unsupported characters":"error.usernameCharacters",
+    "Username already taken for this app":"error.usernameTaken"
+  };
+  return detail?(errorKeys[detail]?t(errorKeys[detail]):detail):t(fallback);
 }
 
 function authHeaders(){return authToken?{Authorization:"Bearer "+authToken}:{};}
@@ -247,8 +327,8 @@ function attachmentResourceUrl(info){
 async function protectedResourceUrl(url){
   if(!url||isDirectResource(url))return url;
   const response=await authFetch(url);
-  if(isUnauthorized(response))throw new Error("Authentication required")
-  if(!response.ok)throw new Error("File request failed")
+  if(isUnauthorized(response))throw new Error(t("error.authenticationRequired"))
+  if(!response.ok)throw new Error(t("error.fileRequestFailed"))
   return URL.createObjectURL(await response.blob());
 }
 
@@ -262,17 +342,17 @@ function createAttachmentCard(info,{compact=false}={}){
   const card=document.createElement("div");card.className="attachment-card"+(info.kind==="image"?" image-card":"")+(compact?" compact":"");
   const resource=attachmentResourceUrl(info);
   if(info.kind==="image"&&!info.error){
-    const image=document.createElement("img");image.alt=info.name||"Image";card.appendChild(image);
-    setResource(image,resource,"src",()=>{image.alt="Image unavailable"})
+    const image=document.createElement("img");image.alt=info.name||t("attachment.image");card.appendChild(image);
+    setResource(image,resource,"src",()=>{image.alt=t("attachment.imageUnavailable")})
   }else{
-    const icon=document.createElement("span");icon.className="attachment-icon";icon.textContent=info.kind==="image"?"IMAGE":"FILE";card.appendChild(icon);
+    const icon=document.createElement("span");icon.className="attachment-icon";setI18nText(icon,info.kind==="image"?"attachment.image":"attachment.file");card.appendChild(icon);
   }
   const details=document.createElement("span");details.className="attachment-info";
   if(info.kind!=="image"&&!info.error){
-    const link=document.createElement("a");link.className="attachment-name";link.textContent=info.name||"File";link.download=info.name||"file";link.rel="noopener noreferrer";
-    setResource(link,resource,"href",()=>{link.textContent=(info.name||"File")+" (unavailable)"})
+    const link=document.createElement("a");link.className="attachment-name";link.textContent=info.name||t("attachment.file");link.download=info.name||"file";link.rel="noopener noreferrer";
+    setResource(link,resource,"href",()=>{link.textContent=(info.name||t("attachment.file"))+" (unavailable)"})
     details.appendChild(link);
-  }else{const name=document.createElement("span");name.className="attachment-name";name.textContent=info.name||(info.kind==="image"?"Image":"File");details.appendChild(name)}
+  }else{const name=document.createElement("span");name.className="attachment-name";name.textContent=info.name||(info.kind==="image"?t("attachment.image"):t("attachment.file"));details.appendChild(name)}
   if(info.size!==undefined&&info.size!==null){const size=document.createElement("span");size.className="attachment-size";size.textContent=formatFileSize(info.size);details.appendChild(size)}
   if(info.error){const error=document.createElement("span");error.className="attachment-error";error.textContent=info.error;details.appendChild(error)}
   card.appendChild(details);return card;
@@ -280,7 +360,7 @@ function createAttachmentCard(info,{compact=false}={}){
 
 function addAttachmentMessage(content,kind){
   const div=document.createElement("div");div.className="msg "+(kind==="image"?"image":"file");const info=parseAttachmentContent(content);
-  if(info&&(info.ref||info.url||kind==="file")){info.kind=kind||info.kind;div.appendChild(createAttachmentCard(info))}else div.textContent=kind==="image"?"Image: "+content:"File: "+content;
+  if(info&&(info.ref||info.url||kind==="file")){info.kind=kind||info.kind;div.appendChild(createAttachmentCard(info))}else div.textContent=(kind==="image"?t("attachment.image"):t("attachment.file"))+": "+content;
   messagesEl.appendChild(div);scrollToBottom();return div;
 }
 
@@ -292,7 +372,7 @@ function outputAttachments(item){
 function addAssistantOutput(item){
   const wrapper=document.createElement("div");wrapper.className="message-entry assistant-entry";wrapper.dataset.itemId=String(item.item_id??"");
   const bubble=document.createElement("div");bubble.className="msg assistant";
-  const role=document.createElement("div");role.className="role";role.textContent="Assistant";bubble.appendChild(role);
+  const role=document.createElement("div");role.className="role";setI18nText(role,"message.assistant");bubble.appendChild(role);
   bubble.appendChild(createMessageMeta(item));
   if(item.content){const content=document.createElement("div");content.className="message-content";renderMarkdown(content,item.content);bubble.appendChild(content)}
   const attachments=outputAttachments(item);
@@ -310,9 +390,9 @@ function renderAttachmentPreviews(){
   attachmentPreviewsEl.replaceChildren();
   for(const attachment of pendingAttachments){
     const preview=document.createElement("div");preview.className="attachment-preview "+(attachment.status||"")+(attachment.external?" external":"");
-    if(attachment.kind==="image"&&attachment.previewUrl){const image=document.createElement("img");image.src=attachment.previewUrl;image.alt=attachment.name;preview.appendChild(image)}else{const icon=document.createElement("span");icon.className="attachment-icon";icon.textContent=attachment.external?"LINK":"FILE";preview.appendChild(icon)}
-    const details=document.createElement("span");details.className="attachment-info";const name=document.createElement("span");name.className="attachment-name";name.textContent=attachment.name;details.appendChild(name);const status=document.createElement("span");status.className="attachment-status";status.textContent=attachment.status==="uploading"?"Uploading...":attachment.status==="failed"?attachment.error||"Upload failed":attachment.external?"External link":formatFileSize(attachment.size)||"Ready";details.appendChild(status);preview.appendChild(details);
-    const remove=document.createElement("button");remove.type="button";remove.className="attachment-remove";remove.textContent="×";remove.title="Remove attachment";remove.setAttribute("aria-label","Remove "+attachment.name);remove.addEventListener("click",()=>removePendingAttachment(attachment));preview.appendChild(remove);attachmentPreviewsEl.appendChild(preview);
+    if(attachment.kind==="image"&&attachment.previewUrl){const image=document.createElement("img");image.src=attachment.previewUrl;image.alt=attachment.name;preview.appendChild(image)}else{const icon=document.createElement("span");icon.className="attachment-icon";setI18nText(icon,attachment.external?"attachment.link":"attachment.file");preview.appendChild(icon)}
+    const details=document.createElement("span");details.className="attachment-info";const name=document.createElement("span");name.className="attachment-name";name.textContent=attachment.name;details.appendChild(name);const status=document.createElement("span");status.className="attachment-status";if(attachment.status==="uploading")setI18nText(status,"attachment.uploading");else if(attachment.status==="failed")status.textContent=attachment.error||t("attachment.uploadFailed");else if(attachment.external)setI18nText(status,"attachment.externalLink");else if(formatFileSize(attachment.size))status.textContent=formatFileSize(attachment.size);else setI18nText(status,"attachment.ready");details.appendChild(status);preview.appendChild(details);
+    const remove=document.createElement("button");remove.type="button";remove.className="attachment-remove";remove.textContent="×";setI18nAttribute(remove,"title","attachment.remove",{name:attachment.name});setI18nAttribute(remove,"aria-label","attachment.remove",{name:attachment.name});remove.addEventListener("click",()=>removePendingAttachment(attachment));preview.appendChild(remove);attachmentPreviewsEl.appendChild(preview);
   }
 }
 
@@ -331,7 +411,7 @@ function externalLinkAttachment(url){
   return {external:true,url,previewUrl:url,name,mime_type,ext,kind,status:"ready"};
 }
 
-function addExternalLink(url){pendingAttachments.push(externalLinkAttachment(url));renderAttachmentPreviews();setUiStatus("Ready")}
+function addExternalLink(url){pendingAttachments.push(externalLinkAttachment(url));renderAttachmentPreviews();setUiStatus("ready")}
 
 async function uploadFile(file){
   if(!authToken){showAuth();return false}
@@ -341,9 +421,9 @@ async function uploadFile(file){
   try{
     const {response,data,unauthorized}=await authJson(serverUrl("/v1/files"),{method:"POST",body:form});
     if(unauthorized)return false
-    if(!response.ok){attachment.status="failed";attachment.error=data.error||data.detail||"Upload failed";renderAttachmentPreviews();return false}
+    if(!response.ok){attachment.status="failed";attachment.error=data.error||data.detail||t("attachment.uploadFailed");renderAttachmentPreviews();return false}
     attachment.file_id=data.id||data.file_id;attachment.name=data.filename||data.name||attachment.name;attachment.mime_type=data.mime_type||attachment.mime_type;attachment.size=data.bytes??data.size_bytes??attachment.size;attachment.kind=attachment.mime_type.startsWith("image/")?"image":attachment.kind;attachment.url=data.content_url||data.url||fileContentUrl(attachment.file_id);attachment.ext=attachment.name.includes(".")?attachment.name.split(".").pop().toLowerCase():"";attachment.status="ready";
-  }catch(error){attachment.status="failed";attachment.error=error.message||"Upload failed"}
+  }catch(error){attachment.status="failed";attachment.error=error.message||t("attachment.uploadFailed")}
   renderAttachmentPreviews();return attachment.status==="ready";
 }
 
@@ -387,7 +467,7 @@ async function authFetch(url,options={}){
   return fetch(url,{...options,headers});
 }
 
-function expireSession(){clearAuth();showAuth("Your session has expired. Sign in again.")}
+function expireSession(){clearAuth();showAuth(t("error.sessionExpired"))}
 function isUnauthorized(response){if(response.status!==401)return false;expireSession();return true}
 async function authJson(url,options={}){
   const response=await authFetch(url,options);
@@ -409,16 +489,16 @@ function clearAuth(){
   if(eventsRequest)eventsRequest.abort();
   stopStatusPolling();statusPanelOverride=null;serverStatusMessages=[];fileUploadAllowed=false;uploadFileChoice.disabled=true;renderServerStatusMessages();setStatusPanelVisible(false);serverStatusLight.className="http-server-status-light gray";setHeaderMenuOpen(false);
   eventsTask=null;authToken=null;currentUser=null;historyLoaded=false;activeStreamId=null;serverConnected=null;eventsReady=false;
-  sendBtn.textContent="Send";sendBtn.classList.remove("cancel");sendBtn.disabled=true;
+  setI18nText(sendBtn,"chat.send");sendBtn.classList.remove("cancel");sendBtn.disabled=true;
   localStorage.removeItem("commamatrix_auth_token");
   clearPendingAttachments();
   hideTyping();messagesEl.replaceChildren();itemsById=new Map();childrenByParent=new Map();selectedHeadId=null;newRootSelected=false;selectedLeafByNode=new Map();expandedNodes=new Set();deletedRootIds=new Set();showDeletedBranches=false;historyHeads=[];activeStreams={};streamingPreviews={};clearPendingMessage();
-  passwordBtn.hidden=true;inviteBtn.hidden=true;logoutBtn.hidden=true;userLabel.textContent="";statusEl.textContent="Sign in required";statusEl.className="status";
+  usernameBtn.hidden=true;passwordBtn.hidden=true;inviteBtn.hidden=true;logoutBtn.hidden=true;userLabel.textContent="";setUiStatus("signInRequired");
   renderBranchPanel();
 }
 
 function applyUser(user){
-  currentUser=user;loadDeletedBranches();showDeletedBranches=false;userLabel.textContent=user.username;passwordBtn.hidden=false;inviteBtn.hidden=!user.is_admin;logoutBtn.hidden=false;setUiStatus(eventsReady?"Ready":"Connecting...");setHeaderMenuOpen(false);setAuthLocked(false);
+  currentUser=user;loadDeletedBranches();showDeletedBranches=false;userLabel.textContent=user.username;usernameBtn.hidden=false;passwordBtn.hidden=false;inviteBtn.hidden=!user.is_admin;logoutBtn.hidden=false;setUiStatus(eventsReady?"ready":"connecting");setHeaderMenuOpen(false);setAuthLocked(false);
 }
 
 function deletedBranchesStorageKey(){
@@ -606,7 +686,7 @@ async function selectBranchNode(itemId,branchHeadId=null){
   selectedHeadId=branchHeadId??(preferred!==undefined&&chainContains(preferred,itemId)?preferred:(latestBranchItemId(itemId)||itemId));
   newRootSelected=false;
   clearPendingMessage();renderBranchPanel();
-  try{await loadHistory(selectedHeadId)}catch(error){addError("Could not load branch: "+error.message)}
+  try{await loadHistory(selectedHeadId)}catch(error){addError(t("error.couldNotLoadBranch",{message:error.message}))}
   closeBranchPanel();
 }
 
@@ -618,8 +698,8 @@ function groupForDate(timestamp){
   if(days===0)return "today";
   if(days===1)return "yesterday";
   const weekStart=new Date(today);const day=(weekStart.getDay()+6)%7;weekStart.setDate(weekStart.getDate()-day);
-  if(dateStart>=weekStart)return "this week";
-  if(date.getFullYear()===now.getFullYear()&&date.getMonth()===now.getMonth())return "this month";
+  if(dateStart>=weekStart)return "thisWeek";
+  if(date.getFullYear()===now.getFullYear()&&date.getMonth()===now.getMonth())return "thisMonth";
   return "older";
 }
 
@@ -644,7 +724,7 @@ function branchPreview(root){
     const assistantOutput=item.role==="assistant"&&["output","image_output","file_output"].includes(item.item_type);
     return userInput||assistantOutput;
   })||{content:root.branch_preview||root.content};
-  return preview.content||"[empty message]";
+  return preview.content||t("branches.emptyMessage");
 }
 
 function updateBranchTabs(){
@@ -684,14 +764,14 @@ function setBranchView(showDeleted){
 function renderBranchPanel(){
   updateBranchTabs();branchList.replaceChildren();
   const roots=visibleRoots().filter(root=>isRootDeleted(branchKey(root))===showDeletedBranches).sort((a,b)=>itemTime(rootLatestLeaf(b))-itemTime(rootLatestLeaf(a))||Number(b.item_id)-Number(a.item_id));
-  if(!roots.length){const empty=document.createElement("div");empty.className="branch-empty";empty.textContent=showDeletedBranches?"No deleted conversations.":"No conversations yet.";branchList.appendChild(empty)}
+  if(!roots.length){const empty=document.createElement("div");empty.className="branch-empty";setI18nText(empty,showDeletedBranches?"branches.noDeleted":"branches.empty");branchList.appendChild(empty)}
   else{
     const groups=new Map();
     for(const root of roots){const group=groupForDate(itemTime(rootLatestLeaf(root)));const values=groups.get(group)||[];values.push(root);groups.set(group,values)}
-    for(const group of ["today","yesterday","this week","this month","older"]){
+    for(const group of ["today","yesterday","thisWeek","thisMonth","older"]){
       const values=groups.get(group);if(!values)continue;
       const section=document.createElement("section");section.className="branch-group";
-      const title=document.createElement("div");title.className="branch-group-title";title.textContent="-- "+group+" --";section.appendChild(title);
+      const title=document.createElement("div");title.className="branch-group-title";title.textContent="-- "+t("branches."+group)+" --";section.appendChild(title);
       for(const root of values)section.appendChild(renderBranchNode(root,0));
       branchList.appendChild(section);
     }
@@ -708,16 +788,16 @@ function renderBranchNode(item,depth){
   const onPath=selectedHeadId!==null&&chainContains(selectedHeadId,item.item_id);
   if(onPath)row.classList.add("active");
   if(item.item_id===selectedVisibleId())row.classList.add("current");
-  const main=document.createElement("button");main.type="button";main.className="branch-row-main";main.style.paddingLeft=(6+depth*14)+"px";main.title="Select branch";
-  const preview=document.createElement("span");preview.className="branch-preview";preview.textContent=depth===0?branchPreview(item):(item.content||"[empty message]");main.appendChild(preview);
+  const main=document.createElement("button");main.type="button";main.className="branch-row-main";main.style.paddingLeft=(6+depth*14)+"px";setI18nAttribute(main,"title","branches.select");
+  const preview=document.createElement("span");preview.className="branch-preview";preview.textContent=depth===0?branchPreview(item):(item.content||t("branches.emptyMessage"));main.appendChild(preview);
   main.addEventListener("click",()=>{void selectBranchNode(item.item_id,item.branch_head_id)});row.appendChild(main);
   const children=logicalChildren(item.item_id);
   if(children.length){
-    const toggle=document.createElement("button");toggle.type="button";toggle.className="branch-toggle";toggle.textContent=expandedNodes.has(item.item_id)?"⌄":"›";toggle.setAttribute("aria-expanded",String(expandedNodes.has(item.item_id)));toggle.setAttribute("aria-label",expandedNodes.has(item.item_id)?"Collapse branch":"Expand branch");toggle.title=toggle.getAttribute("aria-label");
+    const toggle=document.createElement("button");toggle.type="button";toggle.className="branch-toggle";toggle.textContent=expandedNodes.has(item.item_id)?"⌄":"›";toggle.setAttribute("aria-expanded",String(expandedNodes.has(item.item_id)));setI18nAttribute(toggle,"aria-label",expandedNodes.has(item.item_id)?"branches.collapse":"branches.expand");setI18nAttribute(toggle,"title",expandedNodes.has(item.item_id)?"branches.collapse":"branches.expand");
     toggle.addEventListener("click",event=>{event.stopPropagation();if(expandedNodes.has(item.item_id))expandedNodes.delete(item.item_id);else expandedNodes.add(item.item_id);renderBranchPanel()});row.appendChild(toggle);
   }
   if(depth===0){
-    const deleted=document.createElement("button");deleted.type="button";deleted.className="branch-delete";const branchId=branchKey(item);const isDeleted=isRootDeleted(branchId);deleted.textContent=isDeleted?"↩":"×";deleted.title=isDeleted?"Restore branch":"Hide branch";deleted.setAttribute("aria-label",deleted.title);deleted.addEventListener("click",event=>{event.stopPropagation();setRootDeleted(branchId,!isDeleted)});row.appendChild(deleted);
+    const deleted=document.createElement("button");deleted.type="button";deleted.className="branch-delete";const branchId=branchKey(item);const isDeleted=isRootDeleted(branchId);deleted.textContent=isDeleted?"↩":"×";setI18nAttribute(deleted,"title",isDeleted?"branches.restore":"branches.hide");setI18nAttribute(deleted,"aria-label",isDeleted?"branches.restore":"branches.hide");deleted.addEventListener("click",event=>{event.stopPropagation();setRootDeleted(branchId,!isDeleted)});row.appendChild(deleted);
   }
   node.appendChild(row);
   if(expandedNodes.has(item.item_id)&&children.length){
@@ -787,13 +867,13 @@ function createUserEntry(item){
   const siblings=branchSiblings(item);const index=siblings.findIndex(sibling=>sibling.item_id===item.item_id);
   if(siblings.length>1){
     const nav=document.createElement("span");nav.className="branch-nav";
-    const previous=document.createElement("button");previous.type="button";previous.textContent="←";previous.title="Previous branch";previous.setAttribute("aria-label","Previous branch");previous.disabled=index<=0;previous.addEventListener("click",()=>selectBranchNode(siblings[index-1].item_id));nav.appendChild(previous);
+    const previous=document.createElement("button");previous.type="button";previous.textContent="←";setI18nAttribute(previous,"title","message.previousBranch");setI18nAttribute(previous,"aria-label","message.previousBranch");previous.disabled=index<=0;previous.addEventListener("click",()=>selectBranchNode(siblings[index-1].item_id));nav.appendChild(previous);
     const count=document.createElement("span");count.className="branch-count";count.textContent=(index+1)+" / "+siblings.length;nav.appendChild(count);
-    const next=document.createElement("button");next.type="button";next.textContent="→";next.title="Next branch";next.setAttribute("aria-label","Next branch");next.disabled=index<0||index>=siblings.length-1;next.addEventListener("click",()=>selectBranchNode(siblings[index+1].item_id));nav.appendChild(next);actions.appendChild(nav);
+    const next=document.createElement("button");next.type="button";next.textContent="→";setI18nAttribute(next,"title","message.nextBranch");setI18nAttribute(next,"aria-label","message.nextBranch");next.disabled=index<0||index>=siblings.length-1;next.addEventListener("click",()=>selectBranchNode(siblings[index+1].item_id));nav.appendChild(next);actions.appendChild(nav);
   }
   if(item.item_type==="input"){
-    const regenerate=document.createElement("button");regenerate.type="button";regenerate.textContent="↻";regenerate.title="Regenerate response";regenerate.setAttribute("aria-label","Regenerate response");regenerate.addEventListener("click",()=>regenerateBranch(item));actions.appendChild(regenerate);
-    const edit=document.createElement("button");edit.type="button";edit.textContent="Edit";edit.title="Edit message";edit.addEventListener("click",()=>editMessage(item,wrapper,content,actions));actions.appendChild(edit);
+    const regenerate=document.createElement("button");regenerate.type="button";regenerate.textContent="↻";setI18nAttribute(regenerate,"title","message.regenerate");setI18nAttribute(regenerate,"aria-label","message.regenerate");regenerate.addEventListener("click",()=>regenerateBranch(item));actions.appendChild(regenerate);
+    const edit=document.createElement("button");edit.type="button";setI18nText(edit,"message.edit");setI18nAttribute(edit,"title","message.edit");edit.addEventListener("click",()=>editMessage(item,wrapper,content,actions));actions.appendChild(edit);
   }
   wrapper.appendChild(actions);return wrapper;
 }
@@ -810,7 +890,7 @@ function renderMarkdown(container,content){
 
 function addMessage(cls,content,role,item=null){
   const div=document.createElement("div");div.className="msg "+cls;
-  if(role){const r=document.createElement("div");r.className="role";r.textContent=role;div.appendChild(r)}
+  if(role){const r=document.createElement("div");r.className="role";if(role==="Assistant")setI18nText(r,"message.assistant");else r.textContent=role;div.appendChild(r)}
   if(item)div.appendChild(createMessageMeta(item));
   const c=document.createElement("div");c.className="message-content";if(cls==="assistant")renderMarkdown(c,content);else c.textContent=content;div.appendChild(c);messagesEl.appendChild(div);return div;
 }
@@ -820,7 +900,7 @@ function stripOutputMarkers(content){
 }
 
 function addReasoning(content){
-  const details=document.createElement("details");details.className="msg reasoning";details.open=true;const summary=document.createElement("summary");summary.textContent="Reasoning";details.appendChild(summary);const c=document.createElement("div");c.className="message-content";renderMarkdown(c,content);details.appendChild(c);messagesEl.appendChild(details);return details;
+  const details=document.createElement("details");details.className="msg reasoning";details.open=true;const summary=document.createElement("summary");setI18nText(summary,"message.reasoning");details.appendChild(summary);const c=document.createElement("div");c.className="message-content";renderMarkdown(c,content);details.appendChild(c);messagesEl.appendChild(details);return details;
 }
 
 function scheduleCodeHighlight(codeEl){
@@ -836,14 +916,14 @@ function createPrettyBlock(content,lang){
 }
 
 function showCodeActSpinner(){
-  if(codeactSpinnerEl)return;codeactSpinnerEl=document.createElement("div");codeactSpinnerEl.className="typing";codeactSpinnerEl.innerHTML='<span class="codeact-spinner"></span>CodeAct session<span>.</span><span>.</span><span>.</span>';messagesEl.appendChild(codeactSpinnerEl);scrollToBottom();
+  if(codeactSpinnerEl)return;codeactSpinnerEl=document.createElement("div");codeactSpinnerEl.className="typing";codeactSpinnerEl.innerHTML='<span class="codeact-spinner"></span><span class="codeact-label"></span><span>.</span><span>.</span><span>.</span>';setI18nText(codeactSpinnerEl.querySelector(".codeact-label"),"message.codeAct");messagesEl.appendChild(codeactSpinnerEl);scrollToBottom();
 }
 
 function hideCodeActSpinner(){if(codeactSpinnerEl){codeactSpinnerEl.remove();codeactSpinnerEl=null}}
 
 function addCodeActCall(args){
   let code;if(typeof args==="string"){try{const parsed=JSON.parse(args);code=parsed.code||args}catch{code=args}}else code=args&&typeof args.code==="string"?args.code:JSON.stringify(args,null,2);
-  showCodeActSpinner();const details=document.createElement("details");details.className="msg codeact";details.open=true;const summary=document.createElement("summary");summary.textContent="CodeAct session";details.appendChild(summary);details.appendChild(createPrettyBlock(code,"python"));messagesEl.appendChild(details);codeactActiveEl=details;lastWasCodeAct=true;scrollToBottom();
+  showCodeActSpinner();const details=document.createElement("details");details.className="msg codeact";details.open=true;const summary=document.createElement("summary");setI18nText(summary,"message.codeAct");details.appendChild(summary);details.appendChild(createPrettyBlock(code,"python"));messagesEl.appendChild(details);codeactActiveEl=details;lastWasCodeAct=true;scrollToBottom();
 }
 
 function decodePartialCodeArg(raw){
@@ -868,37 +948,37 @@ function updateCodeActPreview(data){
 }
 
 function finishCodeActSession(content){
-  hideCodeActSpinner();if(codeactActiveEl){const spinner=codeactActiveEl.querySelector(".codeact-spinner");if(spinner)spinner.remove();const summary=codeactActiveEl.querySelector("summary");if(summary)summary.textContent="CodeAct session";codeactActiveEl=null}
-  if(content){const details=document.createElement("details");details.className="msg tool-result";details.open=true;const summary=document.createElement("summary");summary.textContent="Result";details.appendChild(summary);details.appendChild(createPrettyBlock(content,null));messagesEl.appendChild(details);scrollToBottom()}
+  hideCodeActSpinner();if(codeactActiveEl){const spinner=codeactActiveEl.querySelector(".codeact-spinner");if(spinner)spinner.remove();const summary=codeactActiveEl.querySelector("summary");if(summary)setI18nText(summary,"message.codeAct");codeactActiveEl=null}
+  if(content){const details=document.createElement("details");details.className="msg tool-result";details.open=true;const summary=document.createElement("summary");setI18nText(summary,"message.result");details.appendChild(summary);details.appendChild(createPrettyBlock(content,null));messagesEl.appendChild(details);scrollToBottom()}
   codeactStreamArgs="";codeactStreamToolId=null;lastWasCodeAct=false;
 }
 
 function addToolCall(name,args){
   if(name==="execute"){addCodeActCall(args);return}const argsString=typeof args==="string"?args:JSON.stringify(args,null,2);const hasArgs=typeof args==="string"?args.length>0:Object.keys(args||{}).length>0;
-  if(!hasArgs||!argsString.includes("\n")){const div=document.createElement("div");div.className="msg tool-call";const label=document.createElement("div");label.textContent="Tool: "+name;div.appendChild(label);if(hasArgs)div.appendChild(createPrettyBlock(argsString,"json"));messagesEl.appendChild(div);return}
-  const details=document.createElement("details");details.className="msg tool-call";details.open=true;const summary=document.createElement("summary");summary.textContent="Tool: "+name;details.appendChild(summary);details.appendChild(createPrettyBlock(argsString,"json"));messagesEl.appendChild(details);
+  if(!hasArgs||!argsString.includes("\n")){const div=document.createElement("div");div.className="msg tool-call";const label=document.createElement("div");setI18nText(label,"message.tool",{name});div.appendChild(label);if(hasArgs)div.appendChild(createPrettyBlock(argsString,"json"));messagesEl.appendChild(div);return}
+  const details=document.createElement("details");details.className="msg tool-call";details.open=true;const summary=document.createElement("summary");setI18nText(summary,"message.tool",{name});details.appendChild(summary);details.appendChild(createPrettyBlock(argsString,"json"));messagesEl.appendChild(details);
 }
 
 function addToolResult(content){
   const value=content===undefined||content===null?"":typeof content==="string"?content:JSON.stringify(content,null,2);
-  if(!value.includes("\n")){const div=document.createElement("div");div.className="msg tool-result";const label=document.createElement("div");label.textContent="Tool Result";div.appendChild(label);div.appendChild(createPrettyBlock(value,null));messagesEl.appendChild(div);return}
-  const details=document.createElement("details");details.className="msg tool-result";details.open=true;const summary=document.createElement("summary");summary.textContent="Tool Result";details.appendChild(summary);let lang=null;try{JSON.parse(value);lang="json"}catch{}details.appendChild(createPrettyBlock(value,lang));messagesEl.appendChild(details);
+  if(!value.includes("\n")){const div=document.createElement("div");div.className="msg tool-result";const label=document.createElement("div");setI18nText(label,"message.toolResult");div.appendChild(label);div.appendChild(createPrettyBlock(value,null));messagesEl.appendChild(div);return}
+  const details=document.createElement("details");details.className="msg tool-result";details.open=true;const summary=document.createElement("summary");setI18nText(summary,"message.toolResult");details.appendChild(summary);let lang=null;try{JSON.parse(value);lang="json"}catch{}details.appendChild(createPrettyBlock(value,lang));messagesEl.appendChild(details);
 }
 
 function addImageOutput(content){return addAttachmentMessage(content,"image")}
 function addFileOutput(content){return addAttachmentMessage(content,"file")}
 
-function addPlaceholder(type){const div=document.createElement("div");div.className="msg assistant";const placeholder=document.createElement("div");placeholder.className="placeholder";placeholder.textContent="["+type+"]";div.appendChild(placeholder);messagesEl.appendChild(div)}
+function addPlaceholder(type){const div=document.createElement("div");div.className="msg assistant";const placeholder=document.createElement("div");placeholder.className="placeholder";const key=type==="image_input"?"message.imageInput":type==="file_input"?"message.fileInput":"message.output";setI18nText(placeholder,key);div.appendChild(placeholder);messagesEl.appendChild(div)}
 function addError(text){addMessage("error",text,null)}
 
 function showTyping(){
-  if(typingIndicator)return;typingIndicator=document.createElement("div");typingIndicator.className="typing";typingIndicator.innerHTML="Thinking<span>.</span><span>.</span><span>.</span>";messagesEl.appendChild(typingIndicator);scrollToBottom();
+  if(typingIndicator)return;typingIndicator=document.createElement("div");typingIndicator.className="typing";typingIndicator.innerHTML='<span class="typing-label"></span><span>.</span><span>.</span><span>.</span>';setI18nText(typingIndicator.querySelector(".typing-label"),"message.thinking");messagesEl.appendChild(typingIndicator);scrollToBottom();
 }
 
 function hideTyping(){if(typingIndicator){typingIndicator.remove();typingIndicator=null}}
 
 function setProcessing(on,streamId=null){
-  activeStreamId=on?streamId:null;sendBtn.textContent=on?"Cancel":"Send";sendBtn.classList.toggle("cancel",on);updateSendButton();setUiStatus(on?"Processing...":"Ready");if(!on)hideTyping();syncActionState();
+  activeStreamId=on?streamId:null;setI18nText(sendBtn,on?"chat.cancel":"chat.send");sendBtn.classList.toggle("cancel",on);updateSendButton();setUiStatus(on?"processing":"ready");if(!on)hideTyping();syncActionState();
 }
 
 function syncActionState(){
@@ -940,8 +1020,8 @@ function handleStreamChunk(data){
   hideTyping();const chunkType=data.item_type||"output";
   if(chunkType==="tool_call"&&updateCodeActPreview(data))return;
   const streamId=data.stream_id||chunkType;let stream=activeStreams[streamId];
-  setUiStatus("Streaming...");
-  if(!stream){let element;if(chunkType==="reasoning")element=addReasoning("");else if(chunkType==="tool_call"){element=document.createElement("details");element.className="msg tool-call";element.open=true;const summary=document.createElement("summary");summary.textContent="Tool: ...";element.appendChild(summary);const content=document.createElement("div");element.appendChild(content);messagesEl.appendChild(element)}else element=addMessage("assistant","","Assistant");stream={element,item_type:chunkType,previous_item_id:data.previous_item_id,tool_call_id:data.meta?.tool_call_id||null,text:""};activeStreams[streamId]=stream}
+  setUiStatus("streaming");
+  if(!stream){let element;if(chunkType==="reasoning")element=addReasoning("");else if(chunkType==="tool_call"){element=document.createElement("details");element.className="msg tool-call";element.open=true;const summary=document.createElement("summary");setI18nText(summary,"message.toolPlaceholder");element.appendChild(summary);const content=document.createElement("div");element.appendChild(content);messagesEl.appendChild(element)}else element=addMessage("assistant","","Assistant");stream={element,item_type:chunkType,previous_item_id:data.previous_item_id,tool_call_id:data.meta?.tool_call_id||null,text:""};activeStreams[streamId]=stream}
   if(chunkType==="tool_call"&&data.meta?.tool_call_id)stream.tool_call_id=data.meta.tool_call_id;stream.text+=(data.content||"");const contentEl=stream.element.querySelector("div:last-child")||stream.element;
   if(chunkType==="output"||chunkType==="reasoning")renderMarkdown(contentEl,stripOutputMarkers(stream.text));else contentEl.textContent=stream.text;
   scrollToBottom();
@@ -949,23 +1029,23 @@ function handleStreamChunk(data){
 
 async function submitMessage(text,parentId,branch=null,attachments=[]){
   if(!authToken){showAuth();return false}
-  if(!eventsReady){setUiStatus("Connecting...");return false}
+  if(!eventsReady){setUiStatus("connecting");return false}
   if(activeStreamId)return false;
   const previousItemId=parentId===null||parentId===undefined?null:parentId;
-  pendingBranch=branch;pendingMessage={parentId:previousItemId,content:text,attachments};pendingRoot=!branch&&previousItemId===null;pendingRootContent=pendingRoot?text:"";setUiStatus("Sending...");sendBtn.disabled=true;
+  pendingBranch=branch;pendingMessage={parentId:previousItemId,content:text,attachments};pendingRoot=!branch&&previousItemId===null;pendingRootContent=pendingRoot?text:"";setUiStatus("sending");sendBtn.disabled=true;
   try{
     const {response,data,unauthorized}=await authJson(serverUrl("/api/messages?stream=1"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({content:text,attachments:attachments.map(attachmentPayload),previous_item_id:previousItemId,timezone:browserTimezone()})});
     if(unauthorized){setProcessing(false);clearPendingMessage();return false}
-    if(!response.ok){setProcessing(false);addError(data.error||data.detail||"Message was rejected");clearPendingMessage();return false}
+    if(!response.ok){setProcessing(false);addError(data.error||data.detail||t("error.messageRejected"));clearPendingMessage();return false}
     setProcessing(true,data.stream_id);showTyping();return true;
-  }catch(error){addError("Network error: "+error.message);clearPendingMessage();setProcessing(false);return false}
+  }catch(error){addError(t("error.network",{message:error.message}));clearPendingMessage();setProcessing(false);return false}
 }
 
 async function send(){
-  if(!eventsReady){setUiStatus("Connecting...");return}
+  if(!eventsReady){setUiStatus("connecting");return}
   const text=inputEl.value.trim();if(activeStreamId)return;
-  const uploading=pendingAttachments.some(attachment=>attachment.status==="uploading");if(uploading){setUiStatus("Wait for uploads to finish");return}
-  const failed=pendingAttachments.some(attachment=>attachment.status!=="ready");if(failed){setUiStatus("Remove failed uploads");return}
+  const uploading=pendingAttachments.some(attachment=>attachment.status==="uploading");if(uploading){setUiStatus("waitUploads");return}
+  const failed=pendingAttachments.some(attachment=>attachment.status!=="ready");if(failed){setUiStatus("removeFailedUploads");return}
   const attachments=pendingAttachments.filter(attachment=>attachment.status==="ready"&&(attachment.file_id||attachment.external&&attachment.url));
   if(!text&&!attachments.length)return;
   const fallbackParentId=latestGlobalItemId();
@@ -978,7 +1058,7 @@ async function cancelProcessing(){
   setProcessing(false);
   try{
     await authJson(serverUrl("/api/messages/")+streamId,{method:"DELETE"});
-  }catch(error){addError("Cancel request failed: "+error.message)}
+  }catch(error){addError(t("error.cancelRequest",{message:error.message}))}
 }
 
 /** @param {DialogItem} item */
@@ -997,8 +1077,8 @@ function editMessage(item,wrapper,content,actions){
   if(activeStreamId||wrapper.dataset.editing==="true")return;wrapper.dataset.editing="true";content.replaceChildren();
   const textarea=document.createElement("textarea");textarea.className="message-edit";textarea.value=item.content;content.appendChild(textarea);
   actions.replaceChildren();const editActions=document.createElement("div");editActions.className="edit-actions";
-  const cancel=document.createElement("button");cancel.type="button";cancel.textContent="Cancel";cancel.addEventListener("click",()=>renderHistory());editActions.appendChild(cancel);
-  const save=document.createElement("button");save.type="button";save.className="primary";save.textContent="Save";save.addEventListener("click",async()=>{const text=textarea.value.trim();if(!text){textarea.focus();return}save.disabled=true;cancel.disabled=true;const sent=await submitMessage(text,item.previous_item_id,{parentId:item.previous_item_id,content:text});if(!sent){save.disabled=false;cancel.disabled=false}else closeBranchPanel()});editActions.appendChild(save);content.appendChild(editActions);textarea.focus();textarea.setSelectionRange(textarea.value.length,textarea.value.length);
+  const cancel=document.createElement("button");cancel.type="button";setI18nText(cancel,"common.cancel");cancel.addEventListener("click",()=>renderHistory());editActions.appendChild(cancel);
+  const save=document.createElement("button");save.type="button";save.className="primary";setI18nText(save,"common.save");save.addEventListener("click",async()=>{const text=textarea.value.trim();if(!text){textarea.focus();return}save.disabled=true;cancel.disabled=true;const sent=await submitMessage(text,item.previous_item_id,{parentId:item.previous_item_id,content:text});if(!sent){save.disabled=false;cancel.disabled=false}else closeBranchPanel()});editActions.appendChild(save);content.appendChild(editActions);textarea.focus();textarea.setSelectionRange(textarea.value.length,textarea.value.length);
   textarea.addEventListener("keydown",event=>{if((event.ctrlKey||event.metaKey)&&event.key==="Enter"){event.preventDefault();save.click()}});
 }
 
@@ -1013,10 +1093,10 @@ async function handleServerEvent(data){
   if(data.type==="stream_chunk")handleStreamChunk(data);
   else if(data.type==="dialog_item")await applyDialogItem(data);
   else if(data.type==="typing"){
-    if(data.active){showTyping();setUiStatus("Processing...")}else hideTyping();
+    if(data.active){showTyping();setUiStatus("processing")}else hideTyping();
   }
   else if(data.type==="message_done"){if(!activeStreamId||data.stream_id===activeStreamId){setProcessing(false);await loadHistory()}}
-  else if(data.type==="error")addError(data.content||data.error||"Server error");
+  else if(data.type==="error")addError(data.content||data.error||t("error.server"));
 }
 
 function historyRequestUrl(branchHeadId=null){
@@ -1030,7 +1110,7 @@ async function loadHistory(preferredHeadId=null){
   const requestedHeadId=preferredHeadId??selectedHeadId;
   const {response,data,unauthorized}=await authJson(historyRequestUrl(requestedHeadId));
   if(unauthorized)return
-  if(!response.ok)throw new Error("History request failed");
+  if(!response.ok)throw new Error(t("error.historyRequest"));
   const previousSelected=selectedHeadId;
   historyHeads=Array.isArray(data.heads)?data.heads.filter(head=>head&&head.item_id!==null&&head.item_id!==undefined):[];
   const incomingItems=Array.isArray(data.items)?data.items:[];
@@ -1101,7 +1181,7 @@ async function loadCurrentUser(){
   if(unauthorized||!response.ok){if(!unauthorized){clearAuth();showAuth()}return false}
   applyUser(data);
   startStatusPolling();
-  try{await loadHistory()}catch(error){addError("Could not load history: "+error.message)}
+  try{await loadHistory()}catch(error){addError(t("error.couldNotLoadHistory",{message:error.message}))}
   startEvents();
   return true;
 }
@@ -1115,7 +1195,7 @@ function adjustInputHeight(){inputEl.style.height="auto";const maxHeight=window.
 function setupPasswordToggle(button){
   const input=document.getElementById(button.dataset.passwordTarget);
   if(!input)return
-  button.addEventListener("click",()=>{const visible=input.type==="text";input.type=visible?"password":"text";button.textContent=visible?"Show":"Hide";button.setAttribute("aria-pressed",String(!visible))});
+  button.addEventListener("click",()=>{const visible=input.type==="text";input.type=visible?"password":"text";button.dataset.visible=String(!visible);setI18nText(button,visible?"auth.show":"auth.hide");button.setAttribute("aria-pressed",String(!visible))});
 }
 
 function closeAttachmentOverlay(){attachmentOverlay.classList.add("hidden")}
@@ -1123,36 +1203,63 @@ function openAttachmentOverlay(){if(!authToken){showAuth();return}uploadFileChoi
 function closeLinkOverlay(){linkOverlay.classList.add("hidden");linkError.textContent=""}
 function openLinkOverlay(){if(!authToken){showAuth();return}closeAttachmentOverlay();linkForm.reset();linkError.textContent="";linkOverlay.classList.remove("hidden");linkInput.focus()}
 function chooseUpload(){closeAttachmentOverlay();if(!fileUploadAllowed){showUploadBlocked();return}fileInput.click()}
+function closeUsernameOverlay(){usernameOverlay.classList.add("hidden")}
+function openUsernameOverlay(){if(!authToken){showAuth();return}setHeaderMenuOpen(false);usernameError.textContent="";usernameInput.value=currentUser?.username||"";usernameOverlay.classList.remove("hidden");usernameInput.focus();usernameInput.select()}
+async function submitUsername(event){
+  event.preventDefault();usernameError.textContent="";
+  const validation=validateUsername(usernameInput.value);
+  if(validation.errorKey){usernameError.textContent=t(validation.errorKey);return}
+  usernameInput.value=validation.value;
+  try{
+    const {response,data,unauthorized}=await authJson(serverUrl("/api/username"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:validation.value})});
+    if(unauthorized)return;
+    if(!response.ok){usernameError.textContent=localizedAuthError(data,"error.usernameChange");return}
+    currentUser={...currentUser,username:data.username||validation.value};userLabel.textContent=currentUser.username;closeUsernameOverlay();
+  }catch(error){usernameError.textContent=t("error.network",{message:error.message})}
+}
 
 async function registerOrLogin(event){
-  event.preventDefault();const username=authUsername.value.trim();const password=authPassword.value;authError.textContent="";
-  if(!username||!password){authError.textContent="Username and password are required";return}
-  if(authMode==="register"&&password!==authConfirm.value){authError.textContent="Passwords do not match";return}
+  event.preventDefault();let username=authUsername.value.trim();const password=authPassword.value;authError.textContent="";
+  if(!password){authError.textContent=t("error.credentialsRequired");return}
+  if(authMode==="register"){const validation=validateUsername(username);if(validation.errorKey){authError.textContent=t(validation.errorKey);return}username=validation.value}else if(!username){authError.textContent=t("error.credentialsRequired");return}
+  if(authMode==="register"&&password!==authConfirm.value){authError.textContent=t("error.passwordMismatch");return}
   authSubmit.disabled=true;
   try{
     if(authMode==="register"){
-      const response=await fetch(serverUrl("/api/register"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:inviteToken,username,password})});const data=await response.json().catch(()=>({}));if(!response.ok){authError.textContent=data.detail||"Registration failed";return}history.replaceState({},"",location.pathname);inviteToken=null;authMode="login";setAuthMode("login");authUsername.value=username;authPassword.value="";authError.textContent="Account created. Sign in with your new password.";return;
+      const response=await fetch(serverUrl("/api/register"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:inviteToken,username,password})});const data=await response.json().catch(()=>({}));if(!response.ok){authError.textContent=localizedAuthError(data,"error.registration");return}history.replaceState({},"",location.pathname);inviteToken=null;authMode="login";setAuthMode("login");authUsername.value=username;authPassword.value="";authError.textContent=t("error.accountCreated");return;
     }
-    const response=await fetch(serverUrl("/api/login"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});const data=await response.json().catch(()=>({}));if(!response.ok){authError.textContent=data.detail||"Sign in failed";return}authToken=data.access_token;localStorage.setItem("commamatrix_auth_token",authToken);await loadCurrentUser();authForm.reset();
-  }catch(error){console.error("[CommaMatrix UI] auth request failed",error);authError.textContent="Network error: "+error.message}finally{authSubmit.disabled=false}
+    const response=await fetch(serverUrl("/api/login"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});const data=await response.json().catch(()=>({}));if(!response.ok){authError.textContent=data.detail||t("error.signIn");return}authToken=data.access_token;localStorage.setItem("commamatrix_auth_token",authToken);await loadCurrentUser();authForm.reset();
+  }catch(error){console.error("[CommaMatrix UI] auth request failed",error);authError.textContent=t("error.network",{message:error.message})}finally{authSubmit.disabled=false}
 }
 
 document.querySelectorAll(".password-toggle").forEach(setupPasswordToggle);
 headerMenuBtn.addEventListener("click",()=>setHeaderMenuOpen(!document.body.classList.contains("header-menu-open")));
 serverStatusBtn.addEventListener("click",()=>{const visible=serverStatusPanel.classList.contains("visible");if(!visible&&!statusPanelOverride&&!serverStatusMessages.length)return;setStatusPanelVisible(!visible)});
+usernameBtn.addEventListener("click",openUsernameOverlay);
+document.getElementById("username-cancel").addEventListener("click",closeUsernameOverlay);
+usernameForm.addEventListener("submit",event=>{void submitUsername(event)});
 passwordBtn.addEventListener("click",()=>{setHeaderMenuOpen(false);passwordError.textContent="";passwordForm.reset();passwordOverlay.classList.remove("hidden")});
 document.getElementById("password-cancel").addEventListener("click",()=>passwordOverlay.classList.add("hidden"));
-passwordForm.addEventListener("submit",async event=>{event.preventDefault();passwordError.textContent="";const next=document.getElementById("new-password").value;if(next!==document.getElementById("new-password-confirm").value){passwordError.textContent="Passwords do not match";return}try{const {response,data,unauthorized}=await authJson(serverUrl("/api/password"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({old_password:document.getElementById("old-password").value,new_password:next})});if(unauthorized)return;if(!response.ok){passwordError.textContent=data.detail||"Password change failed";return}passwordOverlay.classList.add("hidden")}catch(error){passwordError.textContent="Network error: "+error.message}});
-inviteBtn.addEventListener("click",async()=>{setHeaderMenuOpen(false);const {response,data,unauthorized}=await authJson(serverUrl("/api/invite"),{method:"POST"});if(unauthorized)return;if(!response.ok){addError(data.detail||"Could not create invitation");return}inviteLink=data.url||"";inviteOverlay.classList.remove("hidden")});
-document.getElementById("invite-copy").addEventListener("click",async function(){await navigator.clipboard.writeText(inviteLink);this.textContent="Copied";setTimeout(()=>{this.textContent="Copy link"},1200)});
+passwordForm.addEventListener("submit",async event=>{event.preventDefault();passwordError.textContent="";const next=document.getElementById("new-password").value;if(next!==document.getElementById("new-password-confirm").value){passwordError.textContent=t("error.passwordMismatch");return}try{const {response,data,unauthorized}=await authJson(serverUrl("/api/password"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({old_password:document.getElementById("old-password").value,new_password:next})});if(unauthorized)return;if(!response.ok){passwordError.textContent=data.detail||t("error.passwordChange");return}passwordOverlay.classList.add("hidden")}catch(error){passwordError.textContent=t("error.network",{message:error.message})}});
+inviteBtn.addEventListener("click",async()=>{setHeaderMenuOpen(false);const {response,data,unauthorized}=await authJson(serverUrl("/api/invite"),{method:"POST"});if(unauthorized)return;if(!response.ok){addError(data.detail||t("error.invitation"));return}inviteLink=data.url||"";inviteOverlay.classList.remove("hidden")});
+document.getElementById("invite-copy").addEventListener("click",async function(){await navigator.clipboard.writeText(inviteLink);setI18nText(this,"invite.copied");setTimeout(()=>setI18nText(this,"invite.copy"),1200)});
 document.getElementById("invite-close").addEventListener("click",()=>inviteOverlay.classList.add("hidden"));
 attachmentCancel.addEventListener("click",closeAttachmentOverlay);
 insertLinkChoice.addEventListener("click",openLinkOverlay);
 uploadFileChoice.addEventListener("click",chooseUpload);
 linkCancel.addEventListener("click",closeLinkOverlay);
-linkForm.addEventListener("submit",event=>{event.preventDefault();const url=httpUrl(linkInput.value);if(!url){linkError.textContent="Enter a valid HTTP or HTTPS URL";return}addExternalLink(url);closeLinkOverlay()});
-logoutBtn.addEventListener("click",logout);authForm.addEventListener("submit",event=>{void registerOrLogin(event)});sendBtn.addEventListener("click",()=>{if(activeStreamId)void cancelProcessing();else void send()});attachBtn.addEventListener("click",openAttachmentOverlay);fileInput.addEventListener("change",event=>{uploadFiles(event.target.files);fileInput.value=""});inputArea.addEventListener("drop",handleDrop);window.addEventListener("dragenter",handlePageDragEnter);window.addEventListener("dragover",handlePageDragOver);window.addEventListener("dragleave",handlePageDragLeave);window.addEventListener("drop",handlePageDrop);window.addEventListener("dragend",resetPageDrag);newBranchBtn.addEventListener("click",newBranch);activeBranchesBtn.addEventListener("click",()=>setBranchView(false));deletedBranchesBtn.addEventListener("click",()=>setBranchView(true));branchOpenBtn.addEventListener("click",openBranchPanel);branchCloseBtn.addEventListener("click",closeBranchPanel);branchBackdrop.addEventListener("click",closeBranchPanel);
+linkForm.addEventListener("submit",event=>{event.preventDefault();const url=httpUrl(linkInput.value);if(!url){linkError.textContent=t("error.invalidUrl");return}addExternalLink(url);closeLinkOverlay()});
+languageBtn.addEventListener("click",()=>setLocale(locale==="ru"?"en":"ru"));logoutBtn.addEventListener("click",logout);authForm.addEventListener("submit",event=>{void registerOrLogin(event)});sendBtn.addEventListener("click",()=>{if(activeStreamId)void cancelProcessing();else void send()});attachBtn.addEventListener("click",openAttachmentOverlay);fileInput.addEventListener("change",event=>{uploadFiles(event.target.files);fileInput.value=""});inputArea.addEventListener("drop",handleDrop);window.addEventListener("dragenter",handlePageDragEnter);window.addEventListener("dragover",handlePageDragOver);window.addEventListener("dragleave",handlePageDragLeave);window.addEventListener("drop",handlePageDrop);window.addEventListener("dragend",resetPageDrag);newBranchBtn.addEventListener("click",newBranch);activeBranchesBtn.addEventListener("click",()=>setBranchView(false));deletedBranchesBtn.addEventListener("click",()=>setBranchView(true));branchOpenBtn.addEventListener("click",openBranchPanel);branchCloseBtn.addEventListener("click",closeBranchPanel);branchBackdrop.addEventListener("click",closeBranchPanel);
 inputEl.addEventListener("keydown",event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();void send()}});inputEl.addEventListener("input",adjustInputHeight);window.addEventListener("resize",adjustInputHeight);
 
-setAuthMode(authMode);renderBranchPanel();if(inviteToken){clearAuth();showAuth()}else void loadCurrentUser();
+applyTranslations();updateLanguageButton();setAuthMode(authMode);renderBranchPanel();if(inviteToken){clearAuth();showAuth()}else void loadCurrentUser();
 })();
+
+
+
+
+
+
+
+
+
