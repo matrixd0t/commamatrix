@@ -7,7 +7,7 @@
 <base href="/commamatrix/ui/">
 <link rel="icon" type="image/svg+xml" href="logo.svg">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-<link rel="stylesheet" href="styles.css?v=15">
+<link rel="stylesheet" href="styles.css?v=16">
 </head>
 <body>
 <div id="app-shell">
@@ -54,6 +54,7 @@
     </aside>
     <main id="chat-column">
       <div id="messages"></div>
+      <button id="scroll-bottom-btn" type="button" hidden data-i18n-title="message.scrollToBottom" data-i18n-aria-label="message.scrollToBottom">&#8595;</button>
       <div id="attachment-previews" aria-live="polite"></div>
       <div id="input-area">
         <label class="sr-only" for="input">Message</label>
@@ -159,7 +160,9 @@
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" async></script>
-<script src="app.js?v=38" defer></script>
+<script src="app.js?v=39" defer></script>
 </body>
 </html>
+
+
 

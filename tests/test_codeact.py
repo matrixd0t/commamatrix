@@ -88,6 +88,24 @@ class _FakeAgent:
         return None, SimpleNamespace(content=f"echo: {tool_call.tool_args['msg']}")
 
 
+class _FakeProcess:
+    def __init__(self):
+        self.stderr = asyncio.StreamReader()
+        self.returncode = None
+        self.kill_called = False
+        self.terminate_called = False
+
+    def kill(self):
+        self.kill_called = True
+        self.returncode = -9
+
+    def terminate(self):
+        self.terminate_called = True
+
+    async def wait(self):
+        return self.returncode
+
+
 def _backend_context():
     agent = _FakeAgent()
     return SimpleNamespace(run=SimpleNamespace(agent=agent)), agent
@@ -341,6 +359,50 @@ async def test_subprocess_backend_enforces_execution_timeout():
 
 
 @pytest.mark.asyncio
+async def test_subprocess_backend_kills_worker_on_timeout(monkeypatch):
+    process = _FakeProcess()
+
+    async def create_process(*_args, **_kwargs):
+        return process
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create_process)
+
+    ctx, _ = _backend_context()
+    result = await SubprocessBackend(execution_timeout=0.01, shutdown_timeout=0.01).execute(
+        "await asyncio.sleep(30)",
+        ctx,
+    )
+
+    assert result.returncode == 124
+    assert process.kill_called
+    assert not process.terminate_called
+
+
+@pytest.mark.asyncio
+async def test_subprocess_backend_kills_worker_on_cancellation(monkeypatch):
+    process = _FakeProcess()
+    process_created = asyncio.Event()
+
+    async def create_process(*_args, **_kwargs):
+        process_created.set()
+        return process
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create_process)
+
+    ctx, _ = _backend_context()
+    backend = SubprocessBackend(execution_timeout=30, shutdown_timeout=0.01)
+    task = asyncio.create_task(backend.execute("await asyncio.sleep(30)", ctx))
+    await asyncio.wait_for(process_created.wait(), timeout=1)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=1)
+
+    assert process.kill_called
+    assert not process.terminate_called
+
+
+@pytest.mark.asyncio
 async def test_subprocess_backend_cancellation_cleans_up_worker():
     ctx, _ = _backend_context()
     backend = SubprocessBackend(execution_timeout=30, shutdown_timeout=1)
@@ -359,3 +421,4 @@ def test_subprocess_backend_truncates_utf8_by_bytes():
 
     assert result.endswith("\n...(output truncated)")
     assert len(prefix.encode("utf-8")) <= 5
+

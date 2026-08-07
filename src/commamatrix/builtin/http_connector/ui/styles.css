@@ -1,6 +1,11 @@
 /* builtin/http_connector/ui/styles.css */
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#0d1117;--surface:#161b22;--surface-raised:#1c2128;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--user-bg:#1f2937;--assistant-bg:#161b22;--error:#f85149;--success:#3fb950;--radius:8px;--input-max-height:33vh}
+*{scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:var(--border);border:3px solid transparent;border-radius:999px;background-clip:padding-box}
+*::-webkit-scrollbar-thumb:hover{background:var(--accent);background-clip:padding-box}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden}
 button,input,textarea{font:inherit}
 button{cursor:pointer}
@@ -60,8 +65,12 @@ body.header-menu-open .header-menu-btn{border:1px solid var(--accent);color:var(
 .branch-delete:disabled{opacity:.35;cursor:not-allowed}
 .branch-children{display:flex;flex-direction:column;gap:2px}
 .branch-empty{color:var(--muted);font-size:12px;padding:10px 6px;line-height:1.4}
-#chat-column{min-width:0;flex:1;display:flex;flex-direction:column}
+#chat-column{min-width:0;flex:1;display:flex;flex-direction:column;position:relative}
 #messages{min-height:0;flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.scroll-bottom-btn{position:absolute;right:20px;bottom:calc(var(--input-area-height,76px) + 14px);z-index:3;display:grid;place-items:center;width:36px;height:36px;border:1px solid var(--accent);border-radius:50%;background:var(--surface-raised);box-shadow:0 5px 16px rgba(0,0,0,.35);color:var(--accent);font-size:20px;line-height:1}
+.scroll-bottom-btn:hover{background:rgba(88,166,255,.16)}
+.scroll-bottom-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.scroll-bottom-btn[hidden]{display:none}
 .msg{max-width:80%;padding:10px 14px;border-radius:var(--radius);word-wrap:break-word;white-space:pre-wrap;line-height:1.5;font-size:14px}
 .msg.user{background:var(--user-bg);align-self:flex-end;border-bottom-right-radius:2px}
 .msg.assistant{background:var(--assistant-bg);border:1px solid var(--border);align-self:flex-start;border-bottom-left-radius:2px}
@@ -142,9 +151,10 @@ body.header-menu-open .header-menu-btn{border:1px solid var(--accent);color:var(
 #send-btn.cancel{background:var(--error)}
 #send-btn:disabled{opacity:.4;cursor:not-allowed}
 .typing{color:var(--muted);font-size:13px;align-self:flex-start;padding:4px 0}
-.typing span:not(.codeact-spinner){animation:blink 1.2s infinite}
+.typing span:not(.codeact-spinner):not(.codeact-label):not(.codeact-elapsed){animation:blink 1.2s infinite}
 .msg.codeact{background:rgba(168,85,247,.1);border:1px solid rgba(168,85,247,.4);align-self:flex-start;font-size:13px}
 .msg.codeact summary,.msg.codeact .codeact-title{cursor:pointer;color:#a855f7;font-size:12px}
+.codeact-elapsed{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .msg.codeact pre{max-height:none}
 .codeact-spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(168,85,247,.3);border-top-color:#a855f7;border-radius:50%;animation:codeact-spin .8s linear infinite;vertical-align:middle;margin-right:8px}
 @keyframes codeact-spin{to{transform:rotate(360deg)}}
@@ -198,3 +208,5 @@ body.auth-locked #app-shell{filter:blur(6px);pointer-events:none;user-select:non
   .attach-btn{width:38px;height:42px}
   #send-btn{padding:10px 12px}
 }
+
+@media(max-width:700px){.scroll-bottom-btn{right:14px;bottom:calc(var(--input-area-height,76px) + 12px)}}

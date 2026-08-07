@@ -23,10 +23,7 @@ def self_extension_when_and_why(ctx: InstructionCtx) -> str:
     """Explain how to persist reusable behavior as an extension."""
     return '''
 # Self-extension
-Use this when:
-- User wants stuff you can't or don't know how to do
-- User suggests some behaviour / capability to be reused / persisted for future
-- !!!Do NOT refuse to do stuff until 100% sure you can't make an extension to do it!!!
+If user wants stuff you can't OR don't know how to do OR user suggests some new behaviour / capability OR you think something might be a good tool/instruction/logic piece to utilize for future task, you should consider FIRST writing an extension for it and AFTER THAT use newly-written extension to do the task.
 How to use:
 - Suggest to write an extension, if user accepts, proceed to following
 - Call self_extension.read_guide() without sections for the general guide
@@ -34,6 +31,7 @@ How to use:
 - Steps: layout -> abstractions and contracts -> logic -> implementation
 - Example usage: make @instruction to save a note about specific user, or a @tool for new action / capability
 - Use self_extension.manage to activate new capabilities
+- !!!Do NOT refuse to do stuff until 100% sure you can't make an extension to do it!!!
 '''
 
 

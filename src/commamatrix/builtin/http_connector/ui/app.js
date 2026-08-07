@@ -25,7 +25,7 @@ const translations={
     "username.title":"Change name","username.description":"Use 2-32 Unicode characters. Letters from any language are allowed; spaces, digits, underscores, hyphens, dots and apostrophes can separate words.","username.label":"New name",
     "invite.title":"New user invitation","invite.description":"Give this one-time link to the person who should register.","invite.ready":"The invitation link is ready. Send it to the user.","invite.copy":"Copy link","invite.copied":"Copied",
     "attachment.image":"IMAGE","attachment.file":"FILE","attachment.link":"LINK","attachment.imageUnavailable":"Image unavailable","attachment.fileUnavailable":"File unavailable","attachment.uploading":"Uploading...","attachment.uploadFailed":"Upload failed","attachment.externalLink":"External link","attachment.ready":"Ready","attachment.remove":"Remove {{name}}",
-    "message.assistant":"Assistant","message.reasoning":"Reasoning","message.codeAct":"CodeAct session","message.result":"Result","message.tool":"Tool: {{name}}","message.toolPlaceholder":"Tool: ...","message.toolResult":"Tool Result","message.thinking":"Thinking","message.streamingHelp":"If streaming gets stuck, reload the page (F5).","message.previousBranch":"Previous branch","message.nextBranch":"Next branch","message.regenerate":"Regenerate response","message.edit":"Edit","message.imageInput":"[image input]","message.fileInput":"[file input]","message.output":"[output]",
+    "message.assistant":"Assistant","message.reasoning":"Reasoning","message.codeAct":"CodeAct session","message.codeActElapsed":" ({{seconds}}s)","message.scrollToBottom":"Scroll to bottom","message.result":"Result","message.tool":"Tool: {{name}}","message.toolPlaceholder":"Tool: ...","message.toolResult":"Tool Result","message.thinking":"Thinking","message.streamingHelp":"If streaming gets stuck, reload the page (F5).","message.previousBranch":"Previous branch","message.nextBranch":"Next branch","message.regenerate":"Regenerate response","message.edit":"Edit","message.imageInput":"[image input]","message.fileInput":"[file input]","message.output":"[output]",
     "error.interface":"Interface error: {{message}}","error.unknown":"Unknown error","error.sessionExpired":"Your session has expired. Sign in again.","error.authenticationRequired":"Authentication required","error.fileRequestFailed":"File request failed","error.noPublicAddress":"You cannot upload files for LLM: CommaMatrix is not visible from the Internet.","error.uploadFailed":"Upload failed","error.messageRejected":"Message was rejected","error.network":"Network error: {{message}}","error.cancelRequest":"Cancel request failed: {{message}}","error.server":"Server error","error.couldNotLoadBranch":"Could not load branch: {{message}}","error.couldNotLoadHistory":"Could not load history: {{message}}","error.historyRequest":"History request failed","error.passwordMismatch":"Passwords do not match","error.credentialsRequired":"Username and password are required","error.usernameRequired":"Name is required","error.usernameLength":"Name must contain between 2 and 32 characters","error.usernameLetter":"Name must contain at least one letter","error.usernameEdges":"Name must start and end with a letter or number","error.usernameCharacters":"Name contains unsupported characters","error.usernameTaken":"That name is already taken","error.usernameChange":"Name change failed","error.registration":"Registration failed","error.signIn":"Sign in failed","error.accountCreated":"Account created. Sign in with your new password.","error.passwordChange":"Password change failed","error.invitation":"Could not create invitation","error.invalidUrl":"Enter a valid HTTP or HTTPS URL","error.eventsStream":"Events stream returned HTTP {{status}}","error.eventsFailed":"Events stream failed","error.eventsDisconnected":"Events stream disconnected","error.eventsAborted":"Events stream aborted"
   },
   ru:{
@@ -33,7 +33,7 @@ const translations={
     "language.english":"English","language.russian":"Русский","language.switchTo":"Переключить на язык: {{language}}",
     "header.openBranches":"Открыть ветки","header.closeBranches":"Закрыть ветки","header.serverStatus":"Состояние сервера","header.openAccountMenu":"Открыть меню аккаунта","header.closeAccountMenu":"Закрыть меню аккаунта",
     "account.changePassword":"Сменить пароль","account.changeUsername":"Сменить имя","account.addUser":"Добавить пользователя","account.logOut":"Выйти",
-    "status.signInRequired":"Требуется войти","status.ready":"Готово","status.connecting":"Подключение...","status.disconnected":"Нет соединения","status.processing":"Обработка...","status.streaming":"Поток данных...","status.sending":"Отправка...","status.waitUploads":"Дождитесь завершения загрузки","status.removeFailedUploads":"Удалите неудачные загрузки",
+    "status.signInRequired":"Требуется войти","status.ready":"Готово","status.connecting":"Подключение...","status.disconnected":"Нет соединения","status.processing":"Обработка...","status.streaming":"Передача данных...","status.sending":"Отправка...","status.waitUploads":"Дождитесь завершения загрузки","status.removeFailedUploads":"Удалите неудачные загрузки",
     "branches.panelLabel":"Ветки диалогов","branches.title":"Ветки","branches.description":"Выберите диалог","branches.new":"+ Новая ветка","branches.filters":"Фильтры веток","branches.active":"Активные","branches.deleted":"Удалённые ветки","branches.select":"Выбрать ветку","branches.collapse":"Свернуть ветку","branches.expand":"Развернуть ветку","branches.restore":"Восстановить ветку","branches.hide":"Скрыть ветку","branches.noDeleted":"Удалённых диалогов нет.","branches.empty":"Диалогов пока нет.","branches.emptyMessage":"[пустое сообщение]","branches.today":"сегодня","branches.yesterday":"вчера","branches.thisWeek":"на этой неделе","branches.thisMonth":"в этом месяце","branches.older":"раньше",
     "chat.messageLabel":"Сообщение","chat.placeholder":"Введите сообщение...","chat.send":"Отправить","chat.cancel":"Отменить",
     "attachments.dropHere":"Перетащите сюда ссылку или файл","attachments.add":"Добавить ссылку или файл","attachments.addToMessage":"Добавить к сообщению","attachments.chooseHow":"Выберите, как добавить содержимое к сообщению.","attachments.insertLink":"Вставить ссылку","attachments.uploadFile":"Загрузить файл","attachments.linkDescription":"Ссылка будет добавлена как вложение и отправлена напрямую LLM без сохранения на сервере.","attachments.url":"URL","attachments.uploadRequirement":"Для загрузки файлов HTTP-сервер должен быть доступен из интернета",
@@ -42,7 +42,7 @@ const translations={
     "username.title":"Сменить имя","username.description":"Используйте от 2 до 32 символов Unicode. Разрешены буквы любых языков; пробелы, цифры, подчёркивания, дефисы, точки и апострофы могут разделять слова.","username.label":"Новое имя",
     "invite.title":"Приглашение нового пользователя","invite.description":"Передайте эту одноразовую ссылку пользователю, который должен зарегистрироваться.","invite.ready":"Ссылка-приглашение готова. Отправьте её пользователю.","invite.copy":"Копировать ссылку","invite.copied":"Скопировано",
     "attachment.image":"ИЗОБРАЖЕНИЕ","attachment.file":"ФАЙЛ","attachment.link":"ССЫЛКА","attachment.imageUnavailable":"Изображение недоступно","attachment.fileUnavailable":"Файл недоступен","attachment.uploading":"Загрузка...","attachment.uploadFailed":"Не удалось загрузить","attachment.externalLink":"Внешняя ссылка","attachment.ready":"Готово","attachment.remove":"Удалить {{name}}",
-    "message.assistant":"Ассистент","message.reasoning":"Рассуждение","message.codeAct":"Сессия CodeAct","message.result":"Результат","message.tool":"Инструмент: {{name}}","message.toolPlaceholder":"Инструмент: ...","message.toolResult":"Результат инструмента","message.thinking":"Обработка","message.streamingHelp":"Если поток завис, перезагрузите страницу (F5).","message.previousBranch":"Предыдущая ветка","message.nextBranch":"Следующая ветка","message.regenerate":"Сгенерировать ответ заново","message.edit":"Изменить","message.imageInput":"[изображение]","message.fileInput":"[файл]","message.output":"[результат]",
+    "message.assistant":"Ассистент","message.reasoning":"Рассуждение","message.codeAct":"Сессия CodeAct","message.codeActElapsed":" ({{seconds}} с)","message.scrollToBottom":"Прокрутить вниз","message.result":"Результат","message.tool":"Инструмент: {{name}}","message.toolPlaceholder":"Инструмент: ...","message.toolResult":"Результат инструмента","message.thinking":"Обработка","message.streamingHelp":"Если поток завис, перезагрузите страницу (F5).","message.previousBranch":"Предыдущая ветка","message.nextBranch":"Следующая ветка","message.regenerate":"Сгенерировать ответ заново","message.edit":"Изменить","message.imageInput":"[изображение]","message.fileInput":"[файл]","message.output":"[результат]",
     "error.interface":"Ошибка интерфейса: {{message}}","error.unknown":"Неизвестная ошибка","error.sessionExpired":"Срок действия сессии истёк. Войдите снова.","error.authenticationRequired":"Требуется аутентификация","error.fileRequestFailed":"Не удалось получить файл","error.noPublicAddress":"Нельзя загрузить файлы для LLM: CommaMatrix недоступен из интернета.","error.uploadFailed":"Не удалось загрузить файл","error.messageRejected":"Сообщение отклонено","error.network":"Ошибка сети: {{message}}","error.cancelRequest":"Не удалось отменить запрос: {{message}}","error.server":"Ошибка сервера","error.couldNotLoadBranch":"Не удалось загрузить ветку: {{message}}","error.couldNotLoadHistory":"Не удалось загрузить историю: {{message}}","error.historyRequest":"Не удалось запросить историю","error.passwordMismatch":"Пароли не совпадают","error.credentialsRequired":"Введите имя пользователя и пароль","error.usernameRequired":"Введите имя","error.usernameLength":"Имя должно содержать от 2 до 32 символов","error.usernameLetter":"Имя должно содержать хотя бы одну букву","error.usernameEdges":"Имя должно начинаться и заканчиваться буквой или цифрой","error.usernameCharacters":"Имя содержит недопустимые символы","error.usernameTaken":"Это имя уже занято","error.usernameChange":"Не удалось сменить имя","error.registration":"Не удалось зарегистрироваться","error.signIn":"Не удалось войти","error.accountCreated":"Аккаунт создан. Войдите с новым паролем.","error.passwordChange":"Не удалось сменить пароль","error.invitation":"Не удалось создать приглашение","error.invalidUrl":"Введите корректный HTTP- или HTTPS-адрес","error.eventsStream":"Поток событий вернул HTTP {{status}}","error.eventsFailed":"Поток событий завершился с ошибкой","error.eventsDisconnected":"Поток событий отключён","error.eventsAborted":"Поток событий прерван"
   }
 };
@@ -63,12 +63,14 @@ function applyTranslations(){
   document.documentElement.lang=locale;
 }
 function updateLanguageButton(){const target=locale==="ru"?"english":"russian";languageBtn.textContent=t("language."+target);const label=t("language.switchTo",{language:t("language."+target)});languageBtn.title=label;languageBtn.setAttribute("aria-label",label)}
-function setLocale(nextLocale){if(!translations[nextLocale]||nextLocale===locale)return;locale=nextLocale;try{localStorage.setItem(LANGUAGE_STORAGE_KEY,locale)}catch{}applyTranslations();updateLanguageButton();setAuthMode(authMode);renderAttachmentPreviews();renderBranchPanel();if(currentStatusKey)setUiStatus(currentStatusKey)}
+function setLocale(nextLocale){if(!translations[nextLocale]||nextLocale===locale)return;locale=nextLocale;try{localStorage.setItem(LANGUAGE_STORAGE_KEY,locale)}catch{}applyTranslations();updateLanguageButton();setAuthMode(authMode);renderAttachmentPreviews();renderBranchPanel();updateCodeActElapsed();if(currentStatusKey)setUiStatus(currentStatusKey)}
 window.__commamatrixUiLoaded=true;
 window.addEventListener("error",event=>{console.error("[CommaMatrix UI] uncaught error",event.error||event.message);const error=document.getElementById("auth-error");if(error)error.textContent=t("error.interface",{message:event.message})});
 window.addEventListener("unhandledrejection",event=>{console.error("[CommaMatrix UI] unhandled rejection",event.reason);const error=document.getElementById("auth-error");if(error)error.textContent=t("error.interface",{message:event.reason?.message||event.reason||t("error.unknown")})});
 
 const messagesEl=document.getElementById("messages");
+const chatColumn=document.getElementById("chat-column");
+const scrollBottomBtn=document.getElementById("scroll-bottom-btn");
 const inputEl=document.getElementById("input");
 const fileInput=document.getElementById("file-input");
 const attachBtn=document.getElementById("attach-btn");
@@ -138,8 +140,14 @@ let codeactActiveEl=null;
 let codeactStreamArgs="";
 let codeactStreamToolId=null;
 let lastWasCodeAct=false;
+let codeactStartedAt=null;
+let codeactElapsedSeconds=0;
+let codeactTimer=null;
 let activeStreams={};
 let streamingPreviews={};
+let messagesPinnedToBottom=true;
+let scrollFrame=null;
+const SCROLL_BOTTOM_THRESHOLD=24;
 /** @type {Map<number, DialogItem>} */
 let itemsById=new Map();
 /** @type {Map<number, number[]>} */
@@ -394,6 +402,7 @@ function renderAttachmentPreviews(){
     const details=document.createElement("span");details.className="attachment-info";const name=document.createElement("span");name.className="attachment-name";name.textContent=attachment.name;details.appendChild(name);const status=document.createElement("span");status.className="attachment-status";if(attachment.status==="uploading")setI18nText(status,"attachment.uploading");else if(attachment.status==="failed")status.textContent=attachment.error||t("attachment.uploadFailed");else if(attachment.external)setI18nText(status,"attachment.externalLink");else if(formatFileSize(attachment.size))status.textContent=formatFileSize(attachment.size);else setI18nText(status,"attachment.ready");details.appendChild(status);preview.appendChild(details);
     const remove=document.createElement("button");remove.type="button";remove.className="attachment-remove";remove.textContent="×";setI18nAttribute(remove,"title","attachment.remove",{name:attachment.name});setI18nAttribute(remove,"aria-label","attachment.remove",{name:attachment.name});remove.addEventListener("click",()=>removePendingAttachment(attachment));preview.appendChild(remove);attachmentPreviewsEl.appendChild(preview);
   }
+  updateScrollBottomPosition();
 }
 
 function releasePreviewUrl(attachment){if(typeof attachment.previewUrl==="string"&&attachment.previewUrl.startsWith("blob:"))URL.revokeObjectURL(attachment.previewUrl)}
@@ -492,7 +501,7 @@ function clearAuth(){
   setI18nText(sendBtn,"chat.send");sendBtn.classList.remove("cancel");sendBtn.disabled=true;
   localStorage.removeItem("commamatrix_auth_token");
   clearPendingAttachments();
-  hideTyping();messagesEl.replaceChildren();itemsById=new Map();childrenByParent=new Map();selectedHeadId=null;newRootSelected=false;selectedLeafByNode=new Map();expandedNodes=new Set();deletedRootIds=new Set();showDeletedBranches=false;historyHeads=[];activeStreams={};streamingPreviews={};clearPendingMessage();
+  hideTyping();hideCodeActSpinner();messagesEl.replaceChildren();messagesPinnedToBottom=true;updateScrollBottomButton();itemsById=new Map();childrenByParent=new Map();selectedHeadId=null;newRootSelected=false;selectedLeafByNode=new Map();expandedNodes=new Set();deletedRootIds=new Set();showDeletedBranches=false;historyHeads=[];activeStreams={};streamingPreviews={};clearPendingMessage();
   usernameBtn.hidden=true;passwordBtn.hidden=true;inviteBtn.hidden=true;logoutBtn.hidden=true;userLabel.textContent="";setUiStatus("signInRequired");
   renderBranchPanel();
 }
@@ -915,15 +924,36 @@ function createPrettyBlock(content,lang){
   codeEl.textContent=formatted;pre.appendChild(codeEl);scheduleCodeHighlight(codeEl);return pre;
 }
 
-function showCodeActSpinner(){
-  if(codeactSpinnerEl)return;codeactSpinnerEl=document.createElement("div");codeactSpinnerEl.className="typing";codeactSpinnerEl.innerHTML='<span class="codeact-spinner"></span><span class="codeact-label"></span><span>.</span><span>.</span><span>.</span>';setI18nText(codeactSpinnerEl.querySelector(".codeact-label"),"message.codeAct");messagesEl.appendChild(codeactSpinnerEl);scrollToBottom();
+function updateCodeActElapsed(){
+  if(codeactStartedAt!==null)codeactElapsedSeconds=Math.floor((performance.now()-codeactStartedAt)/1000);
+  for(const element of document.querySelectorAll(".codeact-elapsed")){
+    const seconds=element.classList.contains("codeact-current")?codeactElapsedSeconds:Number(element.dataset.elapsedSeconds||0);
+    element.textContent=t("message.codeActElapsed",{seconds});
+  }
 }
 
-function hideCodeActSpinner(){if(codeactSpinnerEl){codeactSpinnerEl.remove();codeactSpinnerEl=null}}
+function startCodeActTimer(){
+  if(codeactTimer)return;
+  codeactStartedAt=performance.now();codeactElapsedSeconds=0;updateCodeActElapsed();
+  codeactTimer=setInterval(updateCodeActElapsed,250);
+}
+
+function stopCodeActTimer(){
+  if(codeactStartedAt!==null)updateCodeActElapsed();
+  if(codeactTimer){clearInterval(codeactTimer);codeactTimer=null}
+  for(const element of document.querySelectorAll(".codeact-elapsed.codeact-current")){element.dataset.elapsedSeconds=String(codeactElapsedSeconds);element.classList.remove("codeact-current")}
+  codeactStartedAt=null;
+}
+
+function showCodeActSpinner(){
+  if(codeactSpinnerEl)return;startCodeActTimer();codeactSpinnerEl=document.createElement("div");codeactSpinnerEl.className="typing";codeactSpinnerEl.innerHTML='<span class="codeact-spinner"></span><span class="codeact-label"></span><span class="codeact-elapsed codeact-current"></span><span>.</span><span>.</span><span>.</span>';setI18nText(codeactSpinnerEl.querySelector(".codeact-label"),"message.codeAct");updateCodeActElapsed();messagesEl.appendChild(codeactSpinnerEl);scrollToBottom();
+}
+
+function hideCodeActSpinner(){if(codeactSpinnerEl){codeactSpinnerEl.remove();codeactSpinnerEl=null}stopCodeActTimer()}
 
 function addCodeActCall(args){
   let code;if(typeof args==="string"){try{const parsed=JSON.parse(args);code=parsed.code||args}catch{code=args}}else code=args&&typeof args.code==="string"?args.code:JSON.stringify(args,null,2);
-  showCodeActSpinner();const details=document.createElement("details");details.className="msg codeact";details.open=true;const summary=document.createElement("summary");setI18nText(summary,"message.codeAct");details.appendChild(summary);details.appendChild(createPrettyBlock(code,"python"));messagesEl.appendChild(details);codeactActiveEl=details;lastWasCodeAct=true;scrollToBottom();
+  showCodeActSpinner();const details=document.createElement("details");details.className="msg codeact";details.open=true;const summary=document.createElement("summary");summary.className="codeact-title";summary.innerHTML='<span class="codeact-label"></span><span class="codeact-elapsed codeact-current"></span>';setI18nText(summary.querySelector(".codeact-label"),"message.codeAct");updateCodeActElapsed();details.appendChild(summary);details.appendChild(createPrettyBlock(code,"python"));messagesEl.appendChild(details);codeactActiveEl=details;lastWasCodeAct=true;scrollToBottom();
 }
 
 function decodePartialCodeArg(raw){
@@ -944,11 +974,11 @@ function updateCodeActPreview(data){
   const meta=data.meta||{};if(meta.tool_name!=="execute")return false;const streamKey=data.stream_id||meta.tool_call_id||null;
   if(codeactStreamToolId&&streamKey&&streamKey!==codeactStreamToolId){codeactStreamArgs="";codeactActiveEl=null}
   if(!codeactActiveEl)addCodeActCall({code:""});codeactStreamToolId=streamKey;codeactStreamArgs+=data.content||"";const code=codeActPreviewContent(codeactStreamArgs);const codeEl=codeactActiveEl&&codeactActiveEl.querySelector("pre code");
-  if(codeEl){codeEl.textContent=code;scheduleCodeHighlight(codeEl)}streamingPreviews[streamPreviewKey(data)]=codeactActiveEl;scrollToBottom();return true;
+  if(codeEl)codeEl.textContent=code;streamingPreviews[streamPreviewKey(data)]=codeactActiveEl;scrollToBottom();return true;
 }
 
 function finishCodeActSession(content){
-  hideCodeActSpinner();if(codeactActiveEl){const spinner=codeactActiveEl.querySelector(".codeact-spinner");if(spinner)spinner.remove();const summary=codeactActiveEl.querySelector("summary");if(summary)setI18nText(summary,"message.codeAct");codeactActiveEl=null}
+  updateCodeActElapsed();hideCodeActSpinner();if(codeactActiveEl){const codeEl=codeactActiveEl.querySelector("pre code");if(codeEl)scheduleCodeHighlight(codeEl);const spinner=codeactActiveEl.querySelector(".codeact-spinner");if(spinner)spinner.remove();const summary=codeactActiveEl.querySelector("summary");if(summary){const label=summary.querySelector(".codeact-label");if(label)setI18nText(label,"message.codeAct");updateCodeActElapsed()}codeactActiveEl=null}
   if(content){const details=document.createElement("details");details.className="msg tool-result";details.open=true;const summary=document.createElement("summary");setI18nText(summary,"message.result");details.appendChild(summary);details.appendChild(createPrettyBlock(content,null));messagesEl.appendChild(details);scrollToBottom()}
   codeactStreamArgs="";codeactStreamToolId=null;lastWasCodeAct=false;
 }
@@ -1187,10 +1217,24 @@ async function loadCurrentUser(){
 }
 
 function logout(){clearAuth();showAuth()}
-function scrollToBottom(){requestAnimationFrame(()=>{messagesEl.scrollTop=messagesEl.scrollHeight})}
+function messagesAreAtBottom(){return messagesEl.scrollHeight-messagesEl.clientHeight-messagesEl.scrollTop<=SCROLL_BOTTOM_THRESHOLD}
+function updateScrollBottomButton(){scrollBottomBtn.hidden=messagesAreAtBottom()}
+function handleMessagesScroll(){messagesPinnedToBottom=messagesAreAtBottom();updateScrollBottomButton()}
+function scrollToBottom({force=false,smooth=false}={}){
+  if(force)messagesPinnedToBottom=true;
+  if(!force&&!messagesPinnedToBottom){updateScrollBottomButton();return}
+  if(scrollFrame!==null)cancelAnimationFrame(scrollFrame);
+  scrollFrame=requestAnimationFrame(()=>{
+    scrollFrame=null;
+    if(!force&&!messagesPinnedToBottom){updateScrollBottomButton();return}
+    if(smooth)messagesEl.scrollTo({top:messagesEl.scrollHeight,behavior:"smooth"});else messagesEl.scrollTop=messagesEl.scrollHeight;
+    messagesPinnedToBottom=true;updateScrollBottomButton();
+  });
+}
 function closeBranchPanel(){document.body.classList.remove("branch-panel-open")}
 function openBranchPanel(){document.body.classList.add("branch-panel-open")}
 function adjustInputHeight(){inputEl.style.height="auto";const maxHeight=window.innerHeight*.33;inputEl.style.height=Math.min(inputEl.scrollHeight,maxHeight)+"px"}
+function updateScrollBottomPosition(){chatColumn.style.setProperty("--input-area-height",inputArea.offsetHeight+attachmentPreviewsEl.offsetHeight+"px")}
 
 function setupPasswordToggle(button){
   const input=document.getElementById(button.dataset.passwordTarget);
@@ -1250,10 +1294,22 @@ uploadFileChoice.addEventListener("click",chooseUpload);
 linkCancel.addEventListener("click",closeLinkOverlay);
 linkForm.addEventListener("submit",event=>{event.preventDefault();const url=httpUrl(linkInput.value);if(!url){linkError.textContent=t("error.invalidUrl");return}addExternalLink(url);closeLinkOverlay()});
 languageBtn.addEventListener("click",()=>setLocale(locale==="ru"?"en":"ru"));logoutBtn.addEventListener("click",logout);authForm.addEventListener("submit",event=>{void registerOrLogin(event)});sendBtn.addEventListener("click",()=>{if(activeStreamId)void cancelProcessing();else void send()});attachBtn.addEventListener("click",openAttachmentOverlay);fileInput.addEventListener("change",event=>{uploadFiles(event.target.files);fileInput.value=""});inputArea.addEventListener("drop",handleDrop);window.addEventListener("dragenter",handlePageDragEnter);window.addEventListener("dragover",handlePageDragOver);window.addEventListener("dragleave",handlePageDragLeave);window.addEventListener("drop",handlePageDrop);window.addEventListener("dragend",resetPageDrag);newBranchBtn.addEventListener("click",newBranch);activeBranchesBtn.addEventListener("click",()=>setBranchView(false));deletedBranchesBtn.addEventListener("click",()=>setBranchView(true));branchOpenBtn.addEventListener("click",openBranchPanel);branchCloseBtn.addEventListener("click",closeBranchPanel);branchBackdrop.addEventListener("click",closeBranchPanel);
-inputEl.addEventListener("keydown",event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();void send()}});inputEl.addEventListener("input",adjustInputHeight);window.addEventListener("resize",adjustInputHeight);
+inputEl.addEventListener("keydown",event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();void send()}});inputEl.addEventListener("input",adjustInputHeight);messagesEl.addEventListener("scroll",handleMessagesScroll,{passive:true});scrollBottomBtn.addEventListener("click",()=>scrollToBottom({force:true}));window.addEventListener("resize",()=>{adjustInputHeight();updateScrollBottomPosition();handleMessagesScroll()});if(typeof ResizeObserver!=="undefined")new ResizeObserver(updateScrollBottomPosition).observe(inputArea);updateScrollBottomPosition();handleMessagesScroll();
 
 applyTranslations();updateLanguageButton();setAuthMode(authMode);renderBranchPanel();if(inviteToken){clearAuth();showAuth()}else void loadCurrentUser();
 })();
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -72,6 +72,7 @@ class SubprocessBackend(ExecutionBackend):
         is_timeout = False
         cancel_error: BaseException | None = None
         other_error: Exception | None = None
+        force_kill = False
 
         try:
             tcp_server = TcpServer(token, handshake_timeout=self._rpc_timeout)
@@ -116,9 +117,13 @@ class SubprocessBackend(ExecutionBackend):
 
         except asyncio.TimeoutError:
             is_timeout = True
+            force_kill = True
+            self._kill_process(proc)
             stderr_buffer.append("Execution timed out")
         except asyncio.CancelledError as exc:
             cancel_error = exc
+            force_kill = True
+            self._kill_process(proc)
             stderr_buffer.append("Execution cancelled")
         except ConnectionError:
             stderr_buffer.append("Worker process connection lost")
@@ -128,7 +133,7 @@ class SubprocessBackend(ExecutionBackend):
         finally:
             if tcp_server is not None:
                 await tcp_server.close(timeout=min(self._shutdown_timeout, 0.5))
-            await self._cleanup(proc, transport, stderr_reader, rpc_tasks)
+            await self._cleanup(proc, transport, stderr_reader, rpc_tasks, force_kill=force_kill)
 
         stderr_text = "\n".join(stderr_buffer)
         if is_timeout:
@@ -203,12 +208,24 @@ class SubprocessBackend(ExecutionBackend):
             return truncated + "\n...(output truncated)"
         return text
 
+    @staticmethod
+    def _kill_process(proc: asyncio.subprocess.Process | None) -> None:
+        """Stop a timed-out or cancelled worker before awaiting cleanup."""
+        if proc is None or proc.returncode is not None:
+            return
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+
     async def _cleanup(
         self,
         proc: asyncio.subprocess.Process | None,
         transport: TcpTransport | None,
         stderr_reader: asyncio.Task | None,
         rpc_tasks: list[asyncio.Task],
+        *,
+        force_kill: bool = False,
     ) -> None:
         for task in rpc_tasks:
             if not task.done():
@@ -221,7 +238,10 @@ class SubprocessBackend(ExecutionBackend):
 
         if proc is not None and proc.returncode is None:
             try:
-                proc.terminate()
+                if force_kill:
+                    proc.kill()
+                else:
+                    proc.terminate()
                 await asyncio.wait_for(proc.wait(), timeout=self._shutdown_timeout)
             except ProcessLookupError:
                 pass
@@ -240,3 +260,4 @@ class SubprocessBackend(ExecutionBackend):
                 await asyncio.gather(stderr_reader, return_exceptions=True)
             except asyncio.CancelledError:
                 pass
+

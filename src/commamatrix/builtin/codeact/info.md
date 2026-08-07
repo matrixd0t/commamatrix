@@ -400,9 +400,9 @@ await execute("print(x)")  # → NameError: name 'x' is not defined
 
 | Scenario | Behavior |
 |---|---|
-| Code execution timeout | Worker is terminated via `terminate()` → `kill()`; `ExecutionResult` with `returncode=124` |
+| Code execution timeout | Worker is killed immediately; `ExecutionResult` with `returncode=124` |
 | RPC call timeout | Worker receives RPC error `-32001` |
-| Parent cancellation | Worker transport is closed; remaining RPC Futures get `CancelledError` |
+| Parent cancellation | Worker is killed immediately; transport is closed and remaining RPC Futures get `CancelledError` |
 | Graceful shutdown | `terminate()` sent first; after `codeact_shutdown_timeout`, `kill()` is used |
 | Large stderr | Read concurrently, truncated at `codeact_max_output_bytes` |
 | Large stdout | Truncated at `codeact_max_output_bytes` |
@@ -428,3 +428,5 @@ await tools.fs.read_file(path="/tmp/data.txt")
 ```
 
 CodeAct control tools (\execute\, \tool_search\, \tools_list\, \exit_codeact\) are never exposed to the worker  they have \isible_in_codeact=True, visible_outside_codeact=False\ and are filtered out by \is_codeact_internal()\. Additionally, \enable_codeact\ (with \isible_in_codeact=False\) is also filtered out, preventing the worker from calling it via virtual import.
+
+

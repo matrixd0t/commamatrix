@@ -18,7 +18,7 @@ def _format_codeact_guide(codeact: CodeActService) -> str:
     lines = [
         "# CodeAct mode",
         "You have access to an `execute` tool that runs Python code on the backend.",
-        "Inside execute(), import tools as async functions: `import tools.<name> as <name>`.",
+        "Inside execute(), import tools as async functions: `import tools.<name> as <name>`, prefer utf-8 text encoding.",
         "All tools are async — top-level await is allowed.",
         "Use `tool_search(query)` to find tools by description.",
         "Use `tools_list()` to list available tools.",
