@@ -128,7 +128,7 @@ from .llm_adapter import (
     ToolCall,
     ToolCallResult,
     Usage,
-    reasoning,
+    reasoning_level,
 )
 from .server import (
     SERVER_ROOT,
@@ -298,7 +298,7 @@ __all__ = [
     "on_error",
     "on_parsed",
     "read_file",
-    "reasoning",
+    "reasoning_level",
     "resolve_log_level",
     "resolve_origin_type",
     "tool",

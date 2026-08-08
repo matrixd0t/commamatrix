@@ -575,7 +575,7 @@ class HttpConnector(Connector[HttpOrigin]):
         if not isinstance(origin, HttpOrigin):
             return
         meta = {key: value for key, value in chunk.meta.items() if key != "llm"}
-        await self._publish(origin.http_user_id, {"type": "stream_chunk", "stream_id": meta.pop("stream_id", None), "item_type": {"text": "output", "reasoning": "reasoning"}.get(chunk.delta_type, chunk.delta_type), "delta_type": chunk.delta_type, "content": chunk.content, "previous_item_id": meta.pop("previous_item_id", None), "meta": meta})
+        await self._publish(origin.http_user_id, {"type": "stream_chunk", "stream_id": meta.pop("stream_id", None), "item_type": {"text": "output", "reasoning_level": "reasoning_level"}.get(chunk.delta_type, chunk.delta_type), "delta_type": chunk.delta_type, "content": chunk.content, "previous_item_id": meta.pop("previous_item_id", None), "meta": meta})
 
     @asynccontextmanager
     async def typing(self, origin: DialogOrigin) -> AsyncIterator[None]:

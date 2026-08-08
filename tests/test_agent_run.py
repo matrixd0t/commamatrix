@@ -398,8 +398,8 @@ class TestAgentRunStreaming:
         reasoning_block = LLMResponseReasoningBlock(content="Let me think")
         text_block = LLMResponseTextBlock(content="Result")
         events = [
-            StreamDelta(content="Let me", delta_type="reasoning"),
-            StreamDelta(content=" think", delta_type="reasoning"),
+            StreamDelta(content="Let me", delta_type="reasoning_level"),
+            StreamDelta(content=" think", delta_type="reasoning_level"),
             reasoning_block,
             text_block,
             StreamEnd(stop_reason=StopReason.END_TURN),
@@ -410,7 +410,7 @@ class TestAgentRunStreaming:
         await agent.run(run)
 
         assert len(connector.stream_chunks) == 2
-        assert connector.stream_chunks[0].delta_type == "reasoning"
+        assert connector.stream_chunks[0].delta_type == "reasoning_level"
 
 
 # ── Agent.run() — tool calls ────────────────────────────────────────────────

@@ -147,7 +147,7 @@ class ResponsesCodec(ApiCodec):
 
         request: dict[str, Any] = {"model": self._model_name(model), "input": input_items, **ctx.llm_call_params}
         if ctx.reasoning is not None:
-            request["reasoning"] = {"effort": ctx.reasoning}
+            request["reasoning_level"] = {"effort": ctx.reasoning}
         if ctx.tools:
             request["tools"] = self.serialize_tools(ctx)
         return request
@@ -157,7 +157,7 @@ class ResponsesCodec(ApiCodec):
 
         for output_item in body.get("output", ()):
             item_type = output_item.get("type")
-            if item_type == "reasoning":
+            if item_type == "reasoning_level":
                 summary = output_item.get("summary", ())
                 summary_text = "\n".join(
                     part.get("text", "")
@@ -248,23 +248,23 @@ class ResponsesCodec(ApiCodec):
             acc["text_buf"] += text
             return StreamDelta(content=text, delta_type="text")
 
-        if etype == "response.reasoning.delta":
+        if etype == "response.reasoning_level.delta":
             text = data.get("delta", "")
             acc.setdefault("reasoning_buf", "")
             acc["reasoning_buf"] += text
-            return StreamDelta(content=text, delta_type="reasoning")
+            return StreamDelta(content=text, delta_type="reasoning_level")
 
         if etype == "response.reasoning_text.delta":
             text = data.get("delta", "")
             acc.setdefault("reasoning_buf", "")
             acc["reasoning_buf"] += text
-            return StreamDelta(content=text, delta_type="reasoning")
+            return StreamDelta(content=text, delta_type="reasoning_level")
 
         if etype == "response.reasoning_summary_text.delta":
             text = data.get("delta", "")
             acc.setdefault("reasoning_buf", "")
             acc["reasoning_buf"] += text
-            return StreamDelta(content=text, delta_type="reasoning")
+            return StreamDelta(content=text, delta_type="reasoning_level")
 
         if etype == "response.output_item.added":
             item = data.get("item", {})
@@ -319,7 +319,7 @@ class ResponsesCodec(ApiCodec):
                 )
             if item_type == "message":
                 acc.setdefault("completed_message_ids", []).append(item.get("id", ""))
-            if item_type == "reasoning":
+            if item_type == "reasoning_level":
                 reasoning_text = self._extract_reasoning_text(item)
                 if not reasoning_text:
                     reasoning_text = acc.get("reasoning_buf", "")
@@ -351,7 +351,7 @@ class ResponsesCodec(ApiCodec):
 
         for output_item in response_obj.get("output", ()):
             item_type = output_item.get("type")
-            if item_type == "reasoning" and not yielded_reasoning:
+            if item_type == "reasoning_level" and not yielded_reasoning:
                 summary_text = self._extract_reasoning_text(output_item)
                 if summary_text:
                     blocks.append(LLMResponseReasoningBlock(

@@ -43,7 +43,7 @@ anthropic_api_key = ConfigField[str](
 llm_api_base = ConfigField[str](
     name="llm_api_base",
     default=lambda: os.getenv("LLM_API_BASE", ""),
-    description="Default API base URL",
+    description="LLM API base URL",
 )
 
 llm_api_protocol = ConfigField[str](
@@ -55,7 +55,7 @@ llm_api_protocol = ConfigField[str](
 llm_refresh_on_start = ConfigField[bool](
     name="llm_refresh_on_start",
     default=True,
-    description="Refresh available LLMs when the adapter starts",
+    description="Refresh available LLMs when the adapter starts. Keep on default",
 )
 
 llm_stream_read_timeout = ConfigField[float](

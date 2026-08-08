@@ -18,7 +18,7 @@ import pystray
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw
 
-from commamatrix import Agent, agentic_model
+from commamatrix import Agent, agentic_model, reasoning_level
 from commamatrix.builtin.http_connector import HttpConnector
 from commamatrix.builtin.llm_http_adapter import (
     anthropic_api_key,
@@ -96,9 +96,10 @@ def _fallback_icon() -> Image.Image:
 
 
 def _load_icon() -> Image.Image:
-    icon_path = WORKSPACE / "icon.png"
+    icon_path = DATA_DIR / "assets" / "logo.png"
     if icon_path.is_file():
-        return Image.open(icon_path)
+        with Image.open(icon_path) as image:
+            return image.convert("RGBA").copy()
     return _fallback_icon()
 
 
@@ -114,6 +115,7 @@ def _build_agent(*, initialize: bool) -> Agent:
         TOKEN_FIELD: os.environ.get(TOKEN_ENV, ""),
         llm_api_protocol: PROTOCOL,
         agentic_model: MODEL,
+        reasoning_level: "max",
         http_host: HTTP_HOST,
         http_port: _choose_port(HTTP_HOST, HTTP_PORT),
         log_file: str(LOG_FILE),

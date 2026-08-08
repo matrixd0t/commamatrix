@@ -25,7 +25,7 @@ class DialogItemType(StrEnum):
     FILE_OUTPUT = "file_output"
     TOOL_CALL = "tool_call"
     TOOL_CALL_RESULT = "tool_call_result"
-    REASONING = "reasoning"
+    REASONING = "reasoning_level"
 
 
 class DialogRole(StrEnum):

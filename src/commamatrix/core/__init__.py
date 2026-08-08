@@ -10,7 +10,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "AgentRunner": (".agent.runner", "AgentRunner"),
     "agent_by_name": (".agent.agent", "agent_by_name"),
     "agentic_model": (".agent.agent", "agentic_model"),
-    "reasoning": (".agent.agent", "reasoning"),
+    "reasoning_level": (".agent.agent", "reasoning_level"),
     "get_subagent_by_name": (".agent.agent", "get_subagent_by_name"),
     "plugins_dir": (".agent.agent", "plugins_dir"),
     "AbstractService": (".classes.service", "AbstractService"),

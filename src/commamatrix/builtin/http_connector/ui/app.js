@@ -917,7 +917,7 @@ function stripOutputMarkers(content){
 }
 
 function addReasoning(content){
-  const details=document.createElement("details");details.className="msg reasoning";details.open=true;const summary=document.createElement("summary");setI18nText(summary,"message.reasoning");details.appendChild(summary);const c=document.createElement("div");c.className="message-content";renderMarkdown(c,content);details.appendChild(c);messagesEl.appendChild(details);return details;
+  const details=document.createElement("details");details.className="msg reasoning_level";details.open=true;const summary=document.createElement("summary");setI18nText(summary,"message.reasoning");details.appendChild(summary);const c=document.createElement("div");c.className="message-content";renderMarkdown(c,content);details.appendChild(c);messagesEl.appendChild(details);return details;
 }
 
 function scheduleCodeHighlight(codeEl){
@@ -1043,7 +1043,7 @@ function renderItem(item){
     case "image_input":
     case "file_input":
       if(item.role==="user")messagesEl.appendChild(createUserEntry(item));else addPlaceholder(item.item_type);break;
-    case "reasoning":addReasoning(item.content);break;
+    case "reasoning_level":addReasoning(item.content);break;
     case "tool_call":try{const toolCall=JSON.parse(item.content);addToolCall(toolCall.tool_name||"unknown",toolCall.tool_args||{})}catch{addToolCall("tool",item.content)}break;
     case "tool_call_result":{const elapsedSeconds=item.meta?.codeact?.elapsed_seconds;const hasCodeActElapsed=elapsedSeconds!==null&&elapsedSeconds!==undefined&&Number.isFinite(Number(elapsedSeconds));if(lastWasCodeAct||hasCodeActElapsed){try{const result=JSON.parse(item.content);finishCodeActSession(result.content,elapsedSeconds)}catch{finishCodeActSession(item.content,elapsedSeconds)}}else{try{const result=JSON.parse(item.content);addToolResult(result.content)}catch{addToolResult(item.content)}}break}
     case "output":addAssistantOutput(item);break;
@@ -1061,9 +1061,9 @@ function handleStreamChunk(data){
   if(chunkType==="tool_call"&&updateCodeActPreview(data)){restoreMessagesScroll(stickToBottom,previousScrollTop);return}
   const streamId=data.stream_id||chunkType;let stream=activeStreams[streamId];
   setUiStatus("streaming");
-  if(!stream){let element;if(chunkType==="reasoning")element=addReasoning("");else if(chunkType==="tool_call"){element=document.createElement("details");element.className="msg tool-call";element.open=true;const summary=document.createElement("summary");setI18nText(summary,"message.toolPlaceholder");element.appendChild(summary);const content=document.createElement("div");element.appendChild(content);messagesEl.appendChild(element)}else element=addMessage("assistant","","Assistant");stream={element,item_type:chunkType,previous_item_id:data.previous_item_id,tool_call_id:data.meta?.tool_call_id||null,text:""};activeStreams[streamId]=stream}
+  if(!stream){let element;if(chunkType==="reasoning_level")element=addReasoning("");else if(chunkType==="tool_call"){element=document.createElement("details");element.className="msg tool-call";element.open=true;const summary=document.createElement("summary");setI18nText(summary,"message.toolPlaceholder");element.appendChild(summary);const content=document.createElement("div");element.appendChild(content);messagesEl.appendChild(element)}else element=addMessage("assistant","","Assistant");stream={element,item_type:chunkType,previous_item_id:data.previous_item_id,tool_call_id:data.meta?.tool_call_id||null,text:""};activeStreams[streamId]=stream}
   if(chunkType==="tool_call"&&data.meta?.tool_call_id)stream.tool_call_id=data.meta.tool_call_id;stream.text+=(data.content||"");const contentEl=stream.element.querySelector("div:last-child")||stream.element;
-  if(chunkType==="output"||chunkType==="reasoning")renderMarkdown(contentEl,stripOutputMarkers(stream.text));else contentEl.textContent=stream.text;
+  if(chunkType==="output"||chunkType==="reasoning_level")renderMarkdown(contentEl,stripOutputMarkers(stream.text));else contentEl.textContent=stream.text;
   restoreMessagesScroll(stickToBottom,previousScrollTop);
 }
 

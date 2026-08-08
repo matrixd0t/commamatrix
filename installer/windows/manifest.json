@@ -1,9 +1,10 @@
 {
-  "version": "0.1.4",
+  "version": "0.1.5",
   "python": "3.13",
-  "wheel": "commamatrix-0.1.4-py3-none-any.whl",
+  "wheel": "commamatrix-0.1.5-py3-none-any.whl",
   "providers": "providers.json",
   "entrypoint_template": "entrypoint.template.py",
   "runtime_requirements": "runtime-requirements.txt",
-  "icon": "logo.png"
+  "icon": "assets/logo.png",
+  "shortcut_icon": "assets/logo.ico"
 }

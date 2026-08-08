@@ -236,7 +236,7 @@ class TestSqliteDialogItemTypes:
             types_to_test = [
                 (DialogItemType.INPUT, DialogRole.USER, "input text"),
                 (DialogItemType.OUTPUT, DialogRole.ASSISTANT, "output text"),
-                (DialogItemType.REASONING, DialogRole.ASSISTANT, "reasoning"),
+                (DialogItemType.REASONING, DialogRole.ASSISTANT, "reasoning_level"),
                 (DialogItemType.TOOL_CALL, DialogRole.ASSISTANT, '{"tool_call_id":"tc1","tool_name":"fn","tool_args":{}}'),
                 (DialogItemType.TOOL_CALL_RESULT, DialogRole.TOOL, '{"tool_call_id":"tc1","content":"result"}'),
             ]

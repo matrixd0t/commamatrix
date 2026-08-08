@@ -362,7 +362,7 @@ class TestResponsesFlushStream:
                 "status": "completed",
                 "output": [
                     {
-                        "type": "reasoning",
+                        "type": "reasoning_level",
                         "summary": [{"type": "summary_text", "text": "I think..."}],
                     },
                     {
@@ -387,7 +387,7 @@ class TestResponsesFlushStream:
     def test_flush_with_function_call_output(self):
         codec = ResponsesCodec()
         # function_call tool calls are yielded mid-stream in parse_stream_event,
-        # not in flush_stream. flush_stream only handles reasoning and message types.
+        # not in flush_stream. flush_stream only handles reasoning_level and message types.
         # So function_call in response.output is not expected here.
         # Instead, test that message output is handled.
         acc = {

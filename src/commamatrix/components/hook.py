@@ -377,7 +377,7 @@ Example::
 
 before_llm_call = Hook[BeforeLlmCallCtx](HookEventType.BEFORE_LLM_CALL, BeforeLlmCallCtx)
 """Fired before the LLM is called.  Mutate ``ctx.dialog``, ``ctx.run.adapter``, ``ctx.run.llm``,
-``ctx.reasoning``, ``ctx.llm_api_base``, ``ctx.tools``, or ``ctx.llm_call_params`` to influence the call.
+``ctx.reasoning_level``, ``ctx.llm_api_base``, ``ctx.tools``, or ``ctx.llm_call_params`` to influence the call.
 
 The decorated function must accept ``BeforeLlmCallCtx`` and return ``None``.
 

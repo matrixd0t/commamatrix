@@ -24,10 +24,10 @@ if TYPE_CHECKING:
 
 LLM_ADAPTER_ATTRIBUTE = "__commamatrix_llm_adapter__"
 
-reasoning = ConfigField[str](
-    name="reasoning",
+reasoning_level = ConfigField[str](
+    name="reasoning_level",
     default="",
-    description="Default reasoning mode (if applicable to the model). Values 'max' / 'highest' / 'lowest' are universal",
+    description="Default reasoning mode (if applicable to the model). Universal values: 'max' / 'highest' / 'lowest'",
 )
 
 
@@ -262,12 +262,12 @@ class LLMAdapter(AbstractService):
         """Return models with adapter-provided, ascending reasoning_modes."""
 
     def resolve_reasoning_mode(self, llm: LLM) -> str | None:
-        """Resolve the configured reasoning mode for a model."""
+        """Resolve the configured reasoning_level mode for a model."""
         modes = llm.reasoning_modes
         if len(modes) <= 1:
             return None
 
-        configured = self.config.get(reasoning)
+        configured = self.config.get(reasoning_level)
         if configured in modes:
             return configured
         if configured in {"max", "highest"}:

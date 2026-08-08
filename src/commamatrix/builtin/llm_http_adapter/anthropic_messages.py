@@ -242,7 +242,7 @@ class AnthropicMessagesCodec(ApiCodec):
                 current = acc.get("current_block")
                 if current:
                     current["text_buf"] += text
-                return StreamDelta(content=text, delta_type="reasoning")
+                return StreamDelta(content=text, delta_type="reasoning_level")
             if delta_type == "text_delta":
                 text = delta.get("text", "")
                 current = acc.get("current_block")

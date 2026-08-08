@@ -152,8 +152,8 @@ class ApiCodec(ABC):
             if key in data:
                 value = data[key]
                 break
-        if value is None and isinstance(data.get("reasoning"), dict):
-            reasoning_data = data["reasoning"]
+        if value is None and isinstance(data.get("reasoning_level"), dict):
+            reasoning_data = data["reasoning_level"]
             value = reasoning_data.get("modes", reasoning_data.get("efforts"))
         if isinstance(value, str):
             value = (value,)

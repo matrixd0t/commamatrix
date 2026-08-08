@@ -1,4 +1,4 @@
-![CommaMatrix logo](https://raw.githubusercontent.com/matrixd0t/commamatrix/v0.1.3/logo.png)
+![CommaMatrix logo](assets/logo.png)
 
 # CommaMatrix
 

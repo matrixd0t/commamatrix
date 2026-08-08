@@ -1,4 +1,30 @@
 {
   "schema_version": 1,
-  "providers": []
+  "providers": [
+    {
+      "id": "opencode-zen",
+      "display_name": {
+        "ru": "OpenCode Zen",
+        "en": "OpenCode Zen"
+      },
+      "api_base": "https://opencode.ai/zen/v1",
+      "api_env": "LLM_API_BASE",
+      "token_env": "OPENAI_API_KEY",
+      "protocol": "chat_completions",
+      "recommended_model": "deepseek-v4-flash-free",
+      "instructions": {
+        "ru": [
+          "Создайте API key на https://opencode.ai/auth и вставьте его ниже.",
+          "Модель deepseek-v4-flash-free бесплатна, но доступ к API OpenCode Zen требует ключ.",
+          "Список моделей и доступность бесплатной модели зависят от OpenCode Zen."
+        ],
+        "en": [
+          "Create an API key at https://opencode.ai/auth and paste it below.",
+          "The deepseek-v4-flash-free model is free, but OpenCode Zen API access requires a key.",
+          "The model list and free-model availability are controlled by OpenCode Zen."
+        ]
+      },
+      "default": true
+    }
+  ]
 }

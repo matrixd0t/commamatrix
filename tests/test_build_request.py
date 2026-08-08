@@ -124,7 +124,7 @@ class TestChatCompletionsBuildRequest:
         codec = ChatCompletionsCodec()
         dialog = [
             make_dialog_item("Think", role=DialogRole.USER),
-            make_dialog_item("reasoning text", role=DialogRole.ASSISTANT, item_type=DialogItemType.REASONING),
+            make_dialog_item("reasoning_level text", role=DialogRole.ASSISTANT, item_type=DialogItemType.REASONING),
         ]
         ctx = _make_ctx(dialog)
         req = await codec.build_request(model="gpt-4", ctx=ctx)
@@ -356,7 +356,7 @@ class TestAnthropicBuildRequest:
     async def test_reasoning_without_wire_skipped(self):
         codec = AnthropicMessagesCodec()
         dialog = [
-            make_dialog_item("reasoning text", role=DialogRole.ASSISTANT, item_type=DialogItemType.REASONING),
+            make_dialog_item("reasoning_level text", role=DialogRole.ASSISTANT, item_type=DialogItemType.REASONING),
         ]
         ctx = _make_ctx(dialog)
         req = await codec.build_request(model="claude-3", ctx=ctx)

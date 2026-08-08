@@ -46,7 +46,7 @@ FP = framework_prefix()
 commamatrix_dir = ConfigField[str](
     name="commamatrix_dir",
     default=".commamatrix",
-    description="Root directory for all Commamatrix data",
+    description="Root directory for all CommaMatrix data",
 )
 
 allow_absolute_paths = ConfigField[bool](

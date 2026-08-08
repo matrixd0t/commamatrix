@@ -205,7 +205,7 @@ class ChatCompletionsCodec(ApiCodec):
             response.stop_reason = StopReason.END_TURN
 
         reasoning_field = next(
-            (field for field in ("reasoning_content", "reasoning") if field in message),
+            (field for field in ("reasoning_content", "reasoning_level") if field in message),
             None,
         )
         if reasoning_field is not None:
@@ -288,7 +288,7 @@ class ChatCompletionsCodec(ApiCodec):
             acc["text_buf"] += text
             return StreamDelta(content=text, delta_type="text")
 
-        for field_name in ("reasoning_content", "reasoning"):
+        for field_name in ("reasoning_content", "reasoning_level"):
             reasoning_val = delta.get(field_name)
             if reasoning_val is None:
                 continue
@@ -296,14 +296,14 @@ class ChatCompletionsCodec(ApiCodec):
                 acc.setdefault("reasoning_buf", "")
                 acc["reasoning_buf"] += reasoning_val
                 acc.setdefault("reasoning_field", field_name)
-                return StreamDelta(content=reasoning_val, delta_type="reasoning")
+                return StreamDelta(content=reasoning_val, delta_type="reasoning_level")
             if isinstance(reasoning_val, dict):
                 text_val = reasoning_val.get("summary", reasoning_val.get("content", ""))
                 if text_val:
                     acc.setdefault("reasoning_buf", "")
                     acc["reasoning_buf"] += str(text_val)
                     acc.setdefault("reasoning_field", field_name)
-                    return StreamDelta(content=str(text_val), delta_type="reasoning")
+                    return StreamDelta(content=str(text_val), delta_type="reasoning_level")
 
         tool_calls = delta.get("tool_calls")
         if tool_calls:

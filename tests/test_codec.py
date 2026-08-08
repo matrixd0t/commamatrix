@@ -165,7 +165,7 @@ class TestResponsesCodec:
             "id": "resp3",
             "llm": "o3",
             "output": [{
-                "type": "reasoning",
+                "type": "reasoning_level",
                 "summary": [{"type": "summary_text", "text": "thinking..."}],
             }, {
                 "type": "message",
@@ -232,7 +232,7 @@ class TestAnthropicMessagesCodec:
             "id": "msg3",
             "llm": "claude-3",
             "content": [
-                {"type": "thinking", "thinking": "reasoning..."},
+                {"type": "thinking", "thinking": "reasoning_level..."},
                 {"type": "text", "text": "answer"},
             ],
             "stop_reason": "end_turn",
@@ -240,7 +240,7 @@ class TestAnthropicMessagesCodec:
         resp = codec.parse_response(body)
         assert len(resp.content) == 2
         assert isinstance(resp.content[0], LLMResponseReasoningBlock)
-        assert resp.content[0].content == "reasoning..."
+        assert resp.content[0].content == "reasoning_level..."
 
     def test_parse_max_tokens(self):
         codec = AnthropicMessagesCodec()

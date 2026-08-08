@@ -7,7 +7,7 @@ from .agent import (
     agentic_model,
     get_subagent_by_name,
     plugins_dir,
-    reasoning,
+    reasoning_level,
 )
 from .lifecycle import AgentLifecycle
 from .runner import AgentRunner
@@ -21,5 +21,5 @@ __all__ = [
     "agentic_model",
     "get_subagent_by_name",
     "plugins_dir",
-    "reasoning",
+    "reasoning_level",
 ]

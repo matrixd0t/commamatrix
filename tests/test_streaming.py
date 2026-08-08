@@ -40,12 +40,12 @@ class TestStreamDelta:
         assert d.meta == {}
 
     def test_construction_with_meta(self):
-        d = StreamDelta(content="x", delta_type="reasoning", meta={"k": "v"})
+        d = StreamDelta(content="x", delta_type="reasoning_level", meta={"k": "v"})
         assert d.meta == {"k": "v"}
 
     def test_reasoning_delta(self):
-        d = StreamDelta(content="thinking...", delta_type="reasoning")
-        assert d.delta_type == "reasoning"
+        d = StreamDelta(content="thinking...", delta_type="reasoning_level")
+        assert d.delta_type == "reasoning_level"
 
 
 class TestStreamEnd:
@@ -204,16 +204,16 @@ class TestChatCompletionsCodecStreaming:
         result = codec.parse_stream_event(None, data, acc)
         assert isinstance(result, StreamDelta)
         assert result.content == "thinking..."
-        assert result.delta_type == "reasoning"
+        assert result.delta_type == "reasoning_level"
 
     def test_parse_reasoning_field_delta(self):
         codec = ChatCompletionsCodec()
         acc: dict = {}
-        data = {"choices": [{"delta": {"reasoning": "deep thought"}, "finish_reason": None}]}
+        data = {"choices": [{"delta": {"reasoning_level": "deep thought"}, "finish_reason": None}]}
         result = codec.parse_stream_event(None, data, acc)
         assert isinstance(result, StreamDelta)
         assert result.content == "deep thought"
-        assert result.delta_type == "reasoning"
+        assert result.delta_type == "reasoning_level"
 
     def test_parse_tool_call_delta(self):
         codec = ChatCompletionsCodec()
@@ -313,7 +313,7 @@ class TestResponsesCodecStreaming:
         result = codec.parse_stream_event(None, data, acc)
         assert isinstance(result, StreamDelta)
         assert result.content == "thinking..."
-        assert result.delta_type == "reasoning"
+        assert result.delta_type == "reasoning_level"
 
     def test_parse_function_call_arguments_delta(self):
         codec = ResponsesCodec()
@@ -406,11 +406,11 @@ class TestAnthropicMessagesCodecStreaming:
     def test_parse_thinking_delta(self):
         codec = AnthropicMessagesCodec()
         acc: dict = {}
-        data = {"type": "content_block_delta", "delta": {"type": "thinking_delta", "thinking": "reasoning..."}}
+        data = {"type": "content_block_delta", "delta": {"type": "thinking_delta", "thinking": "reasoning_level..."}}
         result = codec.parse_stream_event(None, data, acc)
         assert isinstance(result, StreamDelta)
-        assert result.content == "reasoning..."
-        assert result.delta_type == "reasoning"
+        assert result.content == "reasoning_level..."
+        assert result.delta_type == "reasoning_level"
 
     def test_parse_input_json_delta(self):
         codec = AnthropicMessagesCodec()

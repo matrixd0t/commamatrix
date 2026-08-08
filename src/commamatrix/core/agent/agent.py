@@ -61,7 +61,7 @@ from ...components.llm_adapter import (
     StreamEnd,
     ToolCall,
     ToolCallResult,
-    reasoning,  # noqa: F401 - re-exported by core.agent
+    reasoning_level,  # noqa: F401 - re-exported by core.agent
 )
 from ...components.storage import STORAGE_ATTRIBUTE
 from ...utils import FP, commamatrix_dir
@@ -516,7 +516,7 @@ class Agent:
                         raise LLMResponseError("Adapter yielded no StreamEnd event")
 
                     # A tool call starts execution only after the complete assistant turn is delivered.
-                    # Keep tool calls at the end of that turn so text/reasoning cannot appear between a call and its result in the conversation timeline.
+                    # Keep tool calls at the end of that turn so text/reasoning_level cannot appear between a call and its result in the conversation timeline.
                     ordered_blocks = sorted(blocks, key=lambda _block: isinstance(_block, LLMResponseToolCallBlock))
                     llm_response.content = ordered_blocks
                     for event in ordered_blocks:

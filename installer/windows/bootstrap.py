@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_REPOSITORY = "matrixd0t/commamatrix"
-DEFAULT_VERSION = "0.1.4"
+DEFAULT_VERSION = "0.1.5"
 DEFAULT_WORKSPACE = Path.home() / "commamatrix"
 PROTOCOLS = (
     ("chat_completions", "Chat Completions"),
@@ -72,6 +72,7 @@ class Resources:
     runtime_requirements: Path
     icon: Path | None
     wheel: Path | None
+    shortcut_icon: Path | None = None
 
 
 def _read_manifest(path: Path, version: str) -> dict[str, str]:
@@ -82,11 +83,17 @@ def _read_manifest(path: Path, version: str) -> dict[str, str]:
     if not isinstance(manifest, dict) or manifest.get("version") != version:
         raise InstallerError("Release manifest version does not match the installer version")
     result: dict[str, str] = {}
-    for key in ("python", "wheel", "providers", "entrypoint_template", "runtime_requirements", "icon"):
+    for key in ("python", "wheel", "providers", "entrypoint_template", "runtime_requirements", "icon", "shortcut_icon"):
         value = manifest.get(key)
-        if value is not None and isinstance(value, str) and Path(value).name == value:
+        if not isinstance(value, str):
+            continue
+        value_path = Path(value)
+        if key in {"icon", "shortcut_icon"}:
+            if len(value_path.parts) == 2 and value_path.parts[0] == "assets":
+                result[key] = value
+        elif value_path.name == value:
             result[key] = value
-    required = ("python", "wheel", "providers", "entrypoint_template", "runtime_requirements")
+    required = ("python", "wheel", "providers", "entrypoint_template", "runtime_requirements", "icon", "shortcut_icon")
     if any(key not in result for key in required):
         raise InstallerError("Release manifest is missing required assets")
     return result
@@ -134,16 +141,19 @@ def _load_resources(
         providers = installer_root / manifest["providers"]
         entrypoint_template = installer_root / manifest["entrypoint_template"]
         runtime_requirements = installer_root / manifest["runtime_requirements"]
-        icon_source = source_root / manifest.get("icon", "logo.png")
-        icon = temporary / "icon.png"
-        if icon_source.is_file():
-            shutil.copy2(icon_source, icon)
-        else:
-            icon = None
-        return Resources(manifest["python"], providers, entrypoint_template, runtime_requirements, icon, None)
+        icon_source = source_root / manifest["icon"]
+        shortcut_icon_source = source_root / manifest["shortcut_icon"]
+        icon = temporary / "logo.png"
+        shortcut_icon = temporary / "logo.ico"
+        for source, destination in ((icon_source, icon), (shortcut_icon_source, shortcut_icon)):
+            if not source.is_file():
+                raise InstallerError(f"Installer asset is missing: {source}")
+            shutil.copy2(source, destination)
+        return Resources(manifest["python"], providers, entrypoint_template, runtime_requirements, icon, None, shortcut_icon)
 
     tag = f"v{version}"
     raw_base = f"https://raw.githubusercontent.com/{repository}/{tag}/installer/windows"
+    raw_root = f"https://raw.githubusercontent.com/{repository}/{tag}"
     manifest_path = temporary / "manifest.json"
     _download(f"{raw_base}/manifest.json", manifest_path)
     manifest = _read_manifest(manifest_path, version)
@@ -154,16 +164,15 @@ def _load_resources(
     _download(f"{raw_base}/{manifest['entrypoint_template']}", entrypoint_template)
     _download(f"{raw_base}/{manifest['runtime_requirements']}", runtime_requirements)
 
-    icon = temporary / "icon.png"
-    try:
-        _download(f"https://raw.githubusercontent.com/{repository}/{tag}/{manifest.get('icon', 'logo.png')}", icon)
-    except Exception:  # noqa: BLE001
-        icon = None
+    icon = temporary / "logo.png"
+    shortcut_icon = temporary / "logo.ico"
+    _download(f"{raw_root}/{manifest['icon']}", icon)
+    _download(f"{raw_root}/{manifest['shortcut_icon']}", shortcut_icon)
 
     wheel = temporary / manifest["wheel"]
     release_url = f"https://github.com/{repository}/releases/download/{tag}/{wheel.name}"
     _download(release_url, wheel)
-    return Resources(manifest["python"], providers, entrypoint_template, runtime_requirements, icon, wheel)
+    return Resources(manifest["python"], providers, entrypoint_template, runtime_requirements, icon, wheel, shortcut_icon)
 
 
 def _parse_providers(path: Path, language: str) -> list[Provider]:
@@ -325,7 +334,7 @@ def _basic_selection(language: str, providers: list[Provider]) -> Selection:
         api_base=provider.api_base,
         api_env=provider.api_env,
         token_env=provider.token_env,
-        protocol="chat_completions",
+        protocol=provider.protocol,
         model=provider.recommended_model,
         host="127.0.0.1",
         port=8338,
@@ -646,18 +655,23 @@ def _install(language: str, selection: Selection, resources: Resources, uv: str,
     _write_env(selection)
     python = _install_runtime(uv, workspace, resources, source_root)
     entrypoint = _generate_entrypoint(resources.entrypoint_template, workspace, selection, language)
-    if resources.icon is not None:
-        shutil.copy2(resources.icon, workspace / "icon.png")
+    if resources.icon is None or resources.shortcut_icon is None:
+        raise InstallerError("Installer icons are missing")
+    assets = workspace / ".commamatrix" / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(resources.icon, assets / "logo.png")
+    shutil.copy2(resources.shortcut_icon, assets / "logo.ico")
     _create_command(workspace)
     pythonw = python.parent / "pythonw.exe"
     desktop = Path.home() / "Desktop"
     if not desktop.is_dir():
         desktop = Path.home()
     shortcut = desktop / "CommaMatrix.lnk"
-    _create_shortcut(shortcut, pythonw, f'"{entrypoint}"', workspace, workspace / "icon.png")
+    shortcut_icon = assets / "logo.ico"
+    _create_shortcut(shortcut, pythonw, f'"{entrypoint}"', workspace, shortcut_icon)
     if selection.autostart:
         startup = Path(os.environ.get("APPDATA", str(Path.home()))) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
-        _create_shortcut(startup / "CommaMatrix.lnk", pythonw, f'"{entrypoint}"', workspace, workspace / "icon.png")
+        _create_shortcut(startup / "CommaMatrix.lnk", pythonw, f'"{entrypoint}"', workspace, shortcut_icon)
 
     credentials_path = Path(tempfile.gettempdir()) / f"commamatrix-credentials-{os.getpid()}.json"
     try:
