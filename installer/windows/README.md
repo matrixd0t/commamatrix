@@ -51,7 +51,7 @@ the repository, version, and tag as constants:
 
 ```powershell
 $Repository = "matrixd0t/commamatrix"
-$Version = "0.1.5"
+$Version = "0.1.6"
 $Tag = "v$Version"
 ```
 
@@ -68,7 +68,7 @@ The bootstrap is then started with:
 
 ```powershell
 uv run --quiet --python 3.13 <temporary-bootstrap.py> `
-  --repository matrixd0t/commamatrix --version 0.1.5 --uv <uv-path>
+  --repository matrixd0t/commamatrix --version 0.1.6 --uv <uv-path>
 ```
 
 The temporary bootstrap file is removed in the `finally` block, including
@@ -92,7 +92,7 @@ The following files are then downloaded:
 6. the exact wheel named by `manifest.json` from the GitHub release assets.
 
 The release wheel must therefore exist under the exact asset name, for
-example `commamatrix-0.1.5-py3-none-any.whl`. The installer does not build a
+example `commamatrix-0.1.6-py3-none-any.whl`. The installer does not build a
 wheel and does not verify a checksum or signature.
 
 For local development, `bootstrap.py` can use a source tree instead of a

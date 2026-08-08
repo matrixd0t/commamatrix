@@ -14,14 +14,14 @@
       "recommended_model": "deepseek-v4-flash-free",
       "instructions": {
         "ru": [
-          "Создайте API key на https://opencode.ai/auth и вставьте его ниже.",
-          "Модель deepseek-v4-flash-free бесплатна, но доступ к API OpenCode Zen требует ключ.",
-          "Список моделей и доступность бесплатной модели зависят от OpenCode Zen."
+          "1. Откройте в браузере: https://opencode.ai/auth",
+          "2. Авторизуйтесь через ваш Google-аккаунт (у вас наверняка есть google-аккаунт на смартфоне): нажмите \"Continue with Google\" -> выберите ваш аккаунт -> \"Продолжить\" -> скопируйте ваш личный ключ доступа, нажав синюю кнопку \"Копировать ключ\". Не показывайте этот ключ посторонним!",
+          "3. Вставьте ваш ключ сюда (можете нажать Ctrl+V):"
         ],
         "en": [
-          "Create an API key at https://opencode.ai/auth and paste it below.",
-          "The deepseek-v4-flash-free model is free, but OpenCode Zen API access requires a key.",
-          "The model list and free-model availability are controlled by OpenCode Zen."
+          "1. Open in your browser: https://opencode.ai/auth",
+          "2. Sign in with your Google account (you probably have a Google account on your smartphone): click \"Continue with Google\" -> select your account -> \"Continue\" -> copy your personal access key by clicking the blue \"Copy key\" button. Do not show this key to anyone else!",
+          "3. Paste your key here (you can press Ctrl+V):"
         ]
       },
       "default": true

@@ -9,7 +9,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from commamatrix.utils import await_if_needed
+from ...utils import await_if_needed
 
 from ...components.config import AgentLogger, get_agent_logger
 from ..classes.lifecycle_registry import (

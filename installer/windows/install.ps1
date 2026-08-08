@@ -3,7 +3,7 @@
 $ErrorActionPreference = "Stop"
 
 $Repository = "matrixd0t/commamatrix"
-$Version = "0.1.5"
+$Version = "0.1.6"
 $Tag = "v$Version"
 $BootstrapUrl = "https://raw.githubusercontent.com/$Repository/$Tag/installer/windows/bootstrap.py"
 $BootstrapPath = Join-Path ([System.IO.Path]::GetTempPath()) "commamatrix-bootstrap-$Version.py"

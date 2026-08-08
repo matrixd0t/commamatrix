@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from commamatrix.components.instruction import InstructionCtx, instruction
+from ..components.instruction import InstructionCtx, instruction
 
 
 @instruction(priority=100)
