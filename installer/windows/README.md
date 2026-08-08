@@ -51,7 +51,7 @@ the repository, version, and tag as constants:
 
 ```powershell
 $Repository = "matrixd0t/commamatrix"
-$Version = "0.1.8"
+$Version = "0.1.9"
 $Tag = "v$Version"
 ```
 
@@ -68,7 +68,7 @@ The bootstrap is then started with:
 
 ```powershell
 uv run --quiet --python 3.13 <temporary-bootstrap.py> `
-  --repository matrixd0t/commamatrix --version 0.1.8 --uv <uv-path>
+  --repository <repository> --version <version> --uv <uv-path>
 ```
 
 The temporary bootstrap file is removed in the `finally` block, including
@@ -92,7 +92,7 @@ The following files are then downloaded:
 6. the exact wheel named by `manifest.json` from the GitHub release assets.
 
 The release wheel must therefore exist under the exact asset name, for
-example `commamatrix-0.1.8-py3-none-any.whl`. The installer does not build a
+example `commamatrix-0.1.9-py3-none-any.whl`. The installer does not build a
 wheel and does not verify a checksum or signature.
 
 For local development, `bootstrap.py` can use a source tree instead of a
@@ -182,7 +182,8 @@ It then performs these operations:
 1. creates `.commamatrix`;
 2. writes `.commamatrix\\.env`;
 3. installs the requested Python version through `uv python install 3.13`;
-4. recreates `.venv` with `uv venv --clear`;
+4. finds the managed base Python through `uv python find` and recreates `.venv`
+   with `python -m venv --clear --without-pip`;
 5. installs `commamatrix[all]` from the release wheel or `.[all]` from the
    source tree;
 6. installs `runtime-requirements.txt` into the virtual environment;
@@ -268,7 +269,7 @@ URL, restarts the process, opens the log directory, or closes the application.
     logs\\
       commamatrix.log
     ...                  # runtime data, including the default storage
-  .venv\\                 # uv-created Python environment
+  .venv\\                 # environment created from uv-managed Python
   entrypoint.py           # generated, selected values embedded
 ```
 

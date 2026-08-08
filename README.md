@@ -1,147 +1,140 @@
-![CommaMatrix logo](assets/logo.png)
+<h1 align="center"> CommaMatrix</h1>
+<p align="center">
+  <img src="assets/logo.png" alt="CommaMatrix" width="512">
+</p>
+<p align="center">
+  <strong>СКРАФТИ СВОЕГО ИИ-АГЕНТА</strong>
+</p>
 
-# CommaMatrix
+<p align="center">
+  <strong>Русский | <a href="assets/README.en.md">English</a></strong>
+</p>
 
-CommaMatrix is an async-native Python framework for building conversational
-agents. It separates transport connectors, LLM adapters, persistence, tools,
-hooks, instructions, and agent-owned services into explicit extensions that
-can be composed per agent.
+<p align="center">
+  <a href="https://github.com/matrixd0t/commamatrix/releases/latest">Релизы</a>
+  ·
+  <a href="src/commamatrix/builtin/self_extension/guides/main.md">Документация</a>
+  ·
+  <a href="examples/">Примеры</a>
+</p>
 
-The package targets Python 3.13 and later.
 
-## Features
+## Вы - пользователь с Windows?
 
-- Async agent lifecycle with transactional startup, refresh, and shutdown.
-- HTTP connector with a web UI, authentication, streaming, and file uploads.
-- OpenAI-compatible, OpenAI Responses, and Anthropic Messages HTTP protocols.
-- Persistent conversation history with SQLite, PostgreSQL, or a custom storage.
-- Discoverable tools, hooks, instructions, services, tables, and connectors.
-- Optional web search, CodeAct execution, planner, subagents, and MCP support.
-- Per-agent extension scopes instead of a process-wide plugin registry.
+Запустите минималистичного ИИ-агента, поставляемого с CommaMatrix, прямо сейчас (инструкция ниже). Это **абсолютно** бесплатно и **абсолютно** конфиденциально: между вами и ИИ стоит лишь интернет-провайдер.
 
-## Installation
 
-The commands below use [uv](https://docs.astral.sh/uv/), which manages the
-virtual environment, dependencies, and command execution. Install uv first if
-it is not available on your system.
+### Способ 1. Скачать файл
 
-Create a virtual environment with Python 3.13 or newer:
+Скачайте и запустите [`install.ps1`](https://github.com/matrixd0t/commamatrix/releases/latest/download/install.ps1). Скачанный файл откройте двойным кликом.
+
+### Способ 2. Одна команда
+
+1. Нажмите `Win + R`.
+2. Введите `powershell` и нажмите Enter.
+3. Вставьте команду:
+
+```powershell
+irm https://github.com/matrixd0t/commamatrix/releases/latest/download/install.ps1 | iex
+```
+
+4. Выберите русский язык, базовый режим установки и следуйте инструкциям. Приложение появится в области уведомлений, откуда можно будет открыть окно чата в браузере или завершить работу программы. Значок быстрого запуска появится на рабочем столе.
+
+Не забудьте сохранить пароль. Вы сможете поменять имя или пароль через веб-интерфейс.
+
+### Чем это отличается от ChatGPT?
+Агент может сделать все, что вы можете сделать за компьютером. Например, обработать 20 фотографий в **вашем** Photoshop; собрать для вас сводку вечерних новостей через **ваш** браузер; или написать отчет, а затем сохранить его в формате Word и отправить с **вашей** почты. Не нужны ни промпты, ни плагины, ни иные формы интеграции: модель **сама по себе** достаточно умна для таких задач, а встроенные возможности CommaMatrix достаточно полны.
+
+# Вы - разработчик?
+
+*CommaMatrix для агента — как операционная система для пользователя.*
+
+Если одна модель — это мозг, то CommaMatrix — это нервная система.
+
+Библиотека позволяет соединять в согласованную систему любой набор компонентов: мозгов (llm-адаптеров), модулей речи и органов чувств (коннекторов), конечностей (инструментов), внутренних органов (компонентов жизненного цикла), инструкций, моделей "диалога" и конфигурационных полей, а также как внутренней, так и бизнес-логики (хуков).
+
+CommaMatrix полностью модульна. Вы можете заменить любой класс библиотеки на свою реализацию, или добавить свою реализацию к существующим в `commamatrix/builtin`.
+
+Все `builtin` — лишь модули, написанные на CommaMatrix, но идущие в комплексте с ней. Этого достаточно, чтобы понимать богатство его возможностей — и баланс этого с простотой фреймворка. В их число входят:
+
+- Десять хуков в различных местах жизненного цикла, имеющих механизмы абсолютного и относительного "приоритета". Кстати, такой же механизм имеют и инструкции модели - влияет на их расположение в промпте относительно друг друга. **Вся** внутренняя логика CommaMatrix реализована через ее хуки.
+- LLM HTTP адаптер. CommaMatrix понимает все, что говорит на `chat completions`, `openai requests` или `anthropic messages`, и вы можете добавить к этому свои кодеки, реализуя подкласс `ApiCodec`. Или реализуйте собственный `LLMAdapter`, например, для управления локальной моделью изнутри CommaMatrix.
+- `CodeAct` - программируемые вызовы инструментов. Любая функция на Python с декоратором @tool — инструмент модели, а любой инструмент модели, независимо от источника (даже MCP) — асинхронная функция на Python. Вы можете добавлять свои источники инструментов, реализуя свой подкласс `ToolSource`, или переопределять компоненты, используемые `builtin`.
+- Поддержка многопользовательского и мультидиалогового общения ("диалогом" для CommaMatrix считается любой уникальный объект, способный принимать, хранить и отдавать слушателю сообщения пользователей). Реализуйте подклассы `DialogOrigin` и `Connector`. #todo пример в examples: кроссплатформенный мессенджер с ИИ-модерацией
+- HTTP-коннектор: общайтесь с моделью через окно чата в браузере сами и передавайте права доступа другим, генерируя одноразовые приглашения. Есть и API-эндпойнты.
+- Планировщик заданий: создавайте heartbeat для агента или позвольте ему создавать их самостоятельно.
+- SQL-хранилище данных: агент может выполнять поиск по диалогам, базе пользователей и любой иной информации из базы. SQLite и PostgreSQL поддерживаются "из коробки". Если вашему приложению нужно хранить структурированные данные, реализуйте подкласс `BaseTable`. Хотите ORM? Пожалуйста, реализуйте свой подкласс `Storage`.
+- Веб-клиент на httpx2 и минималистичный веб-сервер на uvicorn + starlette, но вы можете — что? — правильно, использовать что-то иное, реализовав подкласс.
+- Автоинжекция контекста в инструменты, инструкции, хуки через параметр `ctx` в стиле fastapi. Все контексты строго типизированы и содержат ссылку на инстанс агента.
+- А еще поиск в интернете через `ddgs` (#todo: сделать поисковой бэкенд нормальным классом, чтобы вы могли подключить / реализовать собственный) и запись/чтение любого вида данных по HTTP / с диска / из произвольной реализации файлового хранилища (реализуйте подкласс `FileStorage`).
+- Хотите что-то принципиально новое, не указанное в списке? Реализуйте подкласс `Service`, `AbstractService`, `Descriptor`, `Manager`, `Source` или любого из существующих подклассов; чтобы подключить любой свой компонент к жизненному циклу агента.
+
+
+**Модель отвечает за интеллект. CommaMatrix отвечает за всё остальное.**
+
+## Весь фреймворк - в контекстном окне
+
+Исходник CommaMatrix помещается в контекстное окно даже моделей предыдущего поколения. **Менее 200k токенов** со всеми функциями "из коробки".
+
+| Метрика           | Ядро, без `builtin` | С `builtin` |
+|-------------------|--------------------:|------------:|
+| Токенов           |             ~48 000 |    ~124 000 |
+| Строк Python-кода |              ~6 000 |     ~16 000 |
+
+
+## Технические подробности
+
+CommaMatrix рассчитан на **Python 3.13+**, для установки рекомендуется использовать [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
 uv venv --python 3.13
-```
-
-### Recommended installation
-
-Install the complete built-in integration set. This is the recommended
-installation for trying CommaMatrix or building a first agent:
-
-```bash
 uv add "commamatrix[all]"
 ```
 
-The `[all]` extra installs optional dependencies. It does not automatically
-enable every integration in every agent. Extensions are still activated
-explicitly in application code, which keeps each agent's runtime scope
-predictable.
-
-### Feature-specific installation
-
-The core package can be installed without optional integrations:
+Если делаете git clone:
 
 ```bash
-uv add commamatrix
+uv sync --extra all
 ```
 
-Core runtime dependencies are `pydantic`, `httpx2>=2.9.1,<3`, and
-`matrix-fn-schema>=0.1.9`. Optional integrations are kept in extras so an
-application can choose its dependency footprint.
+### Quickstart
 
-Install only the extras used by an application when the complete set is not
-needed:
-
-| Extra | Provides |
-| --- | --- |
-| `dotenv` | Loading configuration from `.env` files |
-| `sqlite` | Built-in async SQLite storage |
-| `http` | HTTP connector, web UI, authentication, and ASGI server |
-| `web` | Web search and page extraction tools |
-| `codeact` | CodeAct execution support |
-| `planner` | Scheduled tasks and planner integration |
-| `postgres` | PostgreSQL storage support |
-| `mcp` | Model Context Protocol client support |
-| `all` | All built-in integration dependencies |
-| `test` | Test runner plus most integration dependencies |
-
-The declared dependency groups are:
-
-| Group | Packages |
-| --- | --- |
-| Core | `pydantic`, `httpx2>=2.9.1,<3`, `matrix-fn-schema>=0.1.9` |
-| `dotenv` | `python-dotenv` |
-| `sqlite` | `aiosqlite` |
-| `http` | `sse-starlette>=3.3,<4`, `starlette`, `uvicorn`, `bcrypt`, `PyJWT`, `python-multipart` |
-| `web` | `ddgs>=9.14.4`, `trafilatura>=2.1.0` |
-| `codeact` | `bm25s` |
-| `planner` | `matrix-planner>=0.2.1` |
-| `postgres` | `asyncpg` |
-| `mcp` | `mcp>=2.0.0` |
-
-For example:
-
-```bash
-uv add "commamatrix[http,sqlite]"
-```
-
-## Quickstart
-
-The following example starts an authenticated HTTP agent backed by an
-OpenAI-compatible API. The same adapter can be configured for other supported
-providers by changing `LLM_API_BASE`, `llm_api_protocol`, and the API key field.
-
-Set the provider configuration in the environment. CommaMatrix also loads a
-`.env` file when `python-dotenv` is installed:
+Задайте конфигурацию провайдера. CommaMatrix также подхватит `.env`:
 
 ```bash
 export OPENAI_API_KEY="your-api-key"
 export LLM_API_BASE="https://api.openai.com"
 ```
 
-On Windows PowerShell:
 
-```powershell
-$env:OPENAI_API_KEY = "your-api-key"
-$env:LLM_API_BASE = "https://api.openai.com"
-```
-
-Create `quickstart.py`:
+Создайте `quickstart.py`:
 
 ```python
 import asyncio
 import os
 
-from commamatrix import Agent, agentic_model
-from commamatrix.builtin.llm_http_adapter import llm_api_base, openai_api_key
-
+from commamatrix import *
+from commamatrix.builtin import llm_http_adapter
 
 async def main() -> None:
     agent = Agent(name="my_lovely_assistant")
     await agent.add_extensions(
-        "commamatrix.builtin.instructions.default_instruction",
-        "commamatrix.builtin.llm_http_adapter",
-        "commamatrix.builtin.http_connector",
+        commamatrix.builtin.default_instruction,  # добавляйте расширения так
+        llm_http_adapter,  # или так
+        "commamatrix.builtin.http_connector",  # или по именам модулей
     )
 
-    # See every ConfigField declared by the active extensions.
-    print(agent.config_fields_info())
+    # полная изоляция состояний для каждого агента
 
+    agent.config.set(llm_api_base, os.environ["LLM_API_BASE"])  # изменяйте настройки в любой момент
+    agent.config.set(openai_api_key, os.environ["OPENAI_API_KEY"])  # можно передавать lambda-предикаты в значения
     agent.config.set(agentic_model, "deepseek-v4-flash")
-    agent.config.set(llm_api_base, os.environ["LLM_API_BASE"])
-    agent.config.set(openai_api_key, os.environ["OPENAI_API_KEY"])
+    # для названия модели: первое вхождение подстроки будет распознано
+    # например, 'deepseek/deepseek-v4-flash'
+    # в приоритете наиболее дешевый провайдер
 
-    # __aenter__ starts the agent; __aexit__ stops it reliably on exit.
-    async with agent:
-        print(f"CommaMatrix is running at {agent.http_server.base_url}")
+    async with agent:  # в стиле asynccontextmanager, но можно и await agent.start() / agent.stop()
+        print(f"CommaMatrix agent is running at {agent.http_server.base_url}")
         await asyncio.Event().wait()
 
 
@@ -149,29 +142,36 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-`async with agent` starts the agent and always stops it when the block exits,
-including cancellation from `Ctrl+C`. If the application has no work to do
-between startup and shutdown, the same lifecycle can be shortened to:
-
-```python
-await agent.run_forever()
-```
-
-Start it with uv:
+Запустите:
 
 ```bash
 uv run quickstart.py
 ```
 
-Open `http://127.0.0.1:8338/commamatrix` in a browser. The default `http_host` is `0.0.0.0`, so set it to `127.0.0.1` in local or otherwise untrusted environments. On the first start, the HTTP connector creates an administrator account and returns its generated password to the application, which should display it once and ask you to save it. The default SQLite database and uploaded files are stored at `.commamatrix/`.
+`async with agent` гарантирует корректную остановку агента при выходе из блока, включая
+отмену по `Ctrl+C`. Если приложению нечего делать между запуском и остановкой,
+используйте:
 
-The health endpoint does not require authentication:
+```python
+await agent.run_forever()
+```
+
+### HTTP UI и HTTP-коннектор
+
+Откройте `http://127.0.0.1:8338/commamatrix`. При первом запуске HTTP-коннектор
+создаёт администратора и возвращает сгенерированный пароль.
+
+По умолчанию хост задан как `127.0.0.1`. Если вы поднимаете приложение на сервере, переключите `http_host` на `0.0.0.0`, чтобы к вашему агенту можно было подключиться извне. Добавляйте или удаляйте пользователей через страницу в браузере, чтобы работать над проектами совместно.
+
+#### Свой интерфейс / доступ через API
+
+Health-эндпойнт не требует авторизации:
 
 ```bash
 curl http://127.0.0.1:8338/commamatrix/health
 ```
 
-For a non-interactive request, log in first and use the returned bearer token:
+Для API-запросов сначала получите токен:
 
 ```bash
 curl -X POST http://127.0.0.1:8338/commamatrix/api/login \
@@ -179,7 +179,7 @@ curl -X POST http://127.0.0.1:8338/commamatrix/api/login \
   -d '{"username":"admin","password":"YOUR_ADMIN_PASSWORD"}'
 ```
 
-Then send a message with the token returned as `access_token`:
+Затем отправьте сообщение:
 
 ```bash
 curl -X POST http://127.0.0.1:8338/commamatrix/api/messages \
@@ -188,81 +188,78 @@ curl -X POST http://127.0.0.1:8338/commamatrix/api/messages \
   -d '{"content":"Explain what CommaMatrix does in one sentence."}'
 ```
 
-The response contains the new dialog items, including the assistant output. For streaming, add `?stream=1` to the messages endpoint and consume authenticated SSE events from `/commamatrix/api/events` with the same bearer token.
+Для SSE-потока добавьте к запросу `?stream=1` и читайте события из `/commamatrix/api/events`.
 
-`agent.config_fields_markdown()` returns Markdown sections for the currently active extension modules. Each field is rendered as `## name: type (default: value)`, followed by its declaring module and description; the parenthesized default is omitted when no default is declared. Defaults created by a callable are shown as `computed`; configuration values are never included in the output. Call the helper after `add_extensions()` and before `start()` when you want to inspect only the extensions selected by the application. Core fields such as `agentic_model`, `http_host`, and `http_port` are not extension fields and can be imported and configured separately as shown above.
+### Взаимодействие с LLM
 
-## Configuration
+LLM HTTP adapter по умолчанию требует:
 
-The LLM HTTP adapter reads these environment variables by default:
+| Переменная          | Назначение                                         |
+|---------------------|----------------------------------------------------|
+| `OPENAI_API_KEY`    | Токен для OpenAI-compatible и OpenAI Responses API |
+| `ANTHROPIC_API_KEY` | Токен для Anthropic Messages API                   |
+| `LLM_API_BASE`      | Base URL провайдера                                |
 
-| Variable | Purpose |
-| --- | --- |
-| `OPENAI_API_KEY` | Key for OpenAI-compatible and OpenAI Responses APIs |
-| `ANTHROPIC_API_KEY` | Key for the Anthropic Messages API |
-| `LLM_API_BASE` | Provider base URL |
+В зависимости от провайдера задайте `llm_api_protocol` как `chat_completions` (по умолчанию),
+`responses` или `anthropic_messages`.
 
-Set `llm_api_protocol` to `chat_completions`, `responses`, or
-`anthropic_messages` in the agent configuration when the provider does not use
-the default Chat Completions protocol.
+Отправка локальных файлов внешней LLM требует публичного IP-адреса: настройте `http_external_url`, иначе функция будет недоступна.
 
-The provider must expose a compatible models endpoint. The adapter discovers available models during startup, and `agentic_model` filters the discovered models by substring. The quickstart selects `deepseek-v4-flash`; replace that value with a model available from your provider.
+### Конфигурация
 
-For file uploads sent to an external LLM provider, configure the `http_external_url` field with a public base URL that reaches this HTTP server. Without it, the connector keeps external file uploads disabled.
+Вы можете также задавать поля конфигурации при создании агента, передавая словарь `config` как аргумент.
 
-Configuration fields are ordinary Python objects and can be passed as keys in an agent's `config` dictionary on init:
-
-```python
-from commamatrix import Agent, agentic_model
-from commamatrix.builtin.llm_http_adapter import llm_api_base
-
-agent = Agent(
-    "my-agent",
-    config={
-        agentic_model: "my-model",
-        llm_api_base: "https://llm.example.com",
-    },
-)
-```
-
-## Extensions
-
-Extensions are imported and then added to an agent's scope. Applications select
-an explicit list of extension modules:
+Вызов функции `agent.config_fields_markdown()` выведет все конфигурационные поля: тип,
+описание и значение по умолчанию. Вызовите метод, не запуская агента, чтобы посмотреть, какие настройки доступны с текущим набором расширений:
 
 ```python
-from commamatrix import Agent
+from commamatrix import *
 
-
-async def create_agent() -> Agent:
-    agent = Agent("my_lovely_assistant")
+async def main() -> None:
+    agent = Agent(name="my_lovely_assistant", config={
+      agentic_model: 'claude-opus-5'
+    })
     await agent.add_extensions(
-        "commamatrix.builtin.instructions.default_instruction",
-        "commamatrix.builtin.llm_http_adapter",
-        "commamatrix.builtin.http_connector",
+        commamatrix.builtin.default_instruction,
+        commamatrix.builtin.llm_http_adapter,
+        commamatrix.builtin.http_connector,
     )
-    return agent
+    print(agent.config_fields_markdown())
 ```
 
-Individual extensions can be selected when an agent needs a narrower scope:
+### Расширения
+
+Список расширений изолирован для конкретного агента и не привязан к импорту модулей. Можно добавлять свои расширения: все содержимое модуля просматривается CommaMatrix на наличие объявленных хуков, инструментов, инструкций, коннекторов и иных модулей. Все компоненты, имеющие жизненный цикл, автоматически подтягиваются в жизненный цикл агента.
+
+По умолчанию все, что объявлено в модуле `__main__` и все, что содержится в директории `.commamatrix/plugins`, загружается как расширение. Предотвратить это можно при помощи `Agent(auto_load_main=False)` и/или `Agent(auto_load_plugins=False)`.
 
 ```python
 from commamatrix.builtin import data_tools, web_utils
+import my_package, my_module
 
-await agent.add_extensions(data_tools, web_utils)
+await agent.add_extensions("data_tools", "web_utils")  # можно использовать имена
+await agent.add_extensions(my_package.my_extension)
+await agent.add_extensions(my_module)
 ```
 
-Custom or external extensions can expose normal Python declarations and be activated by import name:
+Внутренние модули пакета нужно импортировать из его `__init__.py`; ре-экспорт сам по себе не считается декларацией компонента.
 
-```python
-await agent.add_extensions("my_project.my_extension")
-```
+Основные смысловые компоненты: `@tool`, `@instruction`, `@hook` (и конструктор `Hook`, позволяющий создавать новые события для хуков), `Service`, `Connector`, `BaseTable`, `Storage`, `FileStorage`, `LLMAdapter` и `@lifecycle_component`.
 
-Common declarations include `@tool`, `@instruction`, lifecycle hooks, service subclasses, provider implementations, and `BaseTable` subclasses. See the [extension authoring guide](https://github.com/matrixd0t/commamatrix/blob/master/src/commamatrix/builtin/self_extension/guides) for the complete extension API.
+Прочитайте [руководство по созданию расширений](src/commamatrix/builtin/self_extension/guides/main.md).
+Там же находятся ссылки на специализированные руководства.
 
-## Security Notes
+Посмотрите папку [`examples/`](examples/) — там есть пример интерфейсного
+агента и headless executor с делегированием задач субагенту.
 
-- Keep `http_host` set to `127.0.0.1` for local development. `0.0.0.0` exposes your HTTP connector to the Internet.
-- HTTP connector passwords are hashed; generated administrator credentials are exposed only during initial account creation.
-- CodeAct executes arbitrary Python code with access to the standard library, installed dependencies, and the system terminal. Default subprocess backend is intentionally NOT a security sandbox and must NOT be exposed to untrusted users without an external isolation layer. To enforce configurable limits on the agent’s execution privileges, prefer systemd or Docker-backed implementations.
-- Validate the reverse proxy, TLS, CORS, and network policy before exposing the HTTP connector to the Internet.
+### Безопасность
+
+- Пароли HTTP-коннектора хешируются, а сгенерированный пароль администратора выдается
+  единожды при первом запуске агента
+- В CodeAct на бэкенде по-умолчанию (`SubprocessBackend`) выполняется произвольный Python-код с оступом к стандартной библиотеке,  установленным зависимостям и терминалу. Это **небезопасно**. Для недоверенных
+  пользователей используйте внешний isolation layer, например systemd или
+  Docker.
+- Перед публикацией HTTP-коннектора проверьте reverse proxy, TLS, CORS, авторизацию.
+- Используйте общие для всех расширений компоненты, не создавайте их заново: например, `agent.http_client` для Интернет-запросов и `agent.http_server` для регистрации своих эндпойнтов.
+
+`written with love by dotmatrix`

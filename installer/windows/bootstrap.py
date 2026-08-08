@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_REPOSITORY = "matrixd0t/commamatrix"
-DEFAULT_VERSION = "0.1.8"
+DEFAULT_VERSION = "0.1.9"
 DEFAULT_WORKSPACE = Path.home() / "commamatrix"
 PROTOCOLS = (
     ("chat_completions", "Chat Completions"),
@@ -120,6 +120,26 @@ def _run_quiet(command: list[str | Path], *, cwd: Path | None = None, env: dict[
     if len(details) > 2000:
         details = details[-2000:]
     raise InstallerError(details or f"Command failed with exit code {result.returncode}")
+
+
+def _find_managed_python(uv: str, version: str) -> Path:
+    result = subprocess.run(
+        [uv, "python", "find", "--no-project", "--managed-python", version],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if result.returncode != 0:
+        details = (result.stderr or result.stdout).strip()
+        if len(details) > 2000:
+            details = details[-2000:]
+        raise InstallerError(details or f"Command failed with exit code {result.returncode}")
+    python = Path(result.stdout.strip())
+    if not python.is_file():
+        raise InstallerError(f"Managed Python was not found: {python}")
+    return python
 
 
 def _download(url: str, destination: Path) -> None:
@@ -608,7 +628,8 @@ def _install_runtime(uv: str, workspace: Path, resources: Resources, source_root
     venv = workspace / ".venv"
     workspace.mkdir(parents=True, exist_ok=True)
     _run_quiet([uv, "python", "install", resources.python_version])
-    _run_quiet([uv, "venv", "--clear", "--python", resources.python_version, venv])
+    base_python = _find_managed_python(uv, resources.python_version)
+    _run_quiet([base_python, "-m", "venv", "--clear", "--without-pip", venv])
     python = venv / "Scripts" / "python.exe"
     if source_root is not None:
         package_spec = ".[all]"
