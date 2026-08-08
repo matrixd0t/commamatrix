@@ -16,12 +16,17 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_REPOSITORY = "matrixd0t/commamatrix"
-DEFAULT_VERSION = "0.1.10"
+DEFAULT_VERSION = "0.1.11"
 DEFAULT_WORKSPACE = Path.home() / "commamatrix"
 PROTOCOLS = (
     ("chat_completions", "Chat Completions"),
     ("responses", "Responses"),
     ("anthropic_messages", "Anthropic Messages"),
+)
+ENTRYPOINT_DEPENDENCIES = (
+    "pystray>=0.19.5,<0.20",
+    "Pillow>=11,<13",
+    "python-dotenv>=1,<2",
 )
 
 
@@ -69,7 +74,6 @@ class Resources:
     python_version: str
     providers: Path
     entrypoint_template: Path
-    runtime_requirements: Path
     icon: Path | None
     wheel: Path | None
     shortcut_icon: Path | None = None
@@ -83,7 +87,7 @@ def _read_manifest(path: Path, version: str) -> dict[str, str]:
     if not isinstance(manifest, dict) or manifest.get("version") != version:
         raise InstallerError("Release manifest version does not match the installer version")
     result: dict[str, str] = {}
-    for key in ("python", "wheel", "providers", "entrypoint_template", "runtime_requirements", "icon", "shortcut_icon"):
+    for key in ("python", "wheel", "providers", "entrypoint_template", "icon", "shortcut_icon"):
         value = manifest.get(key)
         if not isinstance(value, str):
             continue
@@ -93,7 +97,7 @@ def _read_manifest(path: Path, version: str) -> dict[str, str]:
                 result[key] = value
         elif value_path.name == value:
             result[key] = value
-    required = ("python", "wheel", "providers", "entrypoint_template", "runtime_requirements", "icon", "shortcut_icon")
+    required = ("python", "wheel", "providers", "entrypoint_template", "icon", "shortcut_icon")
     if any(key not in result for key in required):
         raise InstallerError("Release manifest is missing required assets")
     return result
@@ -160,7 +164,6 @@ def _load_resources(
         manifest = _read_manifest(installer_root / "manifest.json", version)
         providers = installer_root / manifest["providers"]
         entrypoint_template = installer_root / manifest["entrypoint_template"]
-        runtime_requirements = installer_root / manifest["runtime_requirements"]
         icon_source = source_root / manifest["icon"]
         shortcut_icon_source = source_root / manifest["shortcut_icon"]
         icon = temporary / "logo.png"
@@ -169,7 +172,7 @@ def _load_resources(
             if not source.is_file():
                 raise InstallerError(f"Installer asset is missing: {source}")
             shutil.copy2(source, destination)
-        return Resources(manifest["python"], providers, entrypoint_template, runtime_requirements, icon, None, shortcut_icon)
+        return Resources(manifest["python"], providers, entrypoint_template, icon, None, shortcut_icon)
 
     tag = f"v{version}"
     raw_base = f"https://raw.githubusercontent.com/{repository}/{tag}/installer/windows"
@@ -179,10 +182,8 @@ def _load_resources(
     manifest = _read_manifest(manifest_path, version)
     providers = temporary / manifest["providers"]
     entrypoint_template = temporary / manifest["entrypoint_template"]
-    runtime_requirements = temporary / manifest["runtime_requirements"]
     _download(f"{raw_base}/{manifest['providers']}", providers)
     _download(f"{raw_base}/{manifest['entrypoint_template']}", entrypoint_template)
-    _download(f"{raw_base}/{manifest['runtime_requirements']}", runtime_requirements)
 
     icon = temporary / "logo.png"
     shortcut_icon = temporary / "logo.ico"
@@ -192,7 +193,7 @@ def _load_resources(
     wheel = temporary / manifest["wheel"]
     release_url = f"https://github.com/{repository}/releases/download/{tag}/{wheel.name}"
     _download(release_url, wheel)
-    return Resources(manifest["python"], providers, entrypoint_template, runtime_requirements, icon, wheel, shortcut_icon)
+    return Resources(manifest["python"], providers, entrypoint_template, icon, wheel, shortcut_icon)
 
 
 def _parse_providers(path: Path, language: str) -> list[Provider]:
@@ -638,7 +639,7 @@ def _install_runtime(uv: str, workspace: Path, resources: Resources, source_root
         if resources.wheel is None:
             raise InstallerError("Release wheel is missing")
         _run_quiet([uv, "pip", "install", "--python", python, f"{resources.wheel}[all]"])
-    _run_quiet([uv, "pip", "install", "--python", python, "-r", resources.runtime_requirements])
+    _run_quiet([uv, "pip", "install", "--python", python, *ENTRYPOINT_DEPENDENCIES])
     return python
 
 
