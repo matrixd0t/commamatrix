@@ -123,7 +123,7 @@ async def submit_run(
         except asyncio.CancelledError:
             await service.complete(origin, None, RuntimeError("Subagent run was cancelled"))
             raise
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             await service.complete(origin, None, exc)
         else:
             await service.complete(origin, result)

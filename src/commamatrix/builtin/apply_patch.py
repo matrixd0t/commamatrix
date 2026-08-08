@@ -140,11 +140,7 @@ def parse_patch(patch_text: str) -> list[FileOp]:
     total = len(lines)
 
     def is_new_section(_line: str) -> bool:
-        return (
-                _line.startswith("*** Add File: ")
-                or _line.startswith("*** Update File: ")
-                or _line.startswith("*** Delete File: ")
-        )
+        return _line.startswith(("*** Add File: ", "*** Update File: ", "*** Delete File: "))
 
     while index < total:
         line = lines[index]
@@ -270,8 +266,7 @@ def _find_hunk_position(file_lines: list[str], before: list[str], start: int, co
     fallback = [
         index
         for index in range(start, line_count - before_count + 1)
-        if [line.rstrip() for line in file_lines[index: index + before_count]]
-           == before_rstrip
+        if [line.rstrip() for line in file_lines[index: index + before_count]] == before_rstrip
     ]
     if len(fallback) == 1:
         return fallback[0]

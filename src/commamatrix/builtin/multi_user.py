@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, timezone, tzinfo
+from datetime import UTC, tzinfo
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -155,3 +155,4 @@ __all__ = [
     "user_header_template",
     "user_header_timezone",
 ]
+

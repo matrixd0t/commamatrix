@@ -61,7 +61,7 @@ class RPCServer:
             response = RPCResponse(id=request.id, result=_make_serializable(result))
         except RPCError as exc:
             response = RPCResponse(id=request.id, error=exc)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             response = RPCResponse(
                 id=request.id, error=RPCError(code=-32603, message=str(exc))
             )

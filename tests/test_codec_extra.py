@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from commamatrix.builtin.llm_http_adapter.anthropic_messages import (
     AnthropicMessagesCodec,
@@ -12,18 +11,17 @@ from commamatrix.builtin.llm_http_adapter.anthropic_messages import (
 from commamatrix.builtin.llm_http_adapter.chat_completions import ChatCompletionsCodec
 from commamatrix.builtin.llm_http_adapter.codec import wire_meta
 from commamatrix.builtin.llm_http_adapter.responses import ResponsesCodec
-from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
+from commamatrix.components.dialog import DialogItemType, DialogRole
 from commamatrix.components.hook import BeforeLlmCallCtx, RunCtx
 from commamatrix.components.llm_adapter import (
     LLMResponseReasoningBlock,
     LLMResponseTextBlock,
     LLMResponseToolCallBlock,
     StopReason,
-    Usage,
 )
-from commamatrix.components.tool import ToolDescriptor, ToolManager
+from commamatrix.components.tool import ToolManager
 from commamatrix.core.classes.manager import ServiceInstanceRegistry
-from tests.conftest import StubOrigin, make_tool_descriptor, stub_origin
+from tests.conftest import make_tool_descriptor, stub_origin
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

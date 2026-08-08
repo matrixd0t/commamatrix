@@ -47,7 +47,7 @@ async def manage(module_or_path: str, action: Literal["add", "remove", "reload"]
     }[action]
     try:
         handled = await method(module_or_path)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return f"Failed to {action} extension '{module_or_path}': {exc}"
     if not handled:
         return f"Failed to {action} extension '{module_or_path}'."
@@ -66,7 +66,7 @@ async def list_all(*, ctx: BeforeToolCallCtx) -> str:
 
 
 @tool(alias="self_extension", filesystem=True)
-async def read_guide(sections: list[str] = []) -> str:
+async def read_guide(sections: list[str] | None = None) -> str:
     """Read the general extension guide or selected detailed guide sections.
 
     ``sections`` defaults to an empty list.

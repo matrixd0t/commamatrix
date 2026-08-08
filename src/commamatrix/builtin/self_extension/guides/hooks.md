@@ -54,7 +54,9 @@ from commamatrix import BeforeToolCallCtx, before_tool_call
 
 @before_tool_call
 async def guard_external_delete(ctx: BeforeToolCallCtx) -> None:
-    if ctx.tool_call.tool_name == "project_delete" and not ctx.run.state.get("approved"):
+    if ctx.tool_call.tool_name == "project_delete" and not ctx.run.state.get(
+        "approved"
+    ):
         ctx.abort_tool_call = True
         ctx.abort_reason = "Explicit approval is required."
 ```

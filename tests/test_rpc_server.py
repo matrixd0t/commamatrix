@@ -9,9 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from commamatrix.builtin.codeact.rpc.protocol import RPCError
 from commamatrix.builtin.codeact.rpc.server import RPCServer
-from commamatrix.components.llm_adapter import ToolCallResult
 from commamatrix.components.tool import PythonToolSource, ToolDescriptor, ToolManager
 from commamatrix.core.classes.manager import ServiceInstanceRegistry
 

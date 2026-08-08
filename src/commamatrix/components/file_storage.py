@@ -202,8 +202,7 @@ async def read_file(
         if not path.is_file():
             return None
         try:
-            async with aio_open(path, "rb") as file:
-                data = await file.read()
+            data = await asyncio.to_thread(path.read_bytes)
         except OSError:
             return None
     else:

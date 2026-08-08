@@ -203,7 +203,7 @@ async def switch(origin_type: str, fields_json: str, ctx: BeforeToolCallCtx) -> 
     try:
         origin = origin_cls.model_validate(fields)
         ctx.run.agent.connector_manager.resolve_for_origin(origin)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return f"Invalid origin: {exc}"
     ctx.run.state["new_origin"] = origin
     return "OK"

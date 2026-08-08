@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import sys
 import types
 
@@ -13,19 +12,10 @@ import pytest
 from commamatrix.components.connector import (
     CONNECTOR_ATTRIBUTE,
     Connector,
-    ConnectorDescriptor,
     ConnectorManager,
     PythonConnectorSource,
 )
-from commamatrix.components.dialog import (
-    DialogItem,
-    DialogItemType,
-    DialogOrigin,
-    DialogRole,
-)
-from commamatrix.components.hook import OnParsedCtx
-from commamatrix.core.classes.manager import ServiceInstanceRegistry
-from tests.conftest import StubOrigin, stub_agent, stub_origin
+from tests.conftest import StubOrigin, stub_agent
 
 
 class TestConnectorSubclass:

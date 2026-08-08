@@ -127,7 +127,7 @@ async def _worker(payload):
     async def accept(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             transport = await TcpTransport.accept(reader, writer, token, timeout=2)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             accept_errors.append(f"{type(exc).__name__}: {exc}")
             return
         if connection.done():

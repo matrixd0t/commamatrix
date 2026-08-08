@@ -5,10 +5,8 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import BaseModel
 
 from commamatrix.components.dialog import (
-    DEFAULT_PLATFORM,
     ORIGIN_REGISTRY,
     DialogItem,
     DialogItemType,
@@ -29,7 +27,7 @@ class TestDialogOrigin:
 
     def test_origin_is_frozen(self):
         origin = stub_origin()
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             origin.chat_id = "other"
 
     def test_origin_equality(self):

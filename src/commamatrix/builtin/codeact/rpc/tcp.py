@@ -120,7 +120,7 @@ class TcpServer:
     async def _handle_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             transport = await TcpTransport.accept(reader, writer, self._token, timeout=self._handshake_timeout)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return
         connection = self._connection
         if connection is None or connection.done():

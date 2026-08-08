@@ -6,11 +6,10 @@ SSE parsing, connector streaming interface."""
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
-from commamatrix.builtin.llm_http_adapter.adapter import LLMHTTPAdapter
 from commamatrix.builtin.llm_http_adapter.anthropic_messages import (
     AnthropicMessagesCodec,
 )
@@ -18,14 +17,10 @@ from commamatrix.builtin.llm_http_adapter.chat_completions import ChatCompletion
 from commamatrix.builtin.llm_http_adapter.codec import ApiCodec
 from commamatrix.builtin.llm_http_adapter.responses import ResponsesCodec
 from commamatrix.components.connector import Connector
-from commamatrix.components.dialog import DialogOrigin
 from commamatrix.components.llm_adapter import (
     LLMAdapter,
     LLMAdapterManager,
     LLMResponse,
-    LLMResponseBlock,
-    LLMResponseReasoningBlock,
-    LLMResponseTextBlock,
     LLMResponseToolCallBlock,
     StopReason,
     StreamDelta,
@@ -598,8 +593,6 @@ class TestHttpConnectorStreaming:
 
         import asyncio
         queue: asyncio.Queue = asyncio.Queue()
-        origin = stub_origin()
-        origin.__class__.__bases__  # ensure it's not HttpOrigin
         from commamatrix.builtin.http_connector.connector import HttpOrigin
         http_origin = HttpOrigin(http_user_id=1)
         session = conn._open_session(1)

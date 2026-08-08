@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from commamatrix.builtin.llm_http_adapter.anthropic_messages import (
     AnthropicMessagesCodec,
@@ -13,12 +12,10 @@ from commamatrix.builtin.llm_http_adapter.chat_completions import ChatCompletion
 from commamatrix.builtin.llm_http_adapter.codec import ApiCodec, ApiProtocol
 from commamatrix.builtin.llm_http_adapter.responses import ResponsesCodec
 from commamatrix.components.llm_adapter import (
-    LLMResponse,
     LLMResponseReasoningBlock,
     LLMResponseTextBlock,
     LLMResponseToolCallBlock,
     StopReason,
-    Usage,
 )
 
 

@@ -13,5 +13,9 @@ __all__ = [
     "InternalOrigin",
     "SubagentService",
     "call_subagent",
+    "connector",
+    "hooks",
+    "service",
     "submit_run",
+    "tools",
 ]

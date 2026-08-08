@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from enum import StrEnum
 from json import loads
-from typing import Any
+from typing import Any, ClassVar
 
 from httpx2 import AsyncClient
 
@@ -46,7 +46,7 @@ class ApiCodec(ABC):
     )
     can_stream: bool = False
 
-    registry: dict[str, ApiCodec] = {}
+    registry: ClassVar[dict[str, ApiCodec]] = {}
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)

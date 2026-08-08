@@ -57,7 +57,7 @@ class AgentRunner:
             old_task.cancel()
             try:
                 await old_task
-            except (asyncio.CancelledError, Exception):
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001, S110
                 pass
 
         return new_task

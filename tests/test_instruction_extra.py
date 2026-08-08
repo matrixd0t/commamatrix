@@ -4,22 +4,19 @@
 
 from __future__ import annotations
 
-import sys
-import types
 
 import pytest
 
-from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
+from commamatrix.components.dialog import DialogItemType, DialogRole
 from commamatrix.components.hook import BeforeLlmCallCtx, RunCtx
 from commamatrix.components.instruction import (
     InstructionCtx,
     InstructionManager,
     PythonInstructionSource,
     add_instructions,
-    instruction,
 )
 from commamatrix.core.classes.manager import ServiceInstanceRegistry
-from tests.conftest import StubOrigin, make_dialog_item, stub_origin
+from tests.conftest import make_dialog_item, stub_origin
 
 
 def _stub_agent():

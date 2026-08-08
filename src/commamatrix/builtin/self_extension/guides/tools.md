@@ -102,8 +102,7 @@ async def find_customer(email: str) -> dict:
 async def hide_private_tools(ctx: BeforeLlmCallCtx) -> None:
     if not ctx.run.state.get("crm_allowed"):
         ctx.tools = [
-            item for item in ctx.tools
-            if item.meta.get("category") != "private"
+            item for item in ctx.tools if item.meta.get("category") != "private"
         ]
 ```
 

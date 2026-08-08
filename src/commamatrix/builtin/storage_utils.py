@@ -43,6 +43,6 @@ async def persistent_storage(ctx: InstructionCtx) -> str:
     storage: Storage = ctx.run.agent.storage.active
     try:
         tables = await ctx.run.agent.storage.schema()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return f"# Storage\nType: {await storage.info()}.\nTables unavailable: {exc}."
     return await _schema_text(storage, tables)

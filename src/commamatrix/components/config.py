@@ -270,7 +270,7 @@ def configure_agent_logging(agent: Any) -> None:
             handlers.append(_AgentFileHandler(agent, configured_path))
         for handler in handlers:
             package_logger.addHandler(handler)
-        setattr(agent, "_commamatrix_log_handlers", tuple(handlers))
+        agent._commamatrix_log_handlers = tuple(handlers)
     except (AttributeError, OSError, TypeError):
         # Lightweight test doubles and frozen host objects can use root logging.
         return

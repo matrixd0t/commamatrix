@@ -8,10 +8,9 @@ import pytest
 
 from commamatrix.builtin.llm_http_adapter.adapter import LLMHTTPAdapter
 from commamatrix.builtin.llm_http_adapter.codec import ApiProtocol
-from commamatrix.components.config import Config, ConfigField
+from commamatrix.components.config import Config
 from commamatrix.components.hook import BeforeLlmCallCtx, RunCtx
 from commamatrix.components.llm_adapter import LLM
-from commamatrix.core.classes.manager import ServiceInstanceRegistry
 from tests.conftest import stub_agent, stub_origin
 
 

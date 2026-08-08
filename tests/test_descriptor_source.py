@@ -10,16 +10,12 @@ import weakref
 
 import pytest
 
-from commamatrix.core.classes.descriptor import Descriptor, StaleDescriptorError
 from commamatrix.core.classes.service import (
-    SERVICE_ATTRIBUTE,
     AbstractService,
     ServiceDescriptor,
 )
 from commamatrix.core.classes.source import (
     PythonServiceSource,
-    PythonSource,
-    UnavailableSourceError,
 )
 
 

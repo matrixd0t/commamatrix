@@ -126,7 +126,7 @@ class SubprocessBackend(ExecutionBackend):
             stderr_buffer.append("Execution cancelled")
         except ConnectionError:
             stderr_buffer.append("Worker process connection lost")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             other_error = exc
             stderr_buffer.append(f"Execution error: {exc}")
         finally:

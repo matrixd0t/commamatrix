@@ -193,7 +193,9 @@ class SqlStorage(Storage):
 
     @staticmethod
     def _find_origin_class(row: Any) -> type[DialogOrigin]:
-        return resolve_origin_type({name: row[name] for name in row.keys()})
+        return resolve_origin_type(  # noqa: SIM118 - sqlite3.Row iteration yields values
+            {name: row[name] for name in row.keys()}
+        )
 
     async def save_event(self, entry: DialogItem) -> int | None:
         db = await self._get_db()
@@ -395,9 +397,12 @@ class SqlStorage(Storage):
             elif not _field_is_nullable(field_info):
                 if name != table_cls.auto_increment:
                     column += " NOT NULL"
-            if not field_info.is_required() and field_info.default_factory is None:
-                if (default := _sql_literal(field_info.default)) is not None:
-                    column += f" DEFAULT {default}"
+            if (
+                not field_info.is_required()
+                and field_info.default_factory is None
+                and (default := _sql_literal(field_info.default)) is not None
+            ):
+                column += f" DEFAULT {default}"
             columns.append(column)
         return columns
 
@@ -483,3 +488,4 @@ class SqlStorage(Storage):
     async def stop(self) -> None:
         await self._close()
         self.logger.info("Storage stopped backend=%s", type(self).__name__)
+

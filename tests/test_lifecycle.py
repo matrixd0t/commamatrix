@@ -4,18 +4,13 @@
 
 from __future__ import annotations
 
-import sys
-import types
 
 import pytest
 
 from commamatrix.core.agent.lifecycle import AgentLifecycle
 from commamatrix.core.classes.manager import (
     Manager,
-    ServiceInstanceManager,
-    ServiceInstanceRegistry,
 )
-from commamatrix.core.classes.service import AbstractService
 from tests.conftest import stub_agent
 
 

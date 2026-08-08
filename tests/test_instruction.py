@@ -12,8 +12,6 @@ import pytest
 from commamatrix.components.hook import HOOK_ATTRIBUTE, HookEventType
 from commamatrix.components.instruction import (
     INSTRUCTION_ATTRIBUTE,
-    Instruction,
-    InstructionCtx,
     InstructionDescriptor,
     InstructionManager,
     PythonInstructionSource,

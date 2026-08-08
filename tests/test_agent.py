@@ -11,11 +11,9 @@ import types
 import pytest
 
 from commamatrix.components.config import Config, ConfigField
-from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
-from commamatrix.components.hook import RunCtx
 from commamatrix.components.server import http_port
 from commamatrix.core.agent.agent import Agent
-from tests.conftest import StubOrigin, make_dialog_item, stub_origin
+from tests.conftest import make_dialog_item, stub_origin
 
 
 class TestAgentInit:

@@ -157,7 +157,7 @@ def _load_resources(
     icon = temporary / "icon.png"
     try:
         _download(f"https://raw.githubusercontent.com/{repository}/{tag}/{manifest.get('icon', 'logo.png')}", icon)
-    except Exception:
+    except Exception:  # noqa: BLE001
         icon = None
 
     wheel = temporary / manifest["wheel"]
@@ -648,7 +648,7 @@ def _install(language: str, selection: Selection, resources: Resources, uv: str,
     entrypoint = _generate_entrypoint(resources.entrypoint_template, workspace, selection, language)
     if resources.icon is not None:
         shutil.copy2(resources.icon, workspace / "icon.png")
-    command = _create_command(workspace)
+    _create_command(workspace)
     pythonw = python.parent / "pythonw.exe"
     desktop = Path.home() / "Desktop"
     if not desktop.is_dir():
@@ -712,5 +712,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-

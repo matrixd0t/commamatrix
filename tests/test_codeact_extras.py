@@ -13,9 +13,7 @@ from commamatrix.builtin.codeact.hooks import (
     codeact_enabled,
     expose_codeact_tools,
 )
-from commamatrix.builtin.codeact.rpc.protocol import RPCError
 from commamatrix.builtin.codeact.rpc.server import (
-    RPCServer,
     is_codeact_internal,
     serialize_tool_descriptor,
 )
@@ -41,7 +39,7 @@ def _make_desc(
             "type": "function",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
-        meta={"codeact": False} if codeact else {} if codeact else {},
+        meta={"codeact": False} if codeact else {},
         _source_ref=weakref.ref(src),
     )
 

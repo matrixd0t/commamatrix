@@ -46,7 +46,7 @@ async def do_search(query: str, limit: int, sites: list[str] | None, timeout: in
 
     try:
         results = await asyncio.to_thread(_do_search)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return f"Error: web search failed: {exc}"
 
     if not results:
@@ -125,7 +125,7 @@ async def search(query: str, limit: int = 5, sites: list[str] | None = None, *, 
         return "Error: sites must be a list of strings."
 
     if limit < 1:
-        return f"Error: limit must be positive."
+        return "Error: limit must be positive."
     effective_limit = min(limit, config.get(web_search_max_limit))
     started = time.perf_counter()
     ctx.run.agent.logger.debug("Web search started query_chars=%d limit=%d sites=%d", len(query), effective_limit, len(sites or ()))

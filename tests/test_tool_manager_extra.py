@@ -10,10 +10,9 @@ import types
 import pytest
 
 from commamatrix.components.hook import BeforeToolCallCtx, RunCtx
-from commamatrix.components.llm_adapter import ToolCall, ToolCallResult
-from commamatrix.components.tool import ToolDescriptor, ToolManager, tool
-from commamatrix.core.classes.manager import ServiceInstanceRegistry
-from tests.conftest import StubOrigin, stub_agent, stub_origin
+from commamatrix.components.llm_adapter import ToolCall
+from commamatrix.components.tool import ToolManager, tool
+from tests.conftest import stub_agent, stub_origin
 
 # ── ToolManager.call() with ctx injection ────────────────────────────────────
 
@@ -329,7 +328,6 @@ class TestToolSourceInvokeWithCtx:
             src.set_scope(["invoke_ctx_mod"])
             descriptors = src.scan()
 
-            from commamatrix.core.classes.manager import ServiceInstanceRegistry
             agent = stub_agent()
             run = RunCtx(agent=agent, origin=stub_origin(), user="u")
             before_ctx = BeforeToolCallCtx(

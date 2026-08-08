@@ -213,7 +213,7 @@ def _make_tool_proxy(client, descriptor):
         filename,
     )
     namespace = {"_codeact_call": proxy}
-    exec(
+    exec(  # noqa: S102
         compile(
             "async def _codeact_source_proxy(*args, **kwargs):\n"
             "    return await _codeact_call(*args, **kwargs)\n",
@@ -388,7 +388,7 @@ async def main(host: str, port: int, token: str) -> None:
             if inspect.isawaitable(result):
                 await result
         elapsed = (time.monotonic() - start) * 1000
-    except BaseException as exc:
+    except BaseException as exc:  # noqa: BLE001
         stderr_buf.write(f"{type(exc).__name__}: {exc}")
         returncode = 1
 

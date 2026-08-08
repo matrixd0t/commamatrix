@@ -70,8 +70,7 @@ expression accepted by `matrix-planner`:
 
 ```python
 @task(cron("*/15 * * * *", tz=timezone.utc))
-async def quarter_hour_check() -> None:
-    ...
+async def quarter_hour_check() -> None: ...
 ```
 
 The optional `tz` controls the timezone used to calculate matching times. A
@@ -91,13 +90,11 @@ from commamatrix.builtin.planner import every, task
 
 
 @task(every("10m"))
-async def refresh_cache() -> None:
-    ...
+async def refresh_cache() -> None: ...
 
 
 @task(every(timedelta(hours=1), anchor="end"))
-def compact_cache() -> None:
-    ...
+def compact_cache() -> None: ...
 ```
 
 With the default `anchor="start"`, ticks follow a fixed cadence based on the
@@ -117,8 +114,7 @@ from commamatrix.builtin.planner import once, task
 
 
 @task(once(datetime(2026, 12, 31, 23, 59, tzinfo=timezone.utc)))
-async def year_end_cleanup() -> None:
-    ...
+async def year_end_cleanup() -> None: ...
 ```
 
 The schedule is in memory. A `once` task whose time is already in the past is
@@ -155,8 +151,7 @@ async def report_task_error(error: Exception) -> None:
     timeout="2m",
     on_error=report_task_error,
 )
-async def refresh_reports() -> None:
-    ...
+async def refresh_reports() -> None: ...
 ```
 
 The scheduler keeps the task registered after an execution fails. Without an

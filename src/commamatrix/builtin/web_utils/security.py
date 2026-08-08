@@ -23,9 +23,7 @@ _PRIVATE_PREFIXES_V4 = (
 def _is_private_ip(host: str) -> bool:
     if ":" in host:
         return host in ("::1", "::", "[::1]", "[::]")
-    if host.startswith(_PRIVATE_PREFIXES_V4):
-        return True
-    return False
+    return host.startswith(_PRIVATE_PREFIXES_V4)
 
 
 def _is_localhost(host: str) -> bool:

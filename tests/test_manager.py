@@ -10,15 +10,14 @@ import weakref
 
 import pytest
 
-from commamatrix.core.classes.descriptor import Descriptor, StaleDescriptorError
 from commamatrix.core.classes.manager import (
     Manager,
     ServiceInstanceManager,
     ServiceInstanceRegistry,
 )
 from commamatrix.core.classes.service import AbstractService, ServiceDescriptor
-from commamatrix.core.classes.source import PythonServiceSource, UnavailableSourceError
-from tests.conftest import FakeService, stub_agent
+from commamatrix.core.classes.source import PythonServiceSource
+from tests.conftest import stub_agent
 
 
 class TestServiceInstanceRegistry:

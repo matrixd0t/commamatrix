@@ -4,22 +4,18 @@
 
 from __future__ import annotations
 
-import sys
-import types
 import weakref
 from dataclasses import dataclass
 from typing import Any
 
-import pytest
 
-from commamatrix.components.config import Config, ConfigField
+from commamatrix.components.config import Config
 from commamatrix.components.dialog import (
     DialogItem,
     DialogItemType,
     DialogOrigin,
     DialogRole,
 )
-from commamatrix.components.hook import RunCtx
 from commamatrix.components.tool import ToolDescriptor
 from commamatrix.core.classes.manager import ServiceInstanceRegistry
 from commamatrix.core.classes.service import AbstractService

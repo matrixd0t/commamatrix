@@ -7,7 +7,7 @@ import logging
 import secrets
 import unicodedata
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from functools import wraps
 from typing import TYPE_CHECKING
 
@@ -124,7 +124,7 @@ class Authorizer:
             raise AuthError("Username must start and end with a letter or number")
         for char in username:
             category = unicodedata.category(char)
-            if not (category.startswith("L") or category.startswith("M") or category == "Nd" or char in _USERNAME_SEPARATORS):
+            if not (category.startswith(("L", "M")) or category == "Nd" or char in _USERNAME_SEPARATORS):
                 raise AuthError("Username contains unsupported characters")
         return username
 
@@ -393,8 +393,6 @@ class Authorizer:
 
     async def stop(self) -> None:
         self._invites.clear()
-
-
 
 
 

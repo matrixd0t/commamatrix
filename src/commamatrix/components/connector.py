@@ -108,7 +108,6 @@ class Connector(AbstractService, Generic[OrgT]):
 
     async def publish_item(self, origin: DialogOrigin, item: DialogItem) -> None:
         """Publish a persisted item to passive subscribers when supported."""
-        return None
 
     async def get_user_timezone(self, origin: DialogOrigin) -> tzinfo | None:
         """Return a user's timezone when the platform can provide one."""
@@ -120,7 +119,6 @@ class Connector(AbstractService, Generic[OrgT]):
 
     async def send_stream_chunk(self, origin: DialogOrigin, chunk: StreamDelta) -> None:
         """Send a real-time content delta to the platform for live rendering."""
-        pass
 
     @asynccontextmanager
     async def typing(self, origin: DialogOrigin) -> AsyncIterator[None]:

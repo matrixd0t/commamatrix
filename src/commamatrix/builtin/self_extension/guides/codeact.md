@@ -17,8 +17,7 @@ For a grouped tool:
 
 ```python
 @tool(alias="fs")
-async def read_file(path: str) -> str:
-    ...
+async def read_file(path: str) -> str: ...
 ```
 
 the normal generated import is conceptually:

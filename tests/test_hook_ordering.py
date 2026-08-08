@@ -11,16 +11,10 @@ import pytest
 
 from commamatrix.components.hook import (
     HOOK_ATTRIBUTE,
-    AfterLlmCallCtx,
-    BeforeLlmCallCtx,
-    BeforeRunCtx,
-    Hook,
     HookDescriptor,
     HookEventType,
     HookManager,
     PythonHookSource,
-    after_llm_call,
-    before_llm_call,
     before_run,
 )
 from commamatrix.core.classes.manager import ServiceInstanceRegistry
@@ -279,8 +273,6 @@ class TestManagerAtomicScan:
         d2 = _make_descriptor("b", priority=5, source=source)
         source._available = True
         source._scan_results = [d1, d2]
-
-        orig_scan = source.scan
 
         def controlled_scan():
             return source._scan_results

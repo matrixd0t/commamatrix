@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import tzinfo
 from mimetypes import guess_type
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -242,7 +242,7 @@ class HttpConnector(Connector[HttpOrigin]):
             token = await self.authorizer.login(body.get("username", ""), body.get("password", ""))
         except AuthError as exc:
             return JSONResponse({"detail": str(exc)}, status_code=401)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
         return JSONResponse({"access_token": token, "token_type": "bearer", "expires_in": self.authorizer.token_ttl_seconds})
 
@@ -252,7 +252,7 @@ class HttpConnector(Connector[HttpOrigin]):
             user = await self.authorizer.register_with_invite(body.get("token", ""), body.get("username", ""), body.get("password", ""))
         except AuthError as exc:
             return JSONResponse({"detail": str(exc)}, status_code=400)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
         return JSONResponse({"id": user.id, "username": user.username}, status_code=201)
 
@@ -313,7 +313,7 @@ class HttpConnector(Connector[HttpOrigin]):
             await self.authorizer.change_password(request.state.user, body.get("old_password", ""), body.get("new_password", ""))
         except AuthError as exc:
             return JSONResponse({"detail": str(exc)}, status_code=400)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
         return JSONResponse({"status": "ok"})
 
@@ -323,7 +323,7 @@ class HttpConnector(Connector[HttpOrigin]):
             user = await self.authorizer.change_username(request.state.user, body.get("username", ""))
         except AuthError as exc:
             return JSONResponse({"detail": str(exc)}, status_code=400)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return JSONResponse({"detail": "Invalid JSON body"}, status_code=400)
         request.state.user = user
         return JSONResponse({"status": "ok", "username": user.username})
@@ -562,7 +562,7 @@ class HttpConnector(Connector[HttpOrigin]):
                     "ext": Path(file_data.name).suffix.lstrip("."),
                 }
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             attachment["error"] = str(exc)
         return attachment
 
@@ -850,7 +850,7 @@ class HttpConnector(Connector[HttpOrigin]):
             return self._file_upload_blocked()
         try:
             form = await request.form()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return JSONResponse({"error": f"Invalid multipart form: {exc}"}, status_code=400)
 
         upload = form.get("file")
@@ -860,7 +860,7 @@ class HttpConnector(Connector[HttpOrigin]):
         filename = Path(filename).name or "file"
         try:
             data = await upload.read()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return JSONResponse({"error": f"Could not read uploaded file: {exc}"}, status_code=400)
         if not isinstance(data, bytes):
             return JSONResponse({"error": "Uploaded file data is invalid"}, status_code=400)
@@ -895,7 +895,7 @@ class HttpConnector(Connector[HttpOrigin]):
     async def _read_file(self, file_id: str) -> bytes | Response:
         try:
             data = await self.agent.file_storage.get(file_id)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return JSONResponse({"error": f"Could not read file: {exc}"}, status_code=503)
         return data if data is not None else JSONResponse({"error": "File not found"}, status_code=404)
 
@@ -973,7 +973,7 @@ class HttpConnector(Connector[HttpOrigin]):
                 return [], "Each attachment requires a valid file_id or external URL"
             try:
                 data = await self.agent.file_storage.get(file_id)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 return [], f"Could not read file_id {file_id!r}: {exc}"
             if data is None:
                 return [], f"File not found: {file_id}"
@@ -1024,7 +1024,7 @@ class HttpConnector(Connector[HttpOrigin]):
     async def _handle_message(self, request: Request) -> Response:
         try:
             body = await request.json()
-        except Exception:
+        except Exception:  # noqa: BLE001
             return JSONResponse({"error": "Invalid JSON"}, status_code=400)
         if not isinstance(body, dict):
             return JSONResponse({"error": "Body must be a JSON object"}, status_code=400)

@@ -4,14 +4,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import sys
 import types
 from typing import Any
 
 import pytest
 
-from commamatrix.components.config import Config
 from commamatrix.components.connector import Connector
 from commamatrix.components.dialog import (
     DialogItem,
@@ -27,7 +25,6 @@ from commamatrix.components.hook import (
     BeforeRunCtx,
     BeforeSendCtx,
     BeforeToolCallCtx,
-    HookEventType,
     OnErrorCtx,
     OnParsedCtx,
     RunCtx,
@@ -35,9 +32,6 @@ from commamatrix.components.hook import (
 from commamatrix.components.llm_adapter import (
     LLM,
     LLMAdapter,
-    LLMAdapterManager,
-    LLMResponse,
-    LLMResponseBlock,
     LLMResponseReasoningBlock,
     LLMResponseTextBlock,
     LLMResponseToolCallBlock,
@@ -45,13 +39,10 @@ from commamatrix.components.llm_adapter import (
     StreamDelta,
     StreamEnd,
     ToolCall,
-    ToolCallResult,
-    Usage,
 )
 from commamatrix.components.storage import Storage
 from commamatrix.components.tool import tool
 from commamatrix.core.agent.agent import Agent
-from commamatrix.core.classes.service import AbstractService
 from tests.conftest import StubOrigin, make_dialog_item, stub_origin
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -359,7 +350,7 @@ class TestAgentRunTextResponse:
         await agent.run(run)
 
         assert len(storage._items) == 1
-        item = list(storage._items.values())[0]
+        item = next(iter(storage._items.values()))
         assert item.content == "Persisted"
         assert item.item_type == DialogItemType.OUTPUT
 

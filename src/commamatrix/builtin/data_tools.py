@@ -157,7 +157,7 @@ async def _fetch_url(ref: str, ctx: BeforeToolCallCtx) -> tuple[FileData, str] |
                 timeout=config.get(read_timeout),
                 follow_redirects=False,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return f"Error: HTTP request failed: {exc}"
 
         if response.is_redirect:
@@ -243,7 +243,7 @@ async def read(ref: str, max_chars: int = 4000, *, ctx: BeforeToolCallCtx) -> st
     if _is_http_url(ref) and file_data.mime_type in {"text/html", "application/xhtml+xml"}:
         try:
             markdown = await asyncio.to_thread(_extract_content, file_to_context(file_data).content)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return f"Error: content extraction failed: {exc}"
         if not markdown:
             return "No readable content found at this URL."
@@ -305,7 +305,7 @@ async def write(content: str | bytes, dest: str | None = None, ext: str = "", *,
             data,
             ext=extension or None,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return f"Error saving file to FileStorage: {exc}"
 
 

@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import pytest
@@ -19,7 +18,6 @@ from commamatrix.components.hook import BeforeLlmCallCtx, RunCtx
 from commamatrix.components.tool import ToolDescriptor
 from commamatrix.core.classes.manager import ServiceInstanceRegistry
 from tests.conftest import (
-    StubOrigin,
     make_dialog_item,
     make_tool_descriptor,
     stub_origin,

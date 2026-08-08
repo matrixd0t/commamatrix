@@ -200,7 +200,7 @@ def _is_injectable(annotation: Any) -> bool:
 def _injectable_params(fn: AsyncOrSyncFunction) -> dict[str, type]:
     hints = _type_hints(fn)
     injectable = {
-        name: hints[name] for name, hint in hints.items() if _is_injectable(hint)
+        name: hint for name, hint in hints.items() if _is_injectable(hint)
     }
     ctx_parameter = inspect.signature(fn).parameters.get("ctx")
     if (
@@ -239,9 +239,8 @@ def _inject(
 
     injectable_types = {_BTC}
     for name, param_type in injectable.items():
-        if param_type in injectable_types:
-            if param_type is _BTC:
-                result[name] = ctx
+        if param_type in injectable_types and param_type is _BTC:
+            result[name] = ctx
     return result
 
 
@@ -273,7 +272,7 @@ def _signature_metadata(fn: AsyncOrSyncFunction) -> list[dict[str, Any]]:
 def _type_hints(fn: AsyncOrSyncFunction) -> dict[str, Any]:
     try:
         return {k: v for k, v in get_type_hints(fn).items() if k != "return"}
-    except Exception:
+    except Exception:  # noqa: BLE001
         return dict(getattr(fn, "__annotations__", {}))
 
 

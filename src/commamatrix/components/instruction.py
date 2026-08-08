@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import inspect
 import weakref
-from abc import abstractmethod
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -13,7 +11,7 @@ from ..core.classes.descriptor import Descriptor
 from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.manager import Manager
 from ..core.classes.ordering import ConstraintRef, normalize_constraint_refs
-from ..core.classes.source import PythonSource, Source
+from ..core.classes.source import PythonSource
 from ..utils import await_if_needed
 from .dialog import DialogItem, DialogItemType, DialogRole
 from .file_storage import DataType

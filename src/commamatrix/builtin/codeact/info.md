@@ -45,9 +45,9 @@ Dispatch on the server uses `match/case` with enum comparison.
 ```python
 @dataclass(slots=True, kw_only=True)
 class RPCRequest:
-    id: str                          # Unique request ID (uuid hex)
-    method: str                      # Dotted method path, e.g. "tools.invoke"
-    params: dict[str, Any]           # Positional/keyword args
+    id: str  # Unique request ID (uuid hex)
+    method: str  # Dotted method path, e.g. "tools.invoke"
+    params: dict[str, Any]  # Positional/keyword args
 ```
 
 JSON wire format:
@@ -76,9 +76,9 @@ JSON wire format:
 
 ```python
 class RPCError(Exception):
-    code: int                        # JSON-RPC-style error code
-    message: str                     # Human-readable error
-    data: Any = None                 # Optional extra info
+    code: int  # JSON-RPC-style error code
+    message: str  # Human-readable error
+    data: Any = None  # Optional extra info
 ```
 
 JSON wire format:
@@ -254,11 +254,14 @@ Each tool in a virtual module (`tools.<alias>.<func_name>`) is an `async` proxy 
 async def proxy(*args, **kwargs):
     bound = signature.bind(*args, **kwargs)
     bound.apply_defaults()
-    return await client.request("tools.invoke", {
-        "tool_id": tool_id,  # descriptor.id for direct resolution
-        "tool_args": dict(bound.arguments),
-        "tool_call_id": "",
-    })
+    return await client.request(
+        "tools.invoke",
+        {
+            "tool_id": tool_id,  # descriptor.id for direct resolution
+            "tool_args": dict(bound.arguments),
+            "tool_call_id": "",
+        },
+    )
 ```
 
 Note: Resolution on the server side is by `tool_id` (descriptor ID), not by name.
@@ -313,7 +316,7 @@ def serialize_tool_descriptor(descriptor):
         "name": descriptor.name,
         "doc": descriptor.doc,
         "schema": descriptor.schema,
-        "meta": descriptor.meta,       # not "metadata"
+        "meta": descriptor.meta,  # not "metadata"
     }
 ```
 
@@ -356,14 +359,19 @@ Responses are correlated by `id` — the `AsyncRPCClient` matches them to the co
 ```python
 # Worker executes:
 import tools.github
+
 await tools.github.list_issues(owner="user", repo="repo")
 
 # Virtual import resolves tools.github to a module from make_tool_module()
 # tools.github.list_issues is a proxy() function that calls:
-client.request("tools.invoke", {
-    "tool_call_id": "", "tool_id": "<descriptor_id>",
-    "tool_args": {"owner": "user", "repo": "repo"},
-})
+client.request(
+    "tools.invoke",
+    {
+        "tool_call_id": "",
+        "tool_id": "<descriptor_id>",
+        "tool_args": {"owner": "user", "repo": "repo"},
+    },
+)
 ```
 
 ### Pattern C: Concurrent tool calls
@@ -418,9 +426,11 @@ The sandbox has **no** `context` module — the only way to interact with the pa
 ```python
 # Import any tool alias registered in tool_tree
 import tools.github
+
 await tools.github.list_issues(owner="user", repo="repo")
 
 import tools.fs
+
 await tools.fs.read_file(path="/tmp/data.txt")
 
 # All tools.* RPC methods are accessible as tools.<alias>.<func_name>

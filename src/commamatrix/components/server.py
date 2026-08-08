@@ -172,7 +172,7 @@ class Server(AbstractService):
 
         try:
             payload = await request.json()
-        except Exception:
+        except Exception:  # noqa: BLE001
             self.logger.warning("HTTP handle request contained invalid JSON")
             return JSONResponse({"error": "Invalid JSON"}, status_code=400)
         if not isinstance(payload, dict):

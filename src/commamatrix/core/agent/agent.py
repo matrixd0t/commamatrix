@@ -16,7 +16,7 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator, MutableMapping
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, Self, cast
 from uuid import uuid4
 
 try:
@@ -61,7 +61,7 @@ from ...components.llm_adapter import (
     StreamEnd,
     ToolCall,
     ToolCallResult,
-    reasoning,
+    reasoning,  # noqa: F401 - re-exported by core.agent
 )
 from ...components.storage import STORAGE_ATTRIBUTE
 from ...utils import FP, commamatrix_dir
@@ -169,7 +169,7 @@ class Agent:
             name: str,
             description: str = "",
             *,
-            config: dict[ConfigField, Any] | Config = {},
+            config: dict[ConfigField, Any] | Config | None = None,
             auto_load_main: bool = True,
             auto_load_plugins: bool = True,
     ):
@@ -177,7 +177,9 @@ class Agent:
         self.name = name
         self.description = description
         agent_by_name.register(self)
-        if isinstance(config, dict):
+        if config is None:
+            config = Config()
+        elif isinstance(config, dict):
             config = Config(overrides=config)
         self.config: Config = config
         self.logger = get_agent_logger(self, "Agent")
@@ -344,11 +346,11 @@ class Agent:
             close_agent_logging(self)
 
     async def run_forever(self) -> None:
-        """Start the agent and keep it alive until the task is cancelled."""
+        """Start the agent and keep it alive until the task is canceled."""
         async with self:
             await asyncio.Event().wait()
 
-    async def __aenter__(self) -> Agent:
+    async def __aenter__(self) -> Self:
         await self.start()
         return self
 
@@ -552,7 +554,7 @@ class Agent:
         except asyncio.CancelledError:
             raise
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             error = exc
             await self._handle_error(run, exc)
 
@@ -560,7 +562,7 @@ class Agent:
             if run.last_item_id is not None:
                 try:
                     run.dialog_items = await self._load_dialog(run.last_item_id)
-                except Exception:
+                except Exception:  # noqa: BLE001
                     run.dialog_items = []
             await self.hook_manager.fire(HookEventType.AFTER_RUN, AfterRunCtx(run=run, error=error))
             self.logger.info("Run finished run_id=%s failed=%s", run.run_id, error is not None)
@@ -841,5 +843,3 @@ class Agent:
             )
             result.append((run, items))
         return result
-
-
