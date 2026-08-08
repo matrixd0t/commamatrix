@@ -3,7 +3,7 @@
 $ErrorActionPreference = "Stop"
 
 $Repository = "matrixd0t/commamatrix"
-$Version = "0.1.7"
+$Version = "0.1.8"
 $Tag = "v$Version"
 $BootstrapUrl = "https://raw.githubusercontent.com/$Repository/$Tag/installer/windows/bootstrap.py"
 $BootstrapPath = Join-Path ([System.IO.Path]::GetTempPath()) "commamatrix-bootstrap-$Version.py"
@@ -51,7 +51,7 @@ finally {
         Remove-Item -LiteralPath $BootstrapPath -Force -ErrorAction SilentlyContinue
     }
     Write-Host ""
-    Read-Host "Нажмите Enter, чтобы закрыть это окно / Press Enter to close this window" | Out-Null
+    [Console]::ReadLine() | Out-Null
 }
 
 exit $exitCode

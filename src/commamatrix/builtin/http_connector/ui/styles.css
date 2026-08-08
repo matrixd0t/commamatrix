@@ -102,8 +102,8 @@ body.header-menu-open .header-menu-btn{border:1px solid var(--accent);color:var(
 .edit-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:6px}
 .edit-actions button{border:1px solid var(--border);background:transparent;color:var(--text);border-radius:5px;padding:4px 8px;font-size:12px}
 .edit-actions button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-.msg.reasoning{background:var(--surface);border:1px dashed var(--border);align-self:flex-start;font-size:13px;color:var(--muted)}
-.msg.reasoning summary{cursor:pointer;color:var(--accent);font-size:12px}
+.msg.reasoning_level{background:var(--surface);border:1px dashed var(--border);align-self:flex-start;font-size:13px;color:var(--muted)}
+.msg.reasoning_level summary{cursor:pointer;color:var(--accent);font-size:12px}
 .msg.tool-call{background:rgba(255,165,0,.08);border:1px solid rgba(255,165,0,.4);align-self:flex-start;font-size:13px}
 .msg.tool-call summary{cursor:pointer;color:#ffa500;font-size:12px}
 .msg.tool-result{background:rgba(63,185,80,.08);border:1px solid rgba(63,185,80,.3);align-self:flex-start;font-size:13px}

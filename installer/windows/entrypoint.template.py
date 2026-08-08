@@ -56,8 +56,6 @@ EXTENSIONS = [
     "commamatrix.builtin.web_utils",
     "commamatrix.builtin.apply_patch",
     "commamatrix.builtin.data_tools",
-    "commamatrix.builtin.multi_dialog",
-    "commamatrix.builtin.multi_user",
     "commamatrix.builtin.storage_utils",
     "commamatrix.builtin.default_instruction",
 ]

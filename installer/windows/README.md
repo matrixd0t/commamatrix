@@ -51,7 +51,7 @@ the repository, version, and tag as constants:
 
 ```powershell
 $Repository = "matrixd0t/commamatrix"
-$Version = "0.1.7"
+$Version = "0.1.8"
 $Tag = "v$Version"
 ```
 
@@ -68,7 +68,7 @@ The bootstrap is then started with:
 
 ```powershell
 uv run --quiet --python 3.13 <temporary-bootstrap.py> `
-  --repository matrixd0t/commamatrix --version 0.1.7 --uv <uv-path>
+  --repository matrixd0t/commamatrix --version 0.1.8 --uv <uv-path>
 ```
 
 The temporary bootstrap file is removed in the `finally` block, including
@@ -92,7 +92,7 @@ The following files are then downloaded:
 6. the exact wheel named by `manifest.json` from the GitHub release assets.
 
 The release wheel must therefore exist under the exact asset name, for
-example `commamatrix-0.1.7-py3-none-any.whl`. The installer does not build a
+example `commamatrix-0.1.8-py3-none-any.whl`. The installer does not build a
 wheel and does not verify a checksum or signature.
 
 For local development, `bootstrap.py` can use a source tree instead of a
@@ -222,8 +222,9 @@ If autostart is enabled in Advanced mode, it also creates:
 ```
 
 The shortcut starts `pythonw.exe` with the generated `entrypoint.py`, using the
-workspace as its working directory. The command file uses `start`, so
-`commamatrix` launches the tray process without keeping the terminal attached.
+workspace as its working directory. The command file uses `start /b` with
+`pythonw.exe`, so `commamatrix` launches only the tray process without opening a
+new terminal window.
 
 ### 8. Initialization and first launch
 

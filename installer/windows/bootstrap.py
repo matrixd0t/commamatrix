@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_REPOSITORY = "matrixd0t/commamatrix"
-DEFAULT_VERSION = "0.1.7"
+DEFAULT_VERSION = "0.1.8"
 DEFAULT_WORKSPACE = Path.home() / "commamatrix"
 PROTOCOLS = (
     ("chat_completions", "Chat Completions"),
@@ -597,7 +597,7 @@ def _create_command(workspace: Path) -> Path:
     command = bin_dir / "commamatrix.cmd"
     command.write_text(
         "@echo off\n"
-        f'start "" "{workspace / ".venv" / "Scripts" / "pythonw.exe"}" "{workspace / "entrypoint.py"}" %*\n',
+        f'start "" /b "{workspace / ".venv" / "Scripts" / "pythonw.exe"}" "{workspace / "entrypoint.py"}" %*\n',
         encoding="utf-8",
     )
     _add_to_user_path(bin_dir)
