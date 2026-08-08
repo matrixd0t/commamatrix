@@ -3,19 +3,20 @@
 $ErrorActionPreference = "Stop"
 
 $Repository = "matrixd0t/commamatrix"
-$Version = "0.1.9"
+$Version = "0.1.10"
 $Tag = "v$Version"
 $BootstrapUrl = "https://raw.githubusercontent.com/$Repository/$Tag/installer/windows/bootstrap.py"
 $BootstrapPath = Join-Path ([System.IO.Path]::GetTempPath()) "commamatrix-bootstrap-$Version.py"
+$UvInstallerPath = Join-Path ([System.IO.Path]::GetTempPath()) "commamatrix-uv-installer-$Version.ps1"
 
-function Refresh-UserPath {
+function RefreshUserPath {
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     $env:Path = "$machinePath;$userPath"
 }
 
 function Find-Uv {
-    Refresh-UserPath
+    RefreshUserPath
     $command = Get-Command uv -ErrorAction SilentlyContinue
     if ($null -ne $command) {
         return $command.Source
@@ -27,8 +28,11 @@ try {
     $exitCode = 0
     $uv = Find-Uv
     if ($null -eq $uv) {
-        $uvInstaller = Invoke-WebRequest -UseBasicParsing -Uri "https://astral.sh/uv/install.ps1"
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $uvInstaller.Content *> $null
+        Invoke-WebRequest -UseBasicParsing -Uri "https://astral.sh/uv/install.ps1" -OutFile $UvInstallerPath
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $UvInstallerPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "uv installer exited with code $LASTEXITCODE"
+        }
         $uv = Find-Uv
     }
 
@@ -47,11 +51,14 @@ catch {
     $exitCode = 1
 }
 finally {
+    if (Test-Path -LiteralPath $UvInstallerPath) {
+        Remove-Item -LiteralPath $UvInstallerPath -Force -ErrorAction SilentlyContinue
+    }
     if (Test-Path -LiteralPath $BootstrapPath) {
         Remove-Item -LiteralPath $BootstrapPath -Force -ErrorAction SilentlyContinue
     }
     Write-Host ""
-    [Console]::ReadLine() | Out-Null
+    Read-Host "Press Enter to exit"
 }
 
 exit $exitCode

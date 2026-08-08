@@ -215,7 +215,13 @@ class Server(AbstractService):
             self.logger.warning("HTTP server dependency uvicorn is unavailable")
             return
         self.logger.info("HTTP server starting host=%s port=%d", self._host, self._port)
-        config = uvicorn.Config(app=app, host=self._host, port=self._port, log_level="warning")
+        config = uvicorn.Config(
+            app=app,
+            host=self._host,
+            port=self._port,
+            log_level="warning",
+            use_colors=False,
+        )
         self._uvicorn_server = uvicorn.Server(config)
         listener_task = asyncio.create_task(self._uvicorn_server.serve())
         self._listener_task = listener_task

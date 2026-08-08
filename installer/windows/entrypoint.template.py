@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import ctypes
+import hashlib
 import json
 import os
 import socket
 import sys
 import threading
 import webbrowser
+from ctypes import wintypes
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -44,6 +47,11 @@ WORKSPACE = Path(__file__).resolve().parent
 DATA_DIR = WORKSPACE / ".commamatrix"
 LOG_DIR = DATA_DIR / "logs"
 LOG_FILE = LOG_DIR / "commamatrix.log"
+INSTANCE_MUTEX_NAME = "Local\\CommaMatrix-" + hashlib.sha256(
+    str(WORKSPACE).casefold().encode("utf-8")
+).hexdigest()
+_INSTANCE_MUTEX: Any = None
+_INSTANCE_CLOSE_HANDLE: Any = None
 
 EXTENSIONS = [
     "commamatrix.builtin.codeact",
@@ -99,6 +107,36 @@ def _load_icon() -> Image.Image:
         with Image.open(icon_path) as image:
             return image.convert("RGBA").copy()
     return _fallback_icon()
+
+
+def _acquire_instance() -> bool:
+    global _INSTANCE_CLOSE_HANDLE, _INSTANCE_MUTEX
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_mutex = kernel32.CreateMutexW
+    create_mutex.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
+    create_mutex.restype = wintypes.HANDLE
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [wintypes.HANDLE]
+    close_handle.restype = wintypes.BOOL
+    ctypes.set_last_error(0)
+    handle = create_mutex(None, False, INSTANCE_MUTEX_NAME)
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    if ctypes.get_last_error() == 183:
+        close_handle(handle)
+        return False
+    _INSTANCE_MUTEX = handle
+    _INSTANCE_CLOSE_HANDLE = close_handle
+    return True
+
+
+def _release_instance() -> None:
+    global _INSTANCE_CLOSE_HANDLE, _INSTANCE_MUTEX
+    if _INSTANCE_MUTEX is not None:
+        _INSTANCE_CLOSE_HANDLE(_INSTANCE_MUTEX)
+        _INSTANCE_MUTEX = None
+        _INSTANCE_CLOSE_HANDLE = None
 
 
 def _build_agent(*, initialize: bool) -> Agent:
@@ -192,25 +230,31 @@ class _TrayRuntime:
 
 
 async def _run_runtime() -> None:
+    if not _acquire_instance():
+        return
+
     agent = _build_agent(initialize=False)
     commands: asyncio.Queue[str] = asyncio.Queue()
     tray = _TrayRuntime(asyncio.get_running_loop(), commands, agent)
     started = False
-    await agent.add_extensions(*EXTENSIONS)
     try:
+        await agent.add_extensions(*EXTENSIONS)
         await agent.start()
         started = True
         tray.start()
+        webbrowser.open(_browser_url(agent.http_server.base_url))
         command = await commands.get()
         if command == "restart":
             await agent.stop()
             started = False
             tray.stop()
+            _release_instance()
             os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve())])
     finally:
         if started:
             await agent.stop()
         tray.stop()
+        _release_instance()
 
 
 def _parse_args() -> argparse.Namespace:

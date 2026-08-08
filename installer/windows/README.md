@@ -51,7 +51,7 @@ the repository, version, and tag as constants:
 
 ```powershell
 $Repository = "matrixd0t/commamatrix"
-$Version = "0.1.9"
+$Version = "0.1.10"
 $Tag = "v$Version"
 ```
 
@@ -92,7 +92,7 @@ The following files are then downloaded:
 6. the exact wheel named by `manifest.json` from the GitHub release assets.
 
 The release wheel must therefore exist under the exact asset name, for
-example `commamatrix-0.1.9-py3-none-any.whl`. The installer does not build a
+example `commamatrix-0.1.10-py3-none-any.whl`. The installer does not build a
 wheel and does not verify a checksum or signature.
 
 For local development, `bootstrap.py` can use a source tree instead of a

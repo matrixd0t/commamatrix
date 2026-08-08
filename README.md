@@ -1,21 +1,21 @@
 <h1 align="center"> CommaMatrix</h1>
 <p align="center">
-  <img src="assets/logo.png" alt="CommaMatrix" width="512">
+  <img src="https://raw.githubusercontent.com/matrixd0t/commamatrix/master/assets/logo.png" alt="CommaMatrix" width="512">
 </p>
 <p align="center">
   <strong>СКРАФТИ СВОЕГО ИИ-АГЕНТА</strong>
 </p>
 
 <p align="center">
-  <strong>Русский | <a href="assets/README.en.md">English</a></strong>
+  <strong>Русский | <a href="https://github.com/matrixd0t/commamatrix/blob/master/assets/README.en.md">English</a></strong>
 </p>
 
 <p align="center">
   <a href="https://github.com/matrixd0t/commamatrix/releases/latest">Релизы</a>
   ·
-  <a href="src/commamatrix/builtin/self_extension/guides/main.md">Документация</a>
+  <a href="https://github.com/matrixd0t/commamatrix/blob/master/src/commamatrix/builtin/self_extension/guides/main.md">Документация</a>
   ·
-  <a href="examples/">Примеры</a>
+  <a href="https://github.com/matrixd0t/commamatrix/tree/master/examples/">Примеры</a>
 </p>
 
 
@@ -246,10 +246,10 @@ await agent.add_extensions(my_module)
 
 Основные смысловые компоненты: `@tool`, `@instruction`, `@hook` (и конструктор `Hook`, позволяющий создавать новые события для хуков), `Service`, `Connector`, `BaseTable`, `Storage`, `FileStorage`, `LLMAdapter` и `@lifecycle_component`.
 
-Прочитайте [руководство по созданию расширений](src/commamatrix/builtin/self_extension/guides/main.md).
+Прочитайте [руководство по созданию расширений](https://github.com/matrixd0t/commamatrix/blob/master/src/commamatrix/builtin/self_extension/guides/main.md).
 Там же находятся ссылки на специализированные руководства.
 
-Посмотрите папку [`examples/`](examples/) — там есть пример интерфейсного
+Посмотрите папку [`examples/`](https://github.com/matrixd0t/commamatrix/tree/master/examples/) — там есть пример интерфейсного
 агента и headless executor с делегированием задач субагенту.
 
 ### Безопасность

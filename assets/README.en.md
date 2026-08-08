@@ -1,21 +1,21 @@
 <h1 align="center"> CommaMatrix</h1>
 <p align="center">
-  <img src="logo.png" alt="CommaMatrix" width="512">
+  <img src="https://raw.githubusercontent.com/matrixd0t/commamatrix/master/assets/logo.png" alt="CommaMatrix" width="512">
 </p>
 <p align="center">
   <strong>CRAFT YOUR OWN AI AGENT</strong>
 </p>
 <p align="center">
-  <strong><a href="../README.md">Русский</a> | English</strong>
+  <strong><a href="https://github.com/matrixd0t/commamatrix/blob/master/README.md">Русский</a> | English</strong>
 </p>
 
 
 <p align="center">
   <a href="https://github.com/matrixd0t/commamatrix/releases/latest">Releases</a>
   ·
-  <a href="../src/commamatrix/builtin/self_extension/guides/main.md">Documentation</a>
+  <a href="https://github.com/matrixd0t/commamatrix/blob/master/src/commamatrix/builtin/self_extension/guides/main.md">Documentation</a>
   ·
-  <a href="../examples/">Examples</a>
+  <a href="https://github.com/matrixd0t/commamatrix/tree/master/examples/">Examples</a>
 </p>
 
 
@@ -308,10 +308,10 @@ constructor, which lets you create new hook events), `Service`, `Connector`,
 `BaseTable`, `Storage`, `FileStorage`, `LLMAdapter`, and
 `@lifecycle_component`.
 
-Read the [extension authoring guide](../src/commamatrix/builtin/self_extension/guides/main.md).
+Read the [extension authoring guide](https://github.com/matrixd0t/commamatrix/blob/master/src/commamatrix/builtin/self_extension/guides/main.md).
 It also links to the specialized guides.
 
-See the [`examples/`](../examples/) directory, which contains an interface agent
+See the [`examples/`](https://github.com/matrixd0t/commamatrix/tree/master/examples/) directory, which contains an interface agent
 and a headless executor that delegates tasks to a subagent.
 
 ### Security

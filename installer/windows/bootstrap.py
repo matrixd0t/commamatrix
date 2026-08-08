@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_REPOSITORY = "matrixd0t/commamatrix"
-DEFAULT_VERSION = "0.1.9"
+DEFAULT_VERSION = "0.1.10"
 DEFAULT_WORKSPACE = Path.home() / "commamatrix"
 PROTOCOLS = (
     ("chat_completions", "Chat Completions"),
