@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from ..components.dialog import DialogOrigin, ORIGIN_REGISTRY
+from ..components.dialog import ORIGIN_REGISTRY, DialogOrigin
 from ..components.hook import AfterSendCtx, BeforeToolCallCtx, after_send
 from ..components.instruction import InstructionCtx, instruction
 from ..components.tool import tool

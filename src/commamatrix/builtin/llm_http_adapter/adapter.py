@@ -6,7 +6,7 @@ import json
 import os
 import time
 from collections.abc import AsyncIterator
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlparse
 
 import httpx2 as httpx
@@ -52,6 +52,12 @@ llm_api_protocol = ConfigField[str](
     description="Default API protocol (see ApiProtocol enum for builtin values)",
 )
 
+llm_refresh_on_start = ConfigField[bool](
+    name="llm_refresh_on_start",
+    default=True,
+    description="Refresh available LLMs when the adapter starts",
+)
+
 llm_stream_read_timeout = ConfigField[float](
     name="llm_stream_read_timeout",
     default=60.0,
@@ -75,9 +81,19 @@ class LLMHTTPAdapter(LLMAdapter):
     def codec(self) -> ApiCodec:
         return self._resolve_codec(self.config.get(llm_api_protocol))
 
-    @staticmethod
-    def _model_headers() -> dict[str, str]:
-        return {"Accept": "application/json"}
+    async def start(self) -> None:
+        if not self.config.get(llm_refresh_on_start):
+            self.llms = []
+            self.logger.info("LLM model refresh skipped during adapter startup")
+            return
+        await super().start()
+
+    def _model_headers(self) -> dict[str, str]:
+        protocol = ApiProtocol(self.config.get(llm_api_protocol))
+        headers = self._build_headers(protocol)
+        headers.pop("Content-Type", None)
+        headers["Accept"] = "application/json"
+        return headers
 
     async def refresh_llms(self) -> list[LLM]:
         url = self._join_url(
@@ -280,3 +296,4 @@ class LLMHTTPAdapter(LLMAdapter):
     @property
     def _request_timeout(self) -> float:
         return self.config.get(llm_request_timeout)
+

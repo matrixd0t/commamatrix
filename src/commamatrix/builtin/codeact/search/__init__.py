@@ -5,4 +5,4 @@
 from .api import ToolSearcher
 from .bm25 import BM25ToolSearcher
 
-__all__ = ['ToolSearcher', 'BM25ToolSearcher']
+__all__ = ['BM25ToolSearcher', 'ToolSearcher']

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import pytest
 
+from commamatrix.components.dialog import DialogItemType, DialogRole
 from commamatrix.components.llm_adapter import (
     LLM,
     LLM_ADAPTER_ATTRIBUTE,
@@ -23,7 +24,6 @@ from commamatrix.components.llm_adapter import (
     ToolCallResult,
     Usage,
 )
-from commamatrix.components.dialog import DialogItemType, DialogRole
 from commamatrix.core.classes.manager import ServiceInstanceRegistry
 from tests.conftest import stub_agent, stub_origin
 

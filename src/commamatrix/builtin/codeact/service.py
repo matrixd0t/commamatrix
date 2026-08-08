@@ -9,10 +9,10 @@ import sys
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
+from ...components.config import ConfigField
 from ...components.hook import BeforeToolCallCtx, RunCtx
 from ...components.llm_adapter import ToolCall
 from ...core.classes.service import Service
-from ...components.config import ConfigField
 from .executor.backend import ExecutionBackend, ExecutionResult
 from .executor.subproc import SubprocessBackend
 from .search.bm25 import BM25ToolSearcher

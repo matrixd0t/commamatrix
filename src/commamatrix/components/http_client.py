@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING
 
 from httpx2 import AsyncClient
 
-from .config import ConfigField
 from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.service import AbstractService
+from .config import ConfigField
 
 if TYPE_CHECKING:
     from ..core.agent.agent import Agent

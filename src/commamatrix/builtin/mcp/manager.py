@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ...core.classes.service import Service
-from .config import mcp_client_name, mcp_client_version, MCPServerSpec
+from .config import MCPServerSpec, mcp_client_name, mcp_client_version
 from .loader import MCPConfigLoader, MCPJsonConfigLoader
 from .runtime import MCPServerRuntime, MCPToolInfo
 from .server import MCPServerManager
@@ -167,4 +167,4 @@ class MCPService(Service):
             lifecycle._mark_changed()
 
 
-__all__ = ["MCPService", "MCPConfigLoader", "MCPJsonConfigLoader", "MCPServerRuntime"]
+__all__ = ["MCPConfigLoader", "MCPJsonConfigLoader", "MCPServerRuntime", "MCPService"]

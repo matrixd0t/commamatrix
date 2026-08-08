@@ -5,19 +5,19 @@ from __future__ import annotations
 import inspect
 import weakref
 from abc import abstractmethod
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any, cast
-from collections.abc import Callable, Iterable
 
-from .hook import before_llm_call, BeforeLlmCallCtx, RunCtx
-from .dialog import DialogItem, DialogItemType, DialogRole
-from .file_storage import DataType
 from ..core.classes.descriptor import Descriptor
 from ..core.classes.lifecycle_registry import lifecycle_component
-from ..core.classes.source import Source, PythonSource
 from ..core.classes.manager import Manager
-from ..core.classes.ordering import normalize_constraint_refs, ConstraintRef
+from ..core.classes.ordering import ConstraintRef, normalize_constraint_refs
+from ..core.classes.source import PythonSource, Source
 from ..utils import await_if_needed
+from .dialog import DialogItem, DialogItemType, DialogRole
+from .file_storage import DataType
+from .hook import BeforeLlmCallCtx, RunCtx, before_llm_call
 
 INSTRUCTION_ATTRIBUTE = "__commamatrix_instruction__"
 

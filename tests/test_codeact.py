@@ -16,7 +16,13 @@ import pytest
 
 from commamatrix.builtin.codeact.executor.backend import ExecutionResult
 from commamatrix.builtin.codeact.executor.subproc import SubprocessBackend
-from commamatrix.builtin.codeact.rpc.protocol import Namespace, RPCError, RPCRequest, RPCResponse, ToolsMethod
+from commamatrix.builtin.codeact.rpc.protocol import (
+    Namespace,
+    RPCError,
+    RPCRequest,
+    RPCResponse,
+    ToolsMethod,
+)
 from commamatrix.builtin.codeact.rpc.tcp import TcpServer, TcpTransport
 
 _WORKER_PATH = str(
@@ -148,7 +154,7 @@ async def _worker(payload):
     try:
         try:
             transport = await asyncio.wait_for(connection, timeout=5)
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise AssertionError(accept_errors) from exc
         await transport.send(payload)
         yield proc, transport

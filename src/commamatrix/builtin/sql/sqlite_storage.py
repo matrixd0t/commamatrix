@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
 import aiosqlite
 
-from .sql_storage import SqlStorage, _format_schema_column
 from ...components.config import ConfigField
 from ...utils import commamatrix_dir
+from .sql_storage import SqlStorage, _format_schema_column
 
 if TYPE_CHECKING:
     from ...core.agent import Agent

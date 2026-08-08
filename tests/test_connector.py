@@ -17,7 +17,12 @@ from commamatrix.components.connector import (
     ConnectorManager,
     PythonConnectorSource,
 )
-from commamatrix.components.dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
+from commamatrix.components.dialog import (
+    DialogItem,
+    DialogItemType,
+    DialogOrigin,
+    DialogRole,
+)
 from commamatrix.components.hook import OnParsedCtx
 from commamatrix.core.classes.manager import ServiceInstanceRegistry
 from tests.conftest import StubOrigin, stub_agent, stub_origin

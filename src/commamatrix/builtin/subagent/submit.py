@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Callable, Literal, TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
 from ...components.dialog import DialogItem, DialogItemType, DialogRole

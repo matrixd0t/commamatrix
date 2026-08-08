@@ -6,7 +6,7 @@ import re
 import weakref
 from abc import ABC
 from dataclasses import dataclass
-from typing import Any, ClassVar, Generic, Protocol, TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Protocol, TypeVar
 
 from pydantic import BaseModel
 
@@ -25,7 +25,7 @@ _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 RowT = TypeVar("RowT", bound=BaseModel)
 
 
-class BaseTable(Generic[RowT], ABC):
+class BaseTable(ABC):
     """Declarative table owned by an extension.
 
     ``row_model`` describes one stored row. The table itself is discovered by
@@ -206,8 +206,8 @@ class TableManager(Manager[TableDescriptor]):
 __all__ = [
     "TABLE_ATTRIBUTE",
     "BaseTable",
-    "TableDescriptor",
     "PythonTableSource",
     "SchemaBackend",
+    "TableDescriptor",
     "TableManager",
 ]

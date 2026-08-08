@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ..core.classes.lifecycle_registry import lifecycle_component
-from ..core.classes.service import AbstractService
 from ..core.classes.manager import ActiveServiceInstanceManager
+from ..core.classes.service import AbstractService
 from ..core.classes.source import PythonServiceSource
 from .config import ConfigField
 from .dialog import DialogItem, DialogOrigin
@@ -40,7 +40,7 @@ class Storage(AbstractService):
     async def get_branch(self, last_item_id: int) -> list[DialogItem]: ...
 
     @abstractmethod
-    async def find_item_id_by_external_id(self, external_id: str, origin: DialogOrigin) -> Optional[int]: ...
+    async def find_item_id_by_external_id(self, external_id: str, origin: DialogOrigin) -> int | None: ...
 
     @abstractmethod
     async def get_history(self, *, origin_type: type[DialogOrigin] | None = None, origin_fields: dict[str, Any] | None = None) -> list[DialogItem]: ...

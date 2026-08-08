@@ -15,7 +15,7 @@ from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
 from commamatrix.components.hook import RunCtx
 from commamatrix.components.server import http_port
 from commamatrix.core.agent.agent import Agent
-from tests.conftest import StubOrigin, stub_origin, make_dialog_item
+from tests.conftest import StubOrigin, make_dialog_item, stub_origin
 
 
 class TestAgentInit:
@@ -89,13 +89,11 @@ class TestAgentInit:
         agent = Agent("test", config={}, auto_load_main=False, auto_load_plugins=False)
         assert agent._extension_scope == []
 
-    def test_coding_preset_points_to_importable_instruction(self):
+    def test_extensions_are_explicitly_importable(self):
         from importlib import import_module
 
-        from commamatrix import presets
-
-        module = import_module(presets.coding[-1])
-        assert module.__name__ == "commamatrix.builtin.instructions.coding"
+        module = import_module("commamatrix.builtin.default_instruction")
+        assert module.__name__ == "commamatrix.builtin.default_instruction"
 
 
 class TestAgentExtensions:
@@ -491,8 +489,8 @@ class TestAgentValidateResponse:
     def test_error_stop_raises(self):
         from commamatrix.components.llm_adapter import (
             LLMResponse,
-            StopReason,
             LLMResponseError,
+            StopReason,
         )
 
         agent = Agent("test", config={}, auto_load_main=False)
@@ -503,8 +501,8 @@ class TestAgentValidateResponse:
     def test_length_stop_raises(self):
         from commamatrix.components.llm_adapter import (
             LLMResponse,
-            StopReason,
             LLMTruncatedError,
+            StopReason,
         )
 
         agent = Agent("test", config={}, auto_load_main=False)

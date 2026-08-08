@@ -8,9 +8,18 @@ from pathlib import Path
 
 import pytest
 
-from commamatrix.builtin.apply_patch import PatchError, apply_patch_text, apply_update
-from commamatrix.builtin.apply_patch import parse_patch
-from commamatrix.utils import PathResolutionError, read_text_file, resolve_path, write_text_file
+from commamatrix.builtin.apply_patch import (
+    PatchError,
+    apply_patch_text,
+    apply_update,
+    parse_patch,
+)
+from commamatrix.utils import (
+    PathResolutionError,
+    read_text_file,
+    resolve_path,
+    write_text_file,
+)
 
 
 def test_parse_patch_with_add_update_delete_and_move():

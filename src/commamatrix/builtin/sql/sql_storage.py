@@ -5,22 +5,23 @@ from __future__ import annotations
 import json
 from abc import abstractmethod
 from types import UnionType
-from typing import Any, Union, get_args, get_origin, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Union, get_args, get_origin
 
 from ...components.dialog import (
-    DialogItem,
-    DialogOrigin,
-    DialogItemType,
-    DialogRole,
     ORIGIN_REGISTRY,
+    DialogItem,
+    DialogItemType,
+    DialogOrigin,
+    DialogRole,
     resolve_origin_type,
 )
 from ...components.storage import Storage
 from ...components.table import TableDescriptor
 
 if TYPE_CHECKING:
-    from ...core.agent import Agent
     from pydantic import BaseModel
+
+    from ...core.agent import Agent
 
 BaseColumns = set(DialogItem.model_fields.keys()) - {"origin"} | set(DialogOrigin.model_fields.keys())
 

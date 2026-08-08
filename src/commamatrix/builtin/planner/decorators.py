@@ -7,7 +7,6 @@ from typing import Any, TypeVar
 
 from matrix_planner import Schedule
 
-
 TASK_ATTRIBUTE = "__commamatrix_scheduled_task__"
 TaskFunction = TypeVar("TaskFunction", bound=Callable[..., Any])
 

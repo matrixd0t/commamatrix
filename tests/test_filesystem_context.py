@@ -7,7 +7,12 @@ from types import SimpleNamespace
 import pytest
 
 from commamatrix.builtin.filesystem import add_agents_file
-from commamatrix.components.dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
+from commamatrix.components.dialog import (
+    DialogItem,
+    DialogItemType,
+    DialogOrigin,
+    DialogRole,
+)
 from commamatrix.components.hook import BeforeLlmCallCtx
 
 

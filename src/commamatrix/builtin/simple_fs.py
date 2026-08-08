@@ -5,10 +5,10 @@ from __future__ import annotations
 import asyncio
 import uuid
 from pathlib import Path
-
 from typing import TYPE_CHECKING
-from ..components.file_storage import FileStorage
+
 from ..components.config import ConfigField
+from ..components.file_storage import FileStorage
 from ..utils import commamatrix_dir
 
 if TYPE_CHECKING:
@@ -72,6 +72,6 @@ class SimpleFileStorage(FileStorage):
 
 
 __all__ = [
-    "files_dir",
-    "SimpleFileStorage"
+    "SimpleFileStorage",
+    "files_dir"
 ]

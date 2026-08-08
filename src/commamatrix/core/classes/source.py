@@ -9,7 +9,7 @@ from collections.abc import Callable, Iterable
 from typing import Generic, TypeVar, cast
 
 from .descriptor import Descriptor
-from .service import AbstractService, SERVICE_ATTRIBUTE, ServiceDescriptor
+from .service import SERVICE_ATTRIBUTE, AbstractService, ServiceDescriptor
 
 D = TypeVar("D", bound=Descriptor)
 InvalidationCallback = Callable[[], None]

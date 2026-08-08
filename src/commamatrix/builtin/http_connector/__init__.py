@@ -2,22 +2,23 @@
 
 from .auth import (
     AuthError,
-    AuthUser,
     Authorizer,
+    AuthUser,
     HttpAuthRow,
     HttpAuthTable,
+    InitialAdminCredentials,
     UserName,
     UserNamesTable,
 )
 from .connector import (
     HttpConnector,
     HttpOrigin,
-    HttpStatusMessage,
     HTTPSession,
-    http_ui_path,
+    HttpStatusMessage,
     http_auth_app_name,
     http_auth_jwt_secret,
     http_auth_token_ttl_seconds,
+    http_ui_path,
     prepare_http_ui,
 )
 
@@ -25,18 +26,20 @@ __all__ = [
     "AuthError",
     "AuthUser",
     "Authorizer",
+    "HTTPSession",
     "HttpAuthRow",
     "HttpAuthTable",
-    "UserName",
-    "UserNamesTable",
     "HttpConnector",
     "HttpOrigin",
     "HttpStatusMessage",
-    "HTTPSession",
-    "http_ui_path",
+    "InitialAdminCredentials",
+    "UserName",
+    "UserNamesTable",
     "http_auth_app_name",
     "http_auth_jwt_secret",
     "http_auth_token_ttl_seconds",
+    "http_ui_path",
     "prepare_http_ui",
 ]
+
 

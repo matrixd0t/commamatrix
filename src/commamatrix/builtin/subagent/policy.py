@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from ...components.tool import ToolDescriptor
-
 
 ALLOWED_TOOLS_STATE_KEY = "allowed_tools"
 

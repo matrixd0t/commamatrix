@@ -89,7 +89,7 @@ class TcpTransport(Transport):
         self._writer.close()
         try:
             await asyncio.wait_for(self._writer.wait_closed(), timeout=timeout)
-        except (ConnectionError, OSError, asyncio.TimeoutError):
+        except (TimeoutError, ConnectionError, OSError):
             pass
 
 
@@ -143,7 +143,7 @@ class TcpServer:
         self._server.close()
         try:
             await asyncio.wait_for(self._server.wait_closed(), timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
         if self._connection is not None and not self._connection.done():
             self._connection.cancel()

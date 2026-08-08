@@ -6,11 +6,13 @@ import asyncio
 import dataclasses
 import inspect
 import weakref
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Callable, TYPE_CHECKING, cast
+from datetime import UTC, datetime, timezone
+from typing import TYPE_CHECKING, Any, cast
 
-from matrix_planner import Planner, Task as PlannerTask
+from matrix_planner import Planner
+from matrix_planner import Task as PlannerTask
 
 from ...core.classes.descriptor import Descriptor
 from ...core.classes.lifecycle_registry import lifecycle_component
@@ -52,7 +54,7 @@ class ScheduledTaskContext:
 
     agent: Agent
     task_id: str
-    scheduled_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    scheduled_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 ScheduledTaskHandler = Callable[..., Any]

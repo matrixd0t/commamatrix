@@ -7,31 +7,32 @@ The ``CodeActService`` is discovered automatically and managed by the agent's se
 """
 
 from __future__ import annotations
-from . import hooks, tools, instructions, service
+
+from . import hooks, instructions, service, tools
 from .hooks import codeact_enabled
 from .service import (
     codeact_backend,
-    codeact_searcher,
     codeact_execution_timeout,
-    codeact_rpc_timeout,
-    codeact_shutdown_timeout,
     codeact_max_output_bytes,
     codeact_max_search_results,
     codeact_max_tools_list,
+    codeact_rpc_timeout,
+    codeact_searcher,
+    codeact_shutdown_timeout,
 )
 
 __all__ = [
-    "hooks",
-    "tools",
-    "instructions",
-    "service",
-    "codeact_enabled",
     "codeact_backend",
-    "codeact_searcher",
+    "codeact_enabled",
     "codeact_execution_timeout",
-    "codeact_rpc_timeout",
-    "codeact_shutdown_timeout",
     "codeact_max_output_bytes",
     "codeact_max_search_results",
     "codeact_max_tools_list",
+    "codeact_rpc_timeout",
+    "codeact_searcher",
+    "codeact_shutdown_timeout",
+    "hooks",
+    "instructions",
+    "service",
+    "tools",
 ]

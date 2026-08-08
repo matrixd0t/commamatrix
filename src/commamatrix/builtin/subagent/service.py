@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from ...components.hook import AfterLlmCallCtx
 from ...core.classes.service import Service

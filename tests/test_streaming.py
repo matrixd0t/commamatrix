@@ -10,28 +10,29 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from commamatrix.builtin.llm_http_adapter.adapter import LLMHTTPAdapter
+from commamatrix.builtin.llm_http_adapter.anthropic_messages import (
+    AnthropicMessagesCodec,
+)
+from commamatrix.builtin.llm_http_adapter.chat_completions import ChatCompletionsCodec
+from commamatrix.builtin.llm_http_adapter.codec import ApiCodec
+from commamatrix.builtin.llm_http_adapter.responses import ResponsesCodec
+from commamatrix.components.connector import Connector
+from commamatrix.components.dialog import DialogOrigin
 from commamatrix.components.llm_adapter import (
     LLMAdapter,
     LLMAdapterManager,
     LLMResponse,
     LLMResponseBlock,
+    LLMResponseReasoningBlock,
     LLMResponseTextBlock,
     LLMResponseToolCallBlock,
-    LLMResponseReasoningBlock,
     StopReason,
     StreamDelta,
     StreamEnd,
     Usage,
 )
-from commamatrix.components.connector import Connector
-from commamatrix.components.dialog import DialogOrigin
-from commamatrix.builtin.llm_http_adapter.codec import ApiCodec
-from commamatrix.builtin.llm_http_adapter.chat_completions import ChatCompletionsCodec
-from commamatrix.builtin.llm_http_adapter.responses import ResponsesCodec
-from commamatrix.builtin.llm_http_adapter.anthropic_messages import AnthropicMessagesCodec
-from commamatrix.builtin.llm_http_adapter.adapter import LLMHTTPAdapter
 from tests.conftest import stub_agent, stub_origin
-
 
 # ── StreamDelta / StreamEnd ──────────────────────────────────────────────────
 
@@ -629,7 +630,10 @@ class TestHttpConnectorStreaming:
 
     @pytest.mark.asyncio
     async def test_send_stream_chunk_no_queue_ignored(self):
-        from commamatrix.builtin.http_connector.connector import HttpConnector, HttpOrigin
+        from commamatrix.builtin.http_connector.connector import (
+            HttpConnector,
+            HttpOrigin,
+        )
         agent = stub_agent()
         conn = HttpConnector(agent=agent)
         chunk = StreamDelta(content="x", delta_type="text")

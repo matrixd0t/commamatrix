@@ -10,11 +10,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .backend import ExecutionBackend, ExecutionResult
-from ..rpc.server import is_codeact_internal
-from ..rpc.server import RPCServer
-from ..rpc.tcp import TcpServer, TcpTransport
 from ....components.hook import BeforeToolCallCtx
+from ..rpc.server import RPCServer, is_codeact_internal
+from ..rpc.tcp import TcpServer, TcpTransport
+from .backend import ExecutionBackend, ExecutionResult
 
 _WORKER_PATH = str(Path(__file__).parent / "worker.py")
 
@@ -115,7 +114,7 @@ class SubprocessBackend(ExecutionBackend):
                     stderr_buffer.append(f"Unknown worker message: {message!r}")
                     break
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             is_timeout = True
             force_kill = True
             self._kill_process(proc)
@@ -174,7 +173,7 @@ class SubprocessBackend(ExecutionBackend):
         try:
             async with asyncio.timeout(self._rpc_timeout):
                 rpc_response = await server.handle(message)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             rpc_response = {
                 "id": message.get("id", ""),
                 "error": {"code": -32000, "message": "RPC timeout"},
@@ -245,17 +244,17 @@ class SubprocessBackend(ExecutionBackend):
                 await asyncio.wait_for(proc.wait(), timeout=self._shutdown_timeout)
             except ProcessLookupError:
                 pass
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 try:
                     proc.kill()
                     await asyncio.wait_for(proc.wait(), timeout=self._shutdown_timeout)
-                except (ProcessLookupError, asyncio.TimeoutError):
+                except (TimeoutError, ProcessLookupError):
                     pass
 
         if stderr_reader is not None:
             try:
                 await asyncio.wait_for(stderr_reader, timeout=self._shutdown_timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 stderr_reader.cancel()
                 await asyncio.gather(stderr_reader, return_exceptions=True)
             except asyncio.CancelledError:

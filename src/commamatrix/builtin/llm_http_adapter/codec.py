@@ -13,7 +13,13 @@ from httpx2 import AsyncClient
 from ...components.dialog import DialogItem, DialogItemType
 from ...components.file_storage import DataType, FileContext, file_to_context, read_file
 from ...components.hook import BeforeLlmCallCtx
-from ...components.llm_adapter import LLM, LLMResponse, LLMResponseBlock, StreamDelta, StreamEnd
+from ...components.llm_adapter import (
+    LLM,
+    LLMResponse,
+    LLMResponseBlock,
+    StreamDelta,
+    StreamEnd,
+)
 
 
 class ApiProtocol(StrEnum):

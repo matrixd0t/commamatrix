@@ -8,8 +8,8 @@ import asyncio
 
 import pytest
 
-from commamatrix.core.agent.runner import AgentRunner
 from commamatrix.components.dialog import DialogOrigin
+from commamatrix.core.agent.runner import AgentRunner
 from tests.conftest import StubOrigin
 
 

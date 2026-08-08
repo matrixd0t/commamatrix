@@ -182,6 +182,7 @@ placement.
 - [Plugin tables](tables.md)
 - [Storage and LLM providers](providers.md)
 - [Scheduled tasks](planner.md)
+- [Headless subagents](subagent.md)
 - [MCP](mcp.md)
 - [HTTP server](http.md)
 - [CodeAct](codeact.md)

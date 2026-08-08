@@ -120,6 +120,6 @@ class MCPServerManager(InstanceManager[MCPServerDescriptor, MCPServerRuntime]):
 
 __all__ = [
     "MCPServerDescriptor",
-    "MCPServerSource",
     "MCPServerManager",
+    "MCPServerSource",
 ]

@@ -18,7 +18,7 @@ from commamatrix.core.classes.manager import (
 )
 from commamatrix.core.classes.service import AbstractService, ServiceDescriptor
 from commamatrix.core.classes.source import PythonServiceSource, UnavailableSourceError
-from tests.conftest import stub_agent, FakeService
+from tests.conftest import FakeService, stub_agent
 
 
 class TestServiceInstanceRegistry:

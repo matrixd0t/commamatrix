@@ -3,9 +3,10 @@
 """LLM-visible CodeAct tools: execute code, search and list available tools."""
 
 from __future__ import annotations
-from .service import CodeActService, codeact_max_search_results, codeact_max_tools_list
+
 from ...components.hook import BeforeToolCallCtx
 from ...components.tool import ToolDescriptor, tool
+from .service import CodeActService, codeact_max_search_results, codeact_max_tools_list
 
 
 def _format_tool_display(d: ToolDescriptor) -> str:

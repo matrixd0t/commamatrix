@@ -15,8 +15,8 @@ from urllib.parse import unquote, urlparse
 from httpx2 import HTTPError
 
 from ..core.classes.lifecycle_registry import lifecycle_component
-from ..core.classes.service import AbstractService
 from ..core.classes.manager import ActiveServiceInstanceManager
+from ..core.classes.service import AbstractService
 from ..core.classes.source import PythonServiceSource
 from .config import ConfigField
 

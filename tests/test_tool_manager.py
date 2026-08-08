@@ -9,6 +9,7 @@ import types
 
 import pytest
 
+from commamatrix.components.llm_adapter import ToolCall, ToolCallResult
 from commamatrix.components.tool import (
     TOOL_ATTRIBUTE,
     AmbiguousToolError,
@@ -17,7 +18,6 @@ from commamatrix.components.tool import (
     ToolManager,
     tool,
 )
-from commamatrix.components.llm_adapter import ToolCall, ToolCallResult
 from commamatrix.core.classes.manager import ServiceInstanceRegistry
 from tests.conftest import stub_agent
 

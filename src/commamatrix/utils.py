@@ -15,24 +15,23 @@ from typing import Any
 
 from .components.config import ConfigField
 
-
 __all__ = [
-    "framework_prefix",
-    "commamatrix_dir",
-    "allow_absolute_paths",
     "PathResolutionError",
     "TextFileFormat",
     "TextFileSnapshot",
-    "resolve_path",
-    "read_text_file",
-    "write_bytes_file",
-    "write_text_file",
-    "read_text_file_async",
-    "write_bytes_file_async",
-    "write_text_file_async",
-    "await_if_needed",
     "_row_value",
+    "allow_absolute_paths",
+    "await_if_needed",
+    "commamatrix_dir",
+    "framework_prefix",
+    "read_text_file",
+    "read_text_file_async",
+    "resolve_path",
     "to_jsonable",
+    "write_bytes_file",
+    "write_bytes_file_async",
+    "write_text_file",
+    "write_text_file_async",
 ]
 
 
@@ -84,7 +83,7 @@ class TextFileFormat:
 class TextFileSnapshot:
     """Text content together with the original bytes and file metadata."""
 
-    __slots__ = ("content", "file_format", "digest", "mode")
+    __slots__ = ("content", "digest", "file_format", "mode")
 
     def __init__(self, content: str, file_format: TextFileFormat, digest: str, mode: int) -> None:
         self.content = content

@@ -9,12 +9,11 @@ import types
 
 import pytest
 
-from commamatrix.components.tool import ToolManager, tool, ToolDescriptor
-from commamatrix.components.llm_adapter import ToolCall, ToolCallResult
 from commamatrix.components.hook import BeforeToolCallCtx, RunCtx
+from commamatrix.components.llm_adapter import ToolCall, ToolCallResult
+from commamatrix.components.tool import ToolDescriptor, ToolManager, tool
 from commamatrix.core.classes.manager import ServiceInstanceRegistry
-from tests.conftest import stub_agent, StubOrigin, stub_origin
-
+from tests.conftest import StubOrigin, stub_agent, stub_origin
 
 # ── ToolManager.call() with ctx injection ────────────────────────────────────
 

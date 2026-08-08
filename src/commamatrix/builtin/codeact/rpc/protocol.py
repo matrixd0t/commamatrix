@@ -30,7 +30,7 @@ class RPCRequest:
 class RPCError(Exception):
     """Structured RPC error with a numeric code, message and optional data."""
 
-    __slots__ = ("code", "message", "data")
+    __slots__ = ("code", "data", "message")
 
     def __init__(self, code: int, message: str, data: Any = None) -> None:
         super().__init__(message)

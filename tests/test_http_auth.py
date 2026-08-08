@@ -30,11 +30,12 @@ async def sqlite_agent(tmp_path):
 @pytest.mark.asyncio
 async def test_authorizer_admin_login_password_and_single_use_invite(sqlite_agent, capsys):
     auth = Authorizer(sqlite_agent, "test_app", "test-secret-0123456789012345678901", 86400)
-    await auth.init_db()
+    credentials = await auth.init_db()
 
-    output = capsys.readouterr().out
-    admin_password = output.rsplit(": ", 1)[1].strip()
-    token = await auth.login("admin", admin_password)
+    assert credentials is not None
+    assert credentials.username == "admin"
+    assert capsys.readouterr().out == ""
+    token = await auth.login("admin", credentials.password)
     admin = await auth.authenticate(token)
     assert admin.is_admin is True
 
@@ -52,11 +53,14 @@ async def test_authorizer_admin_login_password_and_single_use_invite(sqlite_agen
 async def test_authorizer_isolates_apps(sqlite_agent, capsys):
     first = Authorizer(sqlite_agent, "first", "test-secret-0123456789012345678901", 86400)
     second = Authorizer(sqlite_agent, "second", "test-secret-0123456789012345678901", 86400)
-    await first.init_db()
-    capsys.readouterr()
-    await second.init_db()
-    second_password = capsys.readouterr().out.rsplit(": ", 1)[1].strip()
+    first_credentials = await first.init_db()
+    second_credentials = await second.init_db()
+
+    assert first_credentials is not None
+    assert second_credentials is not None
+    assert capsys.readouterr().out == ""
 
     with pytest.raises(AuthError, match="Invalid username or password"):
-        await first.login("admin", second_password)
-    assert (await second.authenticate(await second.login("admin", second_password))).app_name == "second"
+        await first.login("admin", second_credentials.password)
+    assert (await second.authenticate(await second.login("admin", second_credentials.password))).app_name == "second"
+

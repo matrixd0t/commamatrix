@@ -4,8 +4,10 @@
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from ....components.llm_adapter import ToolCall
+from ....utils import to_jsonable
 from .protocol import (
     Namespace,
     RPCError,
@@ -13,8 +15,6 @@ from .protocol import (
     RPCResponse,
     ToolsMethod,
 )
-from ....components.llm_adapter import ToolCall
-from ....utils import to_jsonable
 
 if TYPE_CHECKING:
     from ....components.hook import BeforeToolCallCtx

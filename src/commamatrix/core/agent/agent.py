@@ -13,12 +13,11 @@ import json
 import sys
 import types
 from collections import defaultdict
-from collections.abc import Iterable, Iterator, MutableMapping
+from collections.abc import Callable, Iterable, Iterator, MutableMapping
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import uuid4
-
-from typing import TYPE_CHECKING, Any, Callable, Literal, cast
 
 try:
     from dotenv import load_dotenv
@@ -28,8 +27,14 @@ except ImportError:
 
 from httpx2 import AsyncClient
 
-from ...components.config import Config, ConfigField, close_agent_logging, get_agent_logger
+from ...components.config import (
+    Config,
+    ConfigField,
+    close_agent_logging,
+    get_agent_logger,
+)
 from ...components.dialog import DialogItem, DialogItemType, DialogRole
+from ...components.file_storage import FILE_STORAGE_ATTRIBUTE
 from ...components.hook import (
     AfterLlmCallCtx,
     AfterRunCtx,
@@ -46,20 +51,20 @@ from ...components.hook import (
     RunCtx,
 )
 from ...components.llm_adapter import (
-    reasoning,
     LLMResponse,
     LLMResponseBlock,
-    LLMResponseToolCallBlock,
     LLMResponseError,
+    LLMResponseToolCallBlock,
     LLMTruncatedError,
     StopReason,
     StreamDelta,
     StreamEnd,
     ToolCall,
     ToolCallResult,
+    reasoning,
 )
 from ...components.storage import STORAGE_ATTRIBUTE
-from ...components.file_storage import FILE_STORAGE_ATTRIBUTE
+from ...utils import FP, commamatrix_dir
 from ..classes.manager import ServiceInstanceRegistry
 from ..extensions import (
     ExtensionOperation,
@@ -68,9 +73,8 @@ from ..extensions import (
     MissingExtensionDependencyError,
     discover_plugin_targets,
 )
-from ...utils import FP, commamatrix_dir
-from .runner import AgentRunner
 from .lifecycle import AgentLifecycle
+from .runner import AgentRunner
 
 if TYPE_CHECKING:
     from ...components.connector import ConnectorManager

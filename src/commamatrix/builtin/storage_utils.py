@@ -7,8 +7,8 @@ from typing import Any
 
 from ..components.hook import BeforeToolCallCtx
 from ..components.instruction import InstructionCtx, instruction
-from ..components.tool import tool
 from ..components.storage import Storage
+from ..components.tool import tool
 from ..utils import to_jsonable
 
 

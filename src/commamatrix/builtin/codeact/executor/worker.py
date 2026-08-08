@@ -17,17 +17,17 @@ import asyncio
 import contextlib
 import inspect
 import io
-import linecache
 import json
+import linecache
 import struct
 import sys
 import time
+from collections.abc import Callable
 from importlib.abc import MetaPathFinder
 from importlib.machinery import ModuleSpec
 from types import ModuleType
-from typing import Any, Callable
+from typing import Any
 from uuid import uuid4
-
 
 # ── Length-prefixed message helpers ─────────────────────────────────
 
@@ -70,7 +70,7 @@ class AsyncRPCClient:
             await self._writer.drain()
         try:
             return await asyncio.wait_for(future, timeout=self._rpc_timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise RuntimeError(f"RPC timeout for {method}")
         finally:
             self._pending.pop(request_id, None)

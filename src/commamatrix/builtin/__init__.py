@@ -5,7 +5,6 @@
 from importlib import import_module
 from types import ModuleType
 
-
 _MODULES = {
     "apply_patch": "apply_patch",
     "codeact": "codeact",

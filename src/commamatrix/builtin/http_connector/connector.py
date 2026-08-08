@@ -11,10 +11,10 @@ import shutil
 import time
 import uuid
 from collections.abc import AsyncIterator, Iterable, Mapping
-from datetime import tzinfo
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import tzinfo
 from mimetypes import guess_type
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -34,7 +34,7 @@ from ...components.hook import OnAgentStartCtx, OnParsedCtx, on_agent_start
 from ...components.llm_adapter import LLMModalities, StreamDelta
 from ...components.server import SERVER_ROOT, http_external_url
 from ...utils import _row_value, commamatrix_dir
-from .auth import AuthError, Authorizer
+from .auth import AuthError, Authorizer, InitialAdminCredentials
 
 if TYPE_CHECKING:
     from ...core.agent import Agent
@@ -174,6 +174,7 @@ class HttpConnector(Connector[HttpOrigin]):
             else _resolve_jwt_secret(self.config.get(commamatrix_dir))
         )
         self.authorizer = Authorizer(agent=agent, app_name=self.config.get(http_auth_app_name), jwt_secret=jwt_secret, token_ttl_seconds=self.config.get(http_auth_token_ttl_seconds))
+        self.initial_admin_credentials: InitialAdminCredentials | None = None
         self._sessions: dict[str, HTTPSession] = {}
         self._sessions_by_user: dict[int, set[str]] = {}
         self._timezones_by_user: dict[int, tzinfo] = {}
@@ -352,7 +353,7 @@ class HttpConnector(Connector[HttpOrigin]):
 
     async def start(self) -> None:
         try:
-            await self.authorizer.init_db()
+            self.initial_admin_credentials = await self.authorizer.init_db()
         except BaseException:
             self.logger.exception("HTTP connector failed to initialize authentication")
             self._unregister_routes()
@@ -1166,7 +1167,3 @@ async def _sse_generator(queue: asyncio.Queue[dict | None], on_disconnect=None):
 def _serialize_item(item: DialogItem) -> dict:
     meta = {key: value for key, value in item.meta.items() if key != "llm"}
     return {"type": "dialog_item", "item_id": item.item_id, "previous_item_id": item.previous_item_id, "item_type": item.item_type.value, "role": item.role.value, "content": item.content, "user": item.user, "origin": item.origin.model_dump(mode="json"), "external_id": item.external_id, "created_at": item.created_at.isoformat() if item.created_at else None, "meta": meta}
-
-
-
-

@@ -9,11 +9,11 @@ from pydantic import BaseModel
 
 from commamatrix.components.dialog import (
     DEFAULT_PLATFORM,
+    ORIGIN_REGISTRY,
     DialogItem,
     DialogItemType,
     DialogOrigin,
     DialogRole,
-    ORIGIN_REGISTRY,
     resolve_origin_type,
 )
 from tests.conftest import StubOrigin, stub_origin

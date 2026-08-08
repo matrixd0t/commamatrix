@@ -11,7 +11,6 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Literal
 
-
 ExtensionTarget = str | types.ModuleType
 ExtensionOperation = Literal["add", "remove", "reload"]
 

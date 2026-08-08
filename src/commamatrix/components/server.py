@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
-from .config import ConfigField
 from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.service import AbstractService
+from .config import ConfigField
 
 if TYPE_CHECKING:
     from ..core.agent import Agent
@@ -185,6 +186,7 @@ class Server(AbstractService):
 
     async def _file(self, request: Any) -> Any:
         from starlette.responses import JSONResponse, Response
+
         from .file_storage import normalize_file_id, read_file
 
         file_id = normalize_file_id(request.path_params.get("file_id"))
@@ -226,7 +228,6 @@ class Server(AbstractService):
         if self._uvicorn_server.servers:
             self._bound_port = self._uvicorn_server.servers[0].sockets[0].getsockname()[1]
         self.logger.info("HTTP server started host=%s port=%d", self._host, self._bound_port or self._port)
-        print(f"CommaMatrix web http_server running on {self.base_url}")
 
     async def stop(self) -> None:
         self.logger.info("HTTP server stopping")
@@ -240,7 +241,8 @@ class Server(AbstractService):
         if task is not None and not task.done():
             try:
                 await asyncio.wait_for(asyncio.shield(task), timeout=5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 task.cancel()
             await asyncio.gather(task, return_exceptions=True)
         self.logger.info("HTTP server stopped")
+

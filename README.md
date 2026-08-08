@@ -120,13 +120,17 @@ Create `quickstart.py`:
 import asyncio
 import os
 
-from commamatrix import Agent, agentic_model, presets
+from commamatrix import Agent, agentic_model
 from commamatrix.builtin.llm_http_adapter import llm_api_base, openai_api_key
 
 
 async def main() -> None:
     agent = Agent(name="my_lovely_assistant")
-    await agent.add_extensions(presets.minimal)
+    await agent.add_extensions(
+        "commamatrix.builtin.instructions.default_instruction",
+        "commamatrix.builtin.llm_http_adapter",
+        "commamatrix.builtin.http_connector",
+    )
 
     # See every ConfigField declared by the active extensions.
     print(agent.config_fields_info())
@@ -159,7 +163,7 @@ Start it with uv:
 uv run quickstart.py
 ```
 
-Open `http://127.0.0.1:8338/commamatrix` in a browser. The default `http_host` is `0.0.0.0`, so set it to `127.0.0.1` in local or otherwise untrusted environments. On the first start, the HTTP connector creates an administrator account and prints its generated password once. Save that password. The default SQLite database and uploaded files are stored at `.commamatrix/`.
+Open `http://127.0.0.1:8338/commamatrix` in a browser. The default `http_host` is `0.0.0.0`, so set it to `127.0.0.1` in local or otherwise untrusted environments. On the first start, the HTTP connector creates an administrator account and returns its generated password to the application, which should display it once and ask you to save it. The default SQLite database and uploaded files are stored at `.commamatrix/`.
 
 The health endpoint does not require authentication:
 
@@ -223,16 +227,20 @@ agent = Agent(
 
 ## Extensions
 
-Extensions are imported and then added to an agent's scope. The recommended preset lists containing built-in features are available in `commamatrix.presets`:
+Extensions are imported and then added to an agent's scope. Applications select
+an explicit list of extension modules:
 
 ```python
 from commamatrix import Agent
-from commamatrix.presets import assistant
 
 
 async def create_agent() -> Agent:
     agent = Agent("my_lovely_assistant")
-    await agent.add_extensions(assistant)
+    await agent.add_extensions(
+        "commamatrix.builtin.instructions.default_instruction",
+        "commamatrix.builtin.llm_http_adapter",
+        "commamatrix.builtin.http_connector",
+    )
     return agent
 ```
 
@@ -255,6 +263,6 @@ Common declarations include `@tool`, `@instruction`, lifecycle hooks, service su
 ## Security Notes
 
 - Keep `http_host` set to `127.0.0.1` for local development. `0.0.0.0` exposes your HTTP connector to the Internet.
-- HTTP connector passwords are hashed; generated administrator credentials are printed only during initial account creation.
+- HTTP connector passwords are hashed; generated administrator credentials are exposed only during initial account creation.
 - CodeAct executes arbitrary Python code with access to the standard library, installed dependencies, and the system terminal. Default subprocess backend is intentionally NOT a security sandbox and must NOT be exposed to untrusted users without an external isolation layer. To enforce configurable limits on the agent’s execution privileges, prefer systemd or Docker-backed implementations.
 - Validate the reverse proxy, TLS, CORS, and network policy before exposing the HTTP connector to the Internet.

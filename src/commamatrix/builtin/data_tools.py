@@ -310,9 +310,9 @@ async def write(content: str | bytes, dest: str | None = None, ext: str = "", *,
 
 
 __all__ = [
-    "read_timeout",
-    "read_max_response_bytes",
-    "read_max_redirects",
     "read",
+    "read_max_redirects",
+    "read_max_response_bytes",
+    "read_timeout",
     "write",
 ]

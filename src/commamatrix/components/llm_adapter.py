@@ -3,24 +3,24 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from enum import StrEnum
-from dataclasses import dataclass, field
-from json import dumps
 from collections.abc import AsyncIterator, Iterator
-from typing import Any, TYPE_CHECKING
+from dataclasses import dataclass, field
+from enum import StrEnum
+from json import dumps
+from typing import TYPE_CHECKING, Any
 
-from ..utils import to_jsonable
 from ..core.classes.lifecycle_registry import lifecycle_component
-from ..core.classes.service import AbstractService
 from ..core.classes.manager import ServiceInstanceManager
+from ..core.classes.service import AbstractService
 from ..core.classes.source import PythonServiceSource
+from ..utils import to_jsonable
 from .config import ConfigField
-from .dialog import DialogItem, DialogItemType, DialogRole, DialogOrigin
+from .dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
 from .file_storage import DataType
 
 if TYPE_CHECKING:
-    from .hook import BeforeLlmCallCtx
     from ..core.agent import Agent
+    from .hook import BeforeLlmCallCtx
 
 LLM_ADAPTER_ATTRIBUTE = "__commamatrix_llm_adapter__"
 

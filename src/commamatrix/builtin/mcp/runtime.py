@@ -46,7 +46,11 @@ def _sdk() -> dict[str, Any]:
         from mcp.client.stdio import StdioServerParameters, stdio_client
         from mcp.client.streamable_http import streamable_http_client
         from mcp.shared._httpx_utils import create_mcp_http_client
-        from mcp.types import Implementation, PaginatedRequestParams, ToolListChangedNotification
+        from mcp.types import (
+            Implementation,
+            PaginatedRequestParams,
+            ToolListChangedNotification,
+        )
     except ModuleNotFoundError as exc:
         if exc.name == "mcp" or (exc.name and exc.name.startswith("mcp.")):
             raise MCPDependencyError from exc
@@ -229,6 +233,6 @@ class MCPServerRuntime(AbstractService):
 __all__ = [
     "MCPDependencyError",
     "MCPRuntimeError",
-    "MCPToolInfo",
     "MCPServerRuntime",
+    "MCPToolInfo",
 ]

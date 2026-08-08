@@ -11,21 +11,21 @@ import pytest
 
 from commamatrix.components.hook import (
     HOOK_ATTRIBUTE,
+    AfterLlmCallCtx,
+    AfterRunCtx,
+    AfterToolCallCtx,
+    BeforeLlmCallCtx,
+    BeforeRunCtx,
+    BeforeSendCtx,
+    BeforeToolCallCtx,
     Hook,
     HookDescriptor,
     HookEventType,
     HookManager,
-    PythonHookSource,
-    AfterLlmCallCtx,
-    BeforeLlmCallCtx,
-    BeforeRunCtx,
-    BeforeToolCallCtx,
-    AfterToolCallCtx,
-    BeforeSendCtx,
-    OnErrorCtx,
-    AfterRunCtx,
     OnAgentStartCtx,
+    OnErrorCtx,
     OnParsedCtx,
+    PythonHookSource,
     RunCtx,
     after_llm_call,
     after_run,
@@ -235,8 +235,8 @@ class TestHookEventTypeDecorators:
 
 class TestPythonHookSourceScan:
     def test_scan_finds_decorated_functions(self):
-        import types
         import sys
+        import types
 
         mod = types.ModuleType("hook_scan_test")
 
@@ -258,8 +258,8 @@ class TestPythonHookSourceScan:
             del sys.modules["hook_scan_test"]
 
     def test_scan_ignores_non_decorated(self):
-        import types
         import sys
+        import types
 
         mod = types.ModuleType("hook_scan_ignores")
 

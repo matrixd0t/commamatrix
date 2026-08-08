@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -17,7 +17,12 @@ from commamatrix.builtin.multi_user import (
     user_header_template,
 )
 from commamatrix.components.config import Config
-from commamatrix.components.dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
+from commamatrix.components.dialog import (
+    DialogItem,
+    DialogItemType,
+    DialogOrigin,
+    DialogRole,
+)
 from commamatrix.components.hook import BeforeLlmCallCtx, BeforeRunCtx, RunCtx
 from commamatrix.components.instruction import InstructionCtx
 
@@ -47,7 +52,7 @@ def _item() -> DialogItem:
         role=DialogRole.USER,
         origin=TelegramOriginForMultiDialog(user_id=12345),
         user="telegram:Елена",
-        created_at=datetime(2026, 5, 24, 11, 0, 0, tzinfo=timezone.utc),
+        created_at=datetime(2026, 5, 24, 11, 0, 0, tzinfo=UTC),
     )
 
 

@@ -9,22 +9,22 @@ from types import SimpleNamespace
 
 import pytest
 
-from commamatrix.core.classes.ordering import CyclicConstraintError
 from commamatrix.components.hook import (
     HOOK_ATTRIBUTE,
+    AfterLlmCallCtx,
+    BeforeLlmCallCtx,
+    BeforeRunCtx,
     Hook,
     HookDescriptor,
     HookEventType,
     HookManager,
     PythonHookSource,
-    AfterLlmCallCtx,
-    BeforeLlmCallCtx,
-    BeforeRunCtx,
     after_llm_call,
     before_llm_call,
     before_run,
 )
 from commamatrix.core.classes.manager import ServiceInstanceRegistry
+from commamatrix.core.classes.ordering import CyclicConstraintError
 
 
 def _stub_agent() -> SimpleNamespace:

@@ -14,7 +14,12 @@ import httpx2 as httpx
 import pytest
 from sse_starlette import EventSourceResponse
 
-from commamatrix.builtin.http_connector.connector import HttpConnector, HttpOrigin, _sse_generator, prepare_http_ui
+from commamatrix.builtin.http_connector.connector import (
+    HttpConnector,
+    HttpOrigin,
+    _sse_generator,
+    prepare_http_ui,
+)
 from commamatrix.components.config import Config
 from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
 from commamatrix.components.hook import OnAgentStartCtx

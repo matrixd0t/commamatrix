@@ -12,14 +12,14 @@ import pytest
 from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
 from commamatrix.components.hook import BeforeLlmCallCtx, RunCtx
 from commamatrix.components.instruction import (
+    InstructionCtx,
     InstructionManager,
     PythonInstructionSource,
-    instruction,
     add_instructions,
-    InstructionCtx,
+    instruction,
 )
 from commamatrix.core.classes.manager import ServiceInstanceRegistry
-from tests.conftest import StubOrigin, stub_origin, make_dialog_item
+from tests.conftest import StubOrigin, make_dialog_item, stub_origin
 
 
 def _stub_agent():
@@ -222,4 +222,5 @@ class TestInstructionManagerSetScope:
 # ── Imports needed for tests ─────────────────────────────────────────────────
 
 import weakref
+
 from commamatrix.components.instruction import InstructionDescriptor

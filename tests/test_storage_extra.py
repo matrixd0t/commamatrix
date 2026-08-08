@@ -11,7 +11,7 @@ import pytest
 
 from commamatrix.components.config import Config
 from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
-from tests.conftest import stub_origin, stub_agent, make_dialog_item
+from tests.conftest import make_dialog_item, stub_agent, stub_origin
 
 
 class TestSqliteMigrateColumns:

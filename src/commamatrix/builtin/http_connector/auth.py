@@ -7,7 +7,7 @@ import logging
 import secrets
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from functools import wraps
 from typing import TYPE_CHECKING
 
@@ -28,6 +28,12 @@ class AuthUser:
     username: str
     app_name: str
     is_admin: bool
+
+
+@dataclass(frozen=True, slots=True)
+class InitialAdminCredentials:
+    username: str
+    password: str
 
 
 class UserName(BaseModel):
@@ -130,10 +136,10 @@ class Authorizer:
             is_admin=bool(row["is_admin"]),
         )
 
-    async def init_db(self) -> None:
+    async def init_db(self) -> InitialAdminCredentials | None:
         async with self._init_lock:
             if self._initialized:
-                return
+                return None
             self.logger.info("HTTP auth database initializing app=%s", self.app_name)
             await self.agent.storage.execute(
                 f"CREATE TABLE IF NOT EXISTS {_AUTH_TABLE} ("
@@ -164,10 +170,13 @@ class Authorizer:
                     )
                 else:
                     await self._insert_user("admin", password, is_admin=True)
-                print("Admin account created. Save this password; you won't be able to see it again: " + password)
                 self.logger.info("HTTP administrator account created app=%s", self.app_name)
+                credentials = InitialAdminCredentials(username="admin", password=password)
+            else:
+                credentials = None
             self._initialized = True
             self.logger.info("HTTP auth database ready app=%s", self.app_name)
+            return credentials
 
     async def _ensure_username_available(self, username: str, exclude_user_id: int | None = None) -> None:
         rows = await self.agent.storage.execute(f"SELECT id, username FROM {_AUTH_TABLE} WHERE app_name = ?", (self.app_name,))
@@ -182,7 +191,7 @@ class Authorizer:
         try:
             await self.agent.storage.execute(
                 f"INSERT INTO {_AUTH_TABLE} (app_name, username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)",
-                (self.app_name, username, password_hash, int(is_admin), datetime.now(timezone.utc).isoformat()),
+                (self.app_name, username, password_hash, int(is_admin), datetime.now(UTC).isoformat()),
             )
         except Exception as exc:
             if "unique" in str(exc).lower() or "constraint" in str(exc).lower():
@@ -245,7 +254,7 @@ class Authorizer:
         return token
 
     def _issue_token(self, user_id: int, username: str) -> str:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return jwt.encode(
             {
                 "sub": str(user_id),
@@ -384,6 +393,7 @@ class Authorizer:
 
     async def stop(self) -> None:
         self._invites.clear()
+
 
 
 

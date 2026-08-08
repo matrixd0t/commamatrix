@@ -3,7 +3,6 @@
 from importlib import import_module
 from types import ModuleType
 
-
 _MODULES = {
     "postgres_storage": "postgres_storage",
     "sqlite_storage": "sqlite_storage",

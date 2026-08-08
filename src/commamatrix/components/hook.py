@@ -6,24 +6,24 @@ import asyncio
 import inspect
 import time
 import weakref
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from uuid import uuid4
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
-from collections.abc import Awaitable, Callable
+from uuid import uuid4
 
 from ..core.classes.descriptor import Descriptor
-from ..core.classes.source import PythonSource
 from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.manager import Manager
-from ..core.classes.ordering import normalize_constraint_refs, ConstraintRef
+from ..core.classes.ordering import ConstraintRef, normalize_constraint_refs
+from ..core.classes.source import PythonSource
 from ..utils import await_if_needed
 
 if TYPE_CHECKING:
     from ..core.agent import Agent
     from .connector import Connector
     from .dialog import DialogItem, DialogOrigin
-    from .llm_adapter import LLM, LLMAdapter, LLMResponse, ToolCallResult, ToolCall
+    from .llm_adapter import LLM, LLMAdapter, LLMResponse, ToolCall, ToolCallResult
     from .tool import RunTools, ToolDescriptor
 
 CtxT = TypeVar("CtxT")

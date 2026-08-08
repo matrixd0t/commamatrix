@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import json
-from datetime import timezone, tzinfo
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from datetime import UTC, timezone, tzinfo
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..components.config import ConfigField
 from ..components.dialog import DialogItem, DialogRole
-from ..components.hook import BeforeLlmCallCtx, BeforeRunCtx, before_llm_call, before_run
+from ..components.hook import (
+    BeforeLlmCallCtx,
+    BeforeRunCtx,
+    before_llm_call,
+    before_run,
+)
 from ..components.instruction import InstructionCtx, instruction
 from ..utils import _row_value, await_if_needed
-
 
 if TYPE_CHECKING:
     from ..core.agent import Agent
@@ -102,7 +106,7 @@ async def update_user_name(ctx: BeforeRunCtx) -> None:
 def _render_header(item: DialogItem, template: str, datetime_format: str, user_timezone: tzinfo, user_name: str) -> str:
     created_at = item.created_at
     if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=timezone.utc)
+        created_at = created_at.replace(tzinfo=UTC)
     values = {
         "datetime": created_at.astimezone(user_timezone).strftime(datetime_format),
         "user": item.user,
@@ -145,9 +149,9 @@ Message headers are auto-generated and contain metadata (time / user id / user n
 
 
 __all__ = [
-    "user_header_template",
-    "user_header_datetime_format",
-    "user_header_timezone",
-    "update_user_name",
     "describe_user_message_headers",
+    "update_user_name",
+    "user_header_datetime_format",
+    "user_header_template",
+    "user_header_timezone",
 ]

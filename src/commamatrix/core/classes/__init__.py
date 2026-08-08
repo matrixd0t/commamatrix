@@ -20,7 +20,7 @@ from .ordering import (
     normalize_constraint_refs,
     resolve_order,
 )
-from .service import AbstractService, SERVICE_ATTRIBUTE, Service, ServiceDescriptor
+from .service import SERVICE_ATTRIBUTE, AbstractService, Service, ServiceDescriptor
 from .source import (
     InvalidationCallback,
     PythonServiceSource,
@@ -30,6 +30,7 @@ from .source import (
 )
 
 __all__ = [
+    "SERVICE_ATTRIBUTE",
     "AbstractService",
     "ActiveServiceInstanceManager",
     "ConstraintRef",
@@ -41,7 +42,6 @@ __all__ = [
     "Manager",
     "PythonServiceSource",
     "PythonSource",
-    "SERVICE_ATTRIBUTE",
     "Service",
     "ServiceDescriptor",
     "ServiceInstanceManager",

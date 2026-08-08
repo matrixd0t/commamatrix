@@ -1,10 +1,10 @@
 # builtin/default_instruction.py
 
-"""Default context shared by the built-in presets."""
+"""Default context shared by the built-in runtime."""
 
 from __future__ import annotations
 
-from ...components.instruction import InstructionCtx, instruction
+from commamatrix.components.instruction import InstructionCtx, instruction
 
 
 @instruction(priority=100)
@@ -14,3 +14,4 @@ def default_instruction(_ctx: InstructionCtx) -> str:
 
 
 __all__ = ["default_instruction"]
+

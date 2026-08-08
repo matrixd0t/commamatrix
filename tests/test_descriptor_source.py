@@ -11,8 +11,16 @@ import weakref
 import pytest
 
 from commamatrix.core.classes.descriptor import Descriptor, StaleDescriptorError
-from commamatrix.core.classes.source import PythonServiceSource, PythonSource, UnavailableSourceError
-from commamatrix.core.classes.service import AbstractService, SERVICE_ATTRIBUTE, ServiceDescriptor
+from commamatrix.core.classes.service import (
+    SERVICE_ATTRIBUTE,
+    AbstractService,
+    ServiceDescriptor,
+)
+from commamatrix.core.classes.source import (
+    PythonServiceSource,
+    PythonSource,
+    UnavailableSourceError,
+)
 
 
 class TestDescriptor:

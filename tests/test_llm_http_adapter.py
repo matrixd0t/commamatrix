@@ -8,9 +8,9 @@ import pytest
 
 from commamatrix.builtin.llm_http_adapter.adapter import LLMHTTPAdapter
 from commamatrix.builtin.llm_http_adapter.codec import ApiProtocol
+from commamatrix.components.config import Config, ConfigField
 from commamatrix.components.hook import BeforeLlmCallCtx, RunCtx
 from commamatrix.components.llm_adapter import LLM
-from commamatrix.components.config import Config, ConfigField
 from commamatrix.core.classes.manager import ServiceInstanceRegistry
 from tests.conftest import stub_agent, stub_origin
 
@@ -69,6 +69,31 @@ class TestBuildHeaders:
         assert headers["x-api-key"] == "ant-key"
         assert "anthropic-version" in headers
 
+    def test_model_headers_include_openai_authorization(self):
+        from commamatrix.builtin.llm_http_adapter.adapter import openai_api_key
+
+        agent = stub_agent()
+        agent.config = Config(overrides={openai_api_key: "sk-test"})
+        adapter = LLMHTTPAdapter(agent=agent)
+
+        headers = adapter._model_headers()
+
+        assert headers["Authorization"] == "Bearer sk-test"
+        assert headers["Accept"] == "application/json"
+
+
+@pytest.mark.asyncio
+async def test_llm_start_can_skip_model_refresh():
+    from commamatrix.builtin.llm_http_adapter.adapter import llm_refresh_on_start
+
+    agent = stub_agent()
+    agent.config = Config(overrides={llm_refresh_on_start: False})
+    adapter = LLMHTTPAdapter(agent=agent)
+
+    await adapter.start()
+
+    assert adapter.llms == []
+
 
 class TestResolveProtocol:
     def test_from_ctx(self):
@@ -86,3 +111,4 @@ class TestResolveProtocol:
         run = RunCtx(agent=agent, origin=origin, user="u", llm=LLM(model_name="claude-3"))
         ctx = BeforeLlmCallCtx(run=run, dialog=[], tools=[])
         assert adapter._resolve_protocol(ctx) == ApiProtocol.ANTHROPIC_MESSAGES
+

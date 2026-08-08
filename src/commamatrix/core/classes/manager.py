@@ -8,16 +8,16 @@ import weakref
 from collections.abc import Callable, ValuesView
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
+from ...components.config import ConfigField
+from ...utils import await_if_needed
 from .descriptor import Descriptor, StaleDescriptorError
 from .lifecycle_registry import lifecycle_component
-from .service import AbstractService, ServiceDescriptor, SERVICE_ATTRIBUTE
+from .service import SERVICE_ATTRIBUTE, AbstractService, ServiceDescriptor
 from .source import (
-    Source,
     PythonServiceSource,
+    Source,
     UnavailableSourceError,
 )
-from ...utils import await_if_needed
-from ...components.config import ConfigField
 
 if TYPE_CHECKING:
     from ..agent.agent import Agent

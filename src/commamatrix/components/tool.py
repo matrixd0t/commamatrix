@@ -8,7 +8,6 @@ import sys
 import time
 import weakref
 from abc import ABC
-
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, cast, get_type_hints, overload
@@ -18,12 +17,10 @@ from matrix_fn_schema import build_json_schema
 
 from ..core.classes.descriptor import Descriptor
 from ..core.classes.lifecycle_registry import lifecycle_component
-from ..core.classes.source import Source
 from ..core.classes.manager import Manager
-from ..core.classes.source import PythonSource
-from .llm_adapter import ToolCall, ToolCallResult
+from ..core.classes.source import PythonSource, Source
 from .hook import BeforeToolCallCtx, RunCtx
-
+from .llm_adapter import ToolCall, ToolCallResult
 
 DEFAULT_TOOL_SEARCH_AMOUNT = 5
 TOOL_ATTRIBUTE = "__commamatrix_tool__"

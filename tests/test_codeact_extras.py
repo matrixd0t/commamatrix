@@ -13,15 +13,15 @@ from commamatrix.builtin.codeact.hooks import (
     codeact_enabled,
     expose_codeact_tools,
 )
-from commamatrix.builtin.codeact.search.bm25 import BM25ToolSearcher
+from commamatrix.builtin.codeact.rpc.protocol import RPCError
 from commamatrix.builtin.codeact.rpc.server import (
     RPCServer,
     is_codeact_internal,
     serialize_tool_descriptor,
 )
-from commamatrix.builtin.codeact.rpc.protocol import RPCError
+from commamatrix.builtin.codeact.search.bm25 import BM25ToolSearcher
 from commamatrix.components.hook import BeforeLlmCallCtx
-from commamatrix.components.tool import ToolDescriptor, PythonToolSource
+from commamatrix.components.tool import PythonToolSource, ToolDescriptor
 
 
 def _make_desc(

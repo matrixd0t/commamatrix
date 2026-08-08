@@ -14,11 +14,15 @@ from commamatrix.builtin.mcp.hooks import refresh_mcp_config_after_filesystem_to
 from commamatrix.builtin.mcp.instructions import mcp_config_context
 from commamatrix.builtin.mcp.loader import MCPConfigLoader, MCPJsonConfigLoader
 from commamatrix.builtin.mcp.manager import MCPService
-from commamatrix.builtin.mcp.server import MCPServerDescriptor, MCPServerManager, MCPServerSource
+from commamatrix.builtin.mcp.server import (
+    MCPServerDescriptor,
+    MCPServerManager,
+    MCPServerSource,
+)
 from commamatrix.components.config import Config
-from commamatrix.core.classes.manager import ServiceInstanceRegistry
 from commamatrix.components.hook import AfterToolCallCtx
 from commamatrix.components.instruction import InstructionCtx
+from commamatrix.core.classes.manager import ServiceInstanceRegistry
 
 
 def _agent(path: Path) -> SimpleNamespace:

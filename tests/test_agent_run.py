@@ -12,14 +12,21 @@ from typing import Any
 import pytest
 
 from commamatrix.components.config import Config
-from commamatrix.components.dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
+from commamatrix.components.connector import Connector
+from commamatrix.components.dialog import (
+    DialogItem,
+    DialogItemType,
+    DialogOrigin,
+    DialogRole,
+)
+from commamatrix.components.file_storage import FileStorage
 from commamatrix.components.hook import (
     AfterLlmCallCtx,
     AfterRunCtx,
     BeforeLlmCallCtx,
     BeforeRunCtx,
-    BeforeToolCallCtx,
     BeforeSendCtx,
+    BeforeToolCallCtx,
     HookEventType,
     OnErrorCtx,
     OnParsedCtx,
@@ -31,9 +38,9 @@ from commamatrix.components.llm_adapter import (
     LLMAdapterManager,
     LLMResponse,
     LLMResponseBlock,
+    LLMResponseReasoningBlock,
     LLMResponseTextBlock,
     LLMResponseToolCallBlock,
-    LLMResponseReasoningBlock,
     StopReason,
     StreamDelta,
     StreamEnd,
@@ -41,14 +48,11 @@ from commamatrix.components.llm_adapter import (
     ToolCallResult,
     Usage,
 )
-from commamatrix.components.connector import Connector
 from commamatrix.components.storage import Storage
-from commamatrix.components.file_storage import FileStorage
 from commamatrix.components.tool import tool
 from commamatrix.core.agent.agent import Agent
 from commamatrix.core.classes.service import AbstractService
-from tests.conftest import StubOrigin, stub_origin, make_dialog_item
-
+from tests.conftest import StubOrigin, make_dialog_item, stub_origin
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -59,6 +63,7 @@ _hook_sources: list = []
 def _register_hook(agent, event, handler, priority=0, name=None):
     """Register a hook handler directly in the agent's hook lifecycle."""
     import weakref
+
     from commamatrix.components.hook import HookDescriptor, PythonHookSource
 
     source = PythonHookSource()

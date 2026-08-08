@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import logging.handlers
 import sys
+from pathlib import Path
 from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")
@@ -73,6 +75,16 @@ log_format = ConfigField[str](
     name="log_format",
     default=DEFAULT_LOG_FORMAT,
     description="Python logging format string for this agent",
+)
+log_file = ConfigField[str | None](
+    name="log_file",
+    default=None,
+    description="Optional path for rotating agent logs",
+)
+log_to_console = ConfigField[bool](
+    name="log_to_console",
+    default=True,
+    description="Write agent logs to the console",
 )
 
 
@@ -200,9 +212,8 @@ class AgentLogger:
         self.error(message, *args, **kwargs)
 
 
-class _AgentHandler(logging.StreamHandler):
-    def __init__(self, agent: Any) -> None:
-        super().__init__()
+class _AgentHandlerMixin:
+    def _bind_agent(self, agent: Any) -> None:
         self._agent_id = id(agent)
         self._config = agent.config
         self._agent_name = getattr(agent, "name", "<unnamed>")
@@ -222,36 +233,66 @@ class _AgentHandler(logging.StreamHandler):
             return logging.Formatter(DEFAULT_LOG_FORMAT).format(record)
 
 
+class _AgentHandler(_AgentHandlerMixin, logging.StreamHandler):
+    def __init__(self, agent: Any) -> None:
+        logging.StreamHandler.__init__(self)
+        self._bind_agent(agent)
+
+
+class _AgentFileHandler(_AgentHandlerMixin, logging.handlers.RotatingFileHandler):
+    def __init__(self, agent: Any, path: str) -> None:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        logging.handlers.RotatingFileHandler.__init__(
+            self,
+            path,
+            maxBytes=2 * 1024 * 1024,
+            backupCount=1,
+            encoding="utf-8",
+        )
+        self._bind_agent(agent)
+
+
 def configure_agent_logging(agent: Any) -> None:
-    """Attach one filtered handler for an agent without changing root logging."""
+    """Attach filtered console and optional rotating file handlers for an agent."""
     if not hasattr(agent, "config"):
         return
     try:
-        handler = getattr(agent, "_commamatrix_log_handler", None)
-        if handler is not None:
+        handlers = getattr(agent, "_commamatrix_log_handlers", None)
+        if handlers is not None:
             return
         package_logger = logging.getLogger("commamatrix")
         package_logger.setLevel(logging.DEBUG)
-        handler = _AgentHandler(agent)
-        package_logger.addHandler(handler)
-        setattr(agent, "_commamatrix_log_handler", handler)
-    except (AttributeError, TypeError):
+        handlers: list[logging.Handler] = []
+        if agent.config.get(log_to_console):
+            handlers.append(_AgentHandler(agent))
+        configured_path = agent.config.get(log_file)
+        if configured_path:
+            handlers.append(_AgentFileHandler(agent, configured_path))
+        for handler in handlers:
+            package_logger.addHandler(handler)
+        setattr(agent, "_commamatrix_log_handlers", tuple(handlers))
+    except (AttributeError, OSError, TypeError):
         # Lightweight test doubles and frozen host objects can use root logging.
         return
 
 
 def close_agent_logging(agent: Any) -> None:
-    handler = getattr(agent, "_commamatrix_log_handler", None)
-    if handler is None:
+    handlers = getattr(agent, "_commamatrix_log_handlers", None)
+    if handlers is None:
+        handler = getattr(agent, "_commamatrix_log_handler", None)
+        handlers = (handler,) if handler is not None else ()
+    if not handlers:
         return
     package_logger = logging.getLogger("commamatrix")
-    package_logger.removeHandler(handler)
-    handler.close()
+    for handler in handlers:
+        package_logger.removeHandler(handler)
+        handler.close()
     try:
-        delattr(agent, "_commamatrix_log_handler")
+        delattr(agent, "_commamatrix_log_handlers")
     except AttributeError:
         pass
 
 
 def get_agent_logger(agent: Any, component: str) -> AgentLogger:
     return AgentLogger(agent, component)
+

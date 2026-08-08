@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from ...components.hook import BeforeLlmCallCtx, BeforeToolCallCtx, before_llm_call, before_tool_call
+from ...components.hook import (
+    BeforeLlmCallCtx,
+    BeforeToolCallCtx,
+    before_llm_call,
+    before_tool_call,
+)
 from ...components.instruction import InstructionCtx, instruction
 from ...core.agent.agent import agent_by_name
 from .policy import filter_tool_descriptors, is_tool_allowed

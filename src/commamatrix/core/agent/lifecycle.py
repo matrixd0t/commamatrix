@@ -9,6 +9,9 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from commamatrix.utils import await_if_needed
+
+from ...components.config import AgentLogger, get_agent_logger
 from ..classes.lifecycle_registry import (
     LifecycleRegistration,
     is_core_component,
@@ -17,8 +20,6 @@ from ..classes.lifecycle_registry import (
 from ..classes.manager import Manager, ServiceInstanceRegistry
 from ..classes.ordering import ConstraintRef, normalize_constraint_refs, resolve_order
 from ..classes.service import AbstractService
-from ...components.config import AgentLogger, get_agent_logger
-from commamatrix.utils import await_if_needed
 
 if TYPE_CHECKING:
     from .agent import Agent

@@ -11,8 +11,8 @@ import pytest
 
 from commamatrix.components.config import Config
 from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
-from commamatrix.components.storage import STORAGE_ATTRIBUTE, Storage
 from commamatrix.components.file_storage import FILE_STORAGE_ATTRIBUTE, FileStorage
+from commamatrix.components.storage import STORAGE_ATTRIBUTE, Storage
 from tests.conftest import stub_agent, stub_origin
 
 

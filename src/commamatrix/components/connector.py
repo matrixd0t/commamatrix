@@ -5,23 +5,33 @@ from __future__ import annotations
 import asyncio
 import types
 import weakref
-from datetime import tzinfo
 from abc import abstractmethod
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, ClassVar, Generic, TYPE_CHECKING, TypeVar, Union as TypingUnion, cast, get_args, get_origin
+from datetime import tzinfo
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Generic,
+    TypeVar,
+    cast,
+    get_args,
+    get_origin,
+)
+from typing import Union as TypingUnion
 
 from ..core.classes.lifecycle_registry import lifecycle_component
+from ..core.classes.manager import ServiceInstanceManager
 from ..core.classes.service import AbstractService, ServiceDescriptor
 from ..core.classes.source import PythonSource
-from ..core.classes.manager import ServiceInstanceManager
 from .dialog import DialogItem, DialogOrigin
 from .llm_adapter import LLMModalities, StreamDelta
 
 if TYPE_CHECKING:
-    from .hook import OnParsedCtx
     from ..core.agent import Agent
+    from .hook import OnParsedCtx
 
 type OnRecv = Callable[[dict], Awaitable[list[asyncio.Task]]]
 

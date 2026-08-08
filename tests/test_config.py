@@ -4,10 +4,18 @@
 
 from __future__ import annotations
 
-import pytest
 from types import SimpleNamespace
 
-from commamatrix.components.config import Config, ConfigField, close_agent_logging, get_agent_logger, log_format, log_level
+import pytest
+
+from commamatrix.components.config import (
+    Config,
+    ConfigField,
+    close_agent_logging,
+    get_agent_logger,
+    log_format,
+    log_level,
+)
 
 
 class TestConfigField:
