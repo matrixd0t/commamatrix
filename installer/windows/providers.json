@@ -16,12 +16,12 @@
         "ru": [
           "1. Откройте в браузере: https://opencode.ai/auth",
           "2. Авторизуйтесь через ваш Google-аккаунт (у вас наверняка есть google-аккаунт на смартфоне): нажмите \"Continue with Google\" -> выберите ваш аккаунт -> \"Продолжить\" -> скопируйте ваш личный ключ доступа, нажав синюю кнопку \"Копировать ключ\". Не показывайте этот ключ посторонним!",
-          "3. Вставьте ваш ключ сюда (можете нажать Ctrl+V):"
+          "3. Вставьте ваш ключ сюда (можете нажать Ctrl+V)."
         ],
         "en": [
           "1. Open in your browser: https://opencode.ai/auth",
           "2. Sign in with your Google account (you probably have a Google account on your smartphone): click \"Continue with Google\" -> select your account -> \"Continue\" -> copy your personal access key by clicking the blue \"Copy key\" button. Do not show this key to anyone else!",
-          "3. Paste your key here (you can press Ctrl+V):"
+          "3. Paste your key here (you can press Ctrl+V)."
         ]
       },
       "default": true

@@ -51,7 +51,7 @@ the repository, version, and tag as constants:
 
 ```powershell
 $Repository = "matrixd0t/commamatrix"
-$Version = "0.1.6"
+$Version = "0.1.7"
 $Tag = "v$Version"
 ```
 
@@ -68,7 +68,7 @@ The bootstrap is then started with:
 
 ```powershell
 uv run --quiet --python 3.13 <temporary-bootstrap.py> `
-  --repository matrixd0t/commamatrix --version 0.1.6 --uv <uv-path>
+  --repository matrixd0t/commamatrix --version 0.1.7 --uv <uv-path>
 ```
 
 The temporary bootstrap file is removed in the `finally` block, including
@@ -92,7 +92,7 @@ The following files are then downloaded:
 6. the exact wheel named by `manifest.json` from the GitHub release assets.
 
 The release wheel must therefore exist under the exact asset name, for
-example `commamatrix-0.1.6-py3-none-any.whl`. The installer does not build a
+example `commamatrix-0.1.7-py3-none-any.whl`. The installer does not build a
 wheel and does not verify a checksum or signature.
 
 For local development, `bootstrap.py` can use a source tree instead of a
@@ -189,7 +189,8 @@ It then performs these operations:
 7. renders `entrypoint.template.py` into `entrypoint.py`;
 8. copies `assets/logo.png` and `assets/logo.ico` into
    `.commamatrix\\assets`;
-9. creates `bin\\commamatrix.cmd` and adds `bin` to the user `PATH`.
+9. creates `.commamatrix\\bin\\commamatrix.cmd` and adds `.commamatrix\\bin`
+   to the user `PATH`.
 
 The generated entrypoint embeds the selected provider values rather than
 reading provider selection interactively at runtime. It still reads the token
@@ -211,7 +212,7 @@ The installer creates or replaces:
 
 ```text
 %USERPROFILE%\\Desktop\\CommaMatrix.lnk
-%USERPROFILE%\\commamatrix\\bin\\commamatrix.cmd
+%USERPROFILE%\\commamatrix\\.commamatrix\\bin\\commamatrix.cmd
 ```
 
 If autostart is enabled in Advanced mode, it also creates:
@@ -261,12 +262,12 @@ URL, restarts the process, opens the log directory, or closes the application.
     assets\\
       logo.png           # transparent tray icon
       logo.ico           # Windows shortcut icon
+    bin\\
+      commamatrix.cmd    # terminal launcher on the user PATH
     logs\\
       commamatrix.log
     ...                  # runtime data, including the default storage
   .venv\\                 # uv-created Python environment
-  bin\\
-    commamatrix.cmd
   entrypoint.py           # generated, selected values embedded
 ```
 

@@ -59,7 +59,7 @@ EXTENSIONS = [
     "commamatrix.builtin.multi_dialog",
     "commamatrix.builtin.multi_user",
     "commamatrix.builtin.storage_utils",
-    "commamatrix.builtin.instructions.default_instruction",
+    "commamatrix.builtin.default_instruction",
 ]
 
 

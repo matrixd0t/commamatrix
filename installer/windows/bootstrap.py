@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_REPOSITORY = "matrixd0t/commamatrix"
-DEFAULT_VERSION = "0.1.6"
+DEFAULT_VERSION = "0.1.7"
 DEFAULT_WORKSPACE = Path.home() / "commamatrix"
 PROTOCOLS = (
     ("chat_completions", "Chat Completions"),
@@ -303,7 +303,9 @@ def _print_instructions(language: str, provider: Provider) -> None:
         print(_text(language, f"Рекомендуемая модель: {provider.recommended_model}", f"Recommended model: {provider.recommended_model}"))
     if provider.instructions:
         print()
-        for line in provider.instructions:
+        for index, line in enumerate(provider.instructions):
+            if index:
+                print()
             print(line)
         print()
 
@@ -590,7 +592,7 @@ def _add_to_user_path(path: Path) -> None:
 
 
 def _create_command(workspace: Path) -> Path:
-    bin_dir = workspace / "bin"
+    bin_dir = workspace / ".commamatrix" / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     command = bin_dir / "commamatrix.cmd"
     command.write_text(
@@ -644,7 +646,7 @@ def _final_message(language: str, credentials: dict[str, Any] | None) -> None:
         print()
     print(_text(language, "Ярлык добавлен на рабочий стол.", "A shortcut has been added to the desktop."))
     print(_text(language, "Программа запущена и появилась в области уведомлений.", "The application is running in the system tray."))
-    print(_text(language, "Это окно можно закрыть.", "You can close this window."))
+    print(_text(language, "Нажмите Enter, чтобы закрыть это окно.", "Press Enter to close this window."))
     print("=" * 60)
 
 
