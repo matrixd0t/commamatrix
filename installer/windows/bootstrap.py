@@ -404,7 +404,7 @@ def _write_env(selection: Selection) -> None:
     )
 
 
-def _generate_entrypoint(template: Path, workspace: Path, selection: Selection, language: str) -> Path:
+def _generate_entrypoint(template: Path, workspace: Path, selection: Selection, language: str, venv: Path) -> Path:
     try:
         source = template.read_text(encoding="utf-8")
     except OSError as exc:
@@ -419,6 +419,7 @@ def _generate_entrypoint(template: Path, workspace: Path, selection: Selection, 
         "__HTTP_HOST__": json.dumps(selection.host),
         "__HTTP_PORT__": str(selection.port),
         "__LANGUAGE__": json.dumps(language),
+        "__VENV_SITE_PACKAGES__": json.dumps(str((venv / "Lib" / "site-packages").resolve())),
     }
     for marker, value in replacements.items():
         source = source.replace(marker, value)
@@ -462,7 +463,7 @@ def main() -> int:
         mode = _select_mode(language)
         selection = _basic_selection(language, providers) if mode == "basic" else _advanced_selection(language, providers)
         _write_env(selection)
-        entrypoint = _generate_entrypoint(args.template.resolve(), selection.workspace, selection, language)
+        entrypoint = _generate_entrypoint(args.template.resolve(), selection.workspace, selection, language, args.venv.resolve())
         if args.result_file is not None:
             try:
                 result_file = args.result_file.resolve()
@@ -474,7 +475,7 @@ def main() -> int:
         print(
             _text(
                 language,
-                f"Энтрипойнт создан: {entrypoint}",
+                f"Entrypoint создан: {entrypoint}",
                 f"Entrypoint created: {entrypoint}",
             )
         )

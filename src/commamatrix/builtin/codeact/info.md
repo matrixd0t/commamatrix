@@ -20,10 +20,10 @@
 
 All method name strings are defined as `StrEnum` in `protocol.py`:
 
-| Enum | Members | Used in |
-|---|---|---|
-| `Namespace` | `TOOLS` | `_dispatch` top-level routing |
-| `ToolsMethod` | `INVOKE`, `RESOLVE` | `_dispatch_tools` |
+| Enum          | Members             | Used in                       |
+|---------------|---------------------|-------------------------------|
+| `Namespace`   | `TOOLS`             | `_dispatch` top-level routing |
+| `ToolsMethod` | `INVOKE`, `RESOLVE` | `_dispatch_tools`             |
 
 Dispatch on the server uses `match/case` with enum comparison.
 
@@ -89,14 +89,14 @@ JSON wire format:
 
 ### Error codes
 
-| Code    | Meaning          | Source                   |
-|---------|------------------|--------------------------|
-| -32001  | RPC timeout      | Per-call timeout exceeded |
-| -32002  | RPC cancelled    | Parent cancelled request  |
-| -32600  | Invalid request  | Empty method / path       |
-| -32601  | Method not found | Unknown namespace/method  |
-| -32602  | Invalid params   | Tool not found, ambiguity |
-| -32603  | Internal error   | Unhandled exception       |
+| Code   | Meaning          | Source                    |
+|--------|------------------|---------------------------|
+| -32001 | RPC timeout      | Per-call timeout exceeded |
+| -32002 | RPC cancelled    | Parent cancelled request  |
+| -32600 | Invalid request  | Empty method / path       |
+| -32601 | Method not found | Unknown namespace/method  |
+| -32602 | Invalid params   | Tool not found, ambiguity |
+| -32603 | Internal error   | Unhandled exception       |
 
 ---
 
@@ -324,17 +324,17 @@ Only these fields are transmitted — internal fields like `_source_ref` are exc
 
 ### Result Serialization
 
-| Type                     | Serialized as                    |
-|--------------------------|----------------------------------|
-| `None`                   | `None`                           |
-| `str`, `int`, `float`, `bool` | As-is                      |
-| `Enum`                   | `.value`                         |
-| `dict`                   | keys → str, values → recurse     |
-| `list`, `tuple`, `set`   | list, element → recurse          |
-| Pydantic model           | `.model_dump(mode="json")`       |
-| dataclass                | `field.name` → value dict        |
-| object with `__dict__`   | non-underscore attributes dict   |
-| everything else          | `str(obj)`                       |
+| Type                          | Serialized as                  |
+|-------------------------------|--------------------------------|
+| `None`                        | `None`                         |
+| `str`, `int`, `float`, `bool` | As-is                          |
+| `Enum`                        | `.value`                       |
+| `dict`                        | keys → str, values → recurse   |
+| `list`, `tuple`, `set`        | list, element → recurse        |
+| Pydantic model                | `.model_dump(mode="json")`     |
+| dataclass                     | `field.name` → value dict      |
+| object with `__dict__`        | non-underscore attributes dict |
+| everything else               | `str(obj)`                     |
 
 No runtime objects are leaked — `agent`, `Service`, and `Source` instances are never serialized.
 
@@ -406,14 +406,14 @@ await execute("print(x)")  # → NameError: name 'x' is not defined
 
 ## Timeout and Cancellation
 
-| Scenario | Behavior |
-|---|---|
-| Code execution timeout | Worker is killed immediately; `ExecutionResult` with `returncode=124` |
-| RPC call timeout | Worker receives RPC error `-32001` |
-| Parent cancellation | Worker is killed immediately; transport is closed and remaining RPC Futures get `CancelledError` |
-| Graceful shutdown | `terminate()` sent first; after `codeact_shutdown_timeout`, `kill()` is used |
-| Large stderr | Read concurrently, truncated at `codeact_max_output_bytes` |
-| Large stdout | Truncated at `codeact_max_output_bytes` |
+| Scenario               | Behavior                                                                            |
+|------------------------|-------------------------------------------------------------------------------------|
+| Code execution timeout | Worker is killed immediately; `ExecutionResult` with `returncode=124`               |
+| RPC call timeout       | Worker receives RPC error `-32001`                                                  |
+| Parent cancellation    | Worker is killed immediately; transport is closed, RPC Futures get `CancelledError` |
+| Graceful shutdown      | `terminate()` sent first; after `codeact_shutdown_timeout`, `kill()` is used        |
+| Large stderr           | Read concurrently, truncated at `codeact_max_output_bytes`                          |
+| Large stdout           | Truncated at `codeact_max_output_bytes`                                             |
 
 No child process is left alive after any of these scenarios — `_cleanup()` guarantees process reaping.
 

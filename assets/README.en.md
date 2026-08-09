@@ -245,11 +245,11 @@ For an SSE stream, add `?stream=1` to the request and read events from
 
 The LLM HTTP adapter requires these values by default:
 
-| Variable | Purpose |
-|---------------------|----------------------------------------------------|
-| `OPENAI_API_KEY` | Token for the OpenAI-compatible and OpenAI Responses APIs |
-| `ANTHROPIC_API_KEY` | Token for the Anthropic Messages API |
-| `LLM_API_BASE` | Provider base URL |
+| Variable            | Purpose                                                   |
+|---------------------|-----------------------------------------------------------|
+| `OPENAI_API_KEY`    | Token for the OpenAI-compatible and OpenAI Responses APIs |
+| `ANTHROPIC_API_KEY` | Token for the Anthropic Messages API                      |
+| `LLM_API_BASE`      | Provider base URL                                         |
 
 Depending on the provider, set `llm_api_protocol` to `chat_completions`
 (default), `responses`, or `anthropic_messages` (see the `ApiProtocol` enum).

@@ -684,15 +684,6 @@ function selectedVisibleId(){
   const visible=currentChain().filter(isVisibleItem);return visible.length?visible[visible.length-1].item_id:null;
 }
 
-function expandUserAncestors(itemId){
-  let current=itemsById.get(itemId)?.previous_item_id;
-  while(current!==null&&current!==undefined){
-    const item=itemsById.get(current);if(!item)break;
-    if(isUserItem(item))expandedNodes.add(item.item_id);
-    current=item.previous_item_id;
-  }
-}
-
 async function selectBranchNode(itemId,branchHeadId=null){
   const item=itemsById.get(itemId)||historyHeads.find(head=>head.item_id===itemId);if(!item)return;
   const preferred=selectedLeafByNode.get(itemId);

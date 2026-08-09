@@ -8,6 +8,7 @@ import ctypes
 import hashlib
 import json
 import os
+import site
 import socket
 import sys
 import threading
@@ -16,6 +17,11 @@ from ctypes import wintypes
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
+
+VENV_SITE_PACKAGES = Path(__VENV_SITE_PACKAGES__)
+if VENV_SITE_PACKAGES.is_dir():
+    site.addsitedir(str(VENV_SITE_PACKAGES))
+    sys.path.insert(0, str(VENV_SITE_PACKAGES))
 
 import pystray
 from dotenv import load_dotenv

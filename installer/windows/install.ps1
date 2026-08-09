@@ -4,7 +4,11 @@ $ErrorActionPreference = "Stop"
 
 $Repository = "matrixd0t/commamatrix"
 $Branch = "master"
+$PythonInstallerVersion = "3.13.15"
+$PythonInstallerUrl = "https://www.python.org/ftp/python/$PythonInstallerVersion/python-$PythonInstallerVersion-amd64.exe"
 $InstallRoot = Join-Path $HOME "commamatrix"
+$PythonRuntimeRoot = Join-Path $HOME ".python"
+$PythonRuntimePath = Join-Path $PythonRuntimeRoot "python.exe"
 $VenvPath = Join-Path $InstallRoot ".venv"
 $TempRoot = Join-Path ([System.IO.Path]::GetTempPath()) "commamatrix-installer-$PID"
 $BootstrapPath = Join-Path $TempRoot "bootstrap.py"
@@ -13,22 +17,6 @@ $TemplatePath = Join-Path $TempRoot "entrypoint.template.py"
 $ResultPath = Join-Path $TempRoot "entrypoint-path.txt"
 $LogoPngPath = Join-Path $TempRoot "logo.png"
 $LogoIcoPath = Join-Path $TempRoot "logo.ico"
-$UvInstallerPath = Join-Path $TempRoot "uv-install.ps1"
-
-function RefreshUserPath {
-    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    $env:Path = "$machinePath;$userPath"
-}
-
-function Find-Uv {
-    RefreshUserPath
-    $command = Get-Command uv -ErrorAction SilentlyContinue
-    if ($null -ne $command) {
-        return $command.Source
-    }
-    return $null
-}
 
 function Invoke-External {
     param(
@@ -42,6 +30,57 @@ function Invoke-External {
     if ($LASTEXITCODE -ne 0) {
         throw "$FilePath exited with code $LASTEXITCODE"
     }
+}
+
+function Find-Python313 {
+    $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
+    if ($null -eq $launcher) {
+        return $null
+    }
+
+    $candidate = & $launcher.Source @(
+        "-3.13",
+        "-c",
+        "import sys; print(sys.executable)"
+    ) 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return $null
+    }
+
+    $path = ($candidate | Out-String).Trim()
+    if (-not [string]::IsNullOrWhiteSpace($path) -and (Test-Path -LiteralPath $path)) {
+        return $path
+    }
+    return $null
+}
+
+function Get-Python313 {
+    if (Test-Path -LiteralPath $PythonRuntimePath) {
+        return $PythonRuntimePath
+    }
+
+    $systemPython = Find-Python313
+    if ($null -ne $systemPython) {
+        return $systemPython
+    }
+
+    $installerPath = Join-Path $TempRoot "python-$PythonInstallerVersion-amd64.exe"
+    Write-Host "Downloading Python $PythonInstallerVersion..."
+    Invoke-WebRequest -UseBasicParsing -Uri $PythonInstallerUrl -OutFile $installerPath
+    New-Item -ItemType Directory -Path $PythonRuntimeRoot -Force | Out-Null
+    Invoke-External -FilePath $installerPath -ArgumentList @(
+        "/quiet",
+        "InstallAllUsers=0",
+        "PrependPath=0",
+        "Include_launcher=0",
+        "Include_test=0",
+        "Include_pip=1",
+        "TargetDir=$PythonRuntimeRoot"
+    )
+    if (-not (Test-Path -LiteralPath $PythonRuntimePath)) {
+        throw "Python $PythonInstallerVersion was not installed: $PythonRuntimePath"
+    }
+    return $PythonRuntimePath
 }
 
 function DownloadInstallerResource {
@@ -118,35 +157,12 @@ try {
     New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
     New-Item -ItemType Directory -Path $TempRoot -Force | Out-Null
 
-    $uv = Find-Uv
-    if ($null -eq $uv) {
-        Invoke-WebRequest -UseBasicParsing -Uri "https://astral.sh/uv/install.ps1" -OutFile $UvInstallerPath
-        Invoke-External -FilePath "powershell.exe" -ArgumentList @(
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            $UvInstallerPath
-        )
-        $uv = Find-Uv
-    }
-
-    if ($null -eq $uv) {
-        throw "uv was not found after installation"
-    }
-
-    Invoke-External -FilePath $uv -ArgumentList @(
-        "python",
-        "install",
-        "3.13"
-    )
-    Invoke-External -FilePath $uv -ArgumentList @(
+    $PythonPath = Get-Python313
+    Invoke-External -FilePath $PythonPath -ArgumentList @(
+        "-m",
         "venv",
-        "--python",
-        "3.13",
-        "--managed-python",
         "--clear",
-        "--no-project",
+        "--copies",
         $VenvPath
     )
 
@@ -155,13 +171,12 @@ try {
         throw "Python virtual environment was not created: $VenvPath"
     }
 
-    Invoke-External -FilePath $uv -ArgumentList @(
+    Invoke-External -FilePath $VenvPython -ArgumentList @(
+        "-m",
         "pip",
         "install",
-        "--python",
-        $VenvPython,
         "--upgrade",
-        "--default-index",
+        "--index-url",
         "https://pypi.org/simple",
         "commamatrix[all]",
         "Pillow",
@@ -191,9 +206,9 @@ try {
         throw "Bootstrap did not produce an entrypoint"
     }
 
-    $PythonwPath = Join-Path $VenvPath "Scripts\pythonw.exe"
+    $PythonwPath = Join-Path (Split-Path -Parent $PythonPath) "pythonw.exe"
     if (-not (Test-Path -LiteralPath $PythonwPath)) {
-        throw "pythonw.exe was not created in the virtual environment: $VenvPath"
+        throw "The original Python GUI binary was not found: $PythonwPath"
     }
 
     $WorkspacePath = Split-Path -Parent $EntrypointPath
