@@ -1,6 +1,11 @@
-# installer/windows/install.ps1
+﻿# installer/windows/install.ps1
 
 $ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$Utf8Encoding = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding = $Utf8Encoding
+[Console]::OutputEncoding = $Utf8Encoding
+[Console]::InputEncoding = $Utf8Encoding
 
 $Repository = "matrixd0t/commamatrix"
 $Branch = "master"
@@ -24,10 +29,16 @@ function Invoke-External {
         [Parameter(Mandatory = $true)]
         [string]$FilePath,
         [Parameter(Mandatory = $true)]
-        [string[]]$ArgumentList
+        [string[]]$ArgumentList,
+        [switch]$Quiet
     )
 
-    & $FilePath @ArgumentList
+    if ($Quiet) {
+        & $FilePath @ArgumentList *> $null
+    }
+    else {
+        & $FilePath @ArgumentList
+    }
     if ($LASTEXITCODE -ne 0) {
         throw "$FilePath exited with code $LASTEXITCODE"
     }
@@ -66,10 +77,9 @@ function Get-Python313 {
     }
 
     $installerPath = Join-Path $TempRoot "python-$PythonInstallerVersion-amd64.exe"
-    Write-Host "Downloading Python $PythonInstallerVersion..."
     Invoke-WebRequest -UseBasicParsing -Uri $PythonInstallerUrl -OutFile $installerPath
     New-Item -ItemType Directory -Path $PythonRuntimeRoot -Force | Out-Null
-    Invoke-External -FilePath $installerPath -ArgumentList @(
+    Invoke-External -FilePath $installerPath -Quiet -ArgumentList @(
         "/quiet",
         "InstallAllUsers=0",
         "PrependPath=0",
@@ -157,8 +167,9 @@ try {
     New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
     New-Item -ItemType Directory -Path $TempRoot -Force | Out-Null
 
+    Write-Host "Установка библиотек... / Installing libraries..."
     $PythonPath = Get-Python313
-    Invoke-External -FilePath $PythonPath -ArgumentList @(
+    Invoke-External -FilePath $PythonPath -Quiet -ArgumentList @(
         "-m",
         "venv",
         "--clear",
@@ -171,7 +182,7 @@ try {
         throw "Python virtual environment was not created: $VenvPath"
     }
 
-    Invoke-External -FilePath $VenvPython -ArgumentList @(
+    Invoke-External -FilePath $VenvPython -Quiet -ArgumentList @(
         "-m",
         "pip",
         "install",
@@ -260,6 +271,6 @@ finally {
     if (Test-Path -LiteralPath $TempRoot) {
         Remove-Item -LiteralPath $TempRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
-    Write-Host ""
+    Write-Host "Кнопка запуска добавлена на рабочий стол / Launch shortcut was added to desktop"
     Read-Host "Press Enter to exit"
 }
