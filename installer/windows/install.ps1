@@ -15,6 +15,7 @@ $BootstrapPath = Join-Path $TempRoot "bootstrap.py"
 $ProvidersPath = Join-Path $TempRoot "providers.json"
 $TemplatePath = Join-Path $TempRoot "entrypoint.template.py"
 $ResultPath = Join-Path $TempRoot "entrypoint-path.txt"
+$CredentialsPath = Join-Path $TempRoot "admin-credentials.json"
 $LogoPngPath = Join-Path $TempRoot "logo.png"
 $LogoIcoPath = Join-Path $TempRoot "logo.ico"
 
@@ -150,7 +151,6 @@ function New-DesktopShortcut {
     $shortcut.WorkingDirectory = $WorkingDirectory
     $shortcut.IconLocation = "$IconPath,0"
     $shortcut.Save()
-    Write-Host "Desktop shortcut created: $shortcutPath"
 }
 
 try {
@@ -206,6 +206,26 @@ try {
         throw "Bootstrap did not produce an entrypoint"
     }
 
+    Invoke-External -FilePath $VenvPython -ArgumentList @(
+        $EntrypointPath,
+        "--initialize",
+        "--credentials-file",
+        $CredentialsPath
+    )
+    if (-not (Test-Path -LiteralPath $CredentialsPath)) {
+        throw "Entrypoint did not produce initial administrator credentials"
+    }
+    try {
+        $AdminCredentials = Get-Content -LiteralPath $CredentialsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+    catch {
+        throw "Could not read initial administrator credentials: $($_.Exception.Message)"
+    }
+    $AdminPassword = [string]$AdminCredentials.password
+    if ([string]::IsNullOrWhiteSpace($AdminPassword)) {
+        throw "Initial administrator credentials do not contain a password"
+    }
+
     $PythonwPath = Join-Path (Split-Path -Parent $PythonPath) "pythonw.exe"
     if (-not (Test-Path -LiteralPath $PythonwPath)) {
         throw "The original Python GUI binary was not found: $PythonwPath"
@@ -224,6 +244,13 @@ try {
         -EntrypointPath $EntrypointPath `
         -WorkingDirectory $WorkspacePath `
         -IconPath $PersistentLogoIco
+
+    Write-Host ""
+    Write-Host "========================================"
+    Write-Host "Пароль администратора / Administrator password:"
+    Write-Host $AdminPassword
+    Write-Host "Сохраните этот пароль / Save this password."
+    Write-Host "========================================"
 }
 catch {
     Write-Error $_

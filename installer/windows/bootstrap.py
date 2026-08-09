@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import getpass
 import json
 import os
 from dataclasses import dataclass
@@ -149,7 +148,7 @@ def _prompt_text(
 
 def _prompt_token(language: str) -> str:
     while True:
-        token = getpass.getpass(_text(language, "Токен доступа: ", "Access token: ")).strip()
+        token = input(_text(language, "Токен доступа: ", "Access token: ")).strip()
         if token:
             return token
         print(_text(language, "Токен не может быть пустым.", "The token must not be empty."))
@@ -457,7 +456,6 @@ def main() -> int:
     language = "ru"
     try:
         args = _parse_args()
-        venv_python = _venv_python(args.venv.resolve())
         language = _select_language()
         providers = _parse_providers(args.providers.resolve(), language)
         mode = _select_mode(language)
@@ -477,13 +475,6 @@ def main() -> int:
                 language,
                 f"Entrypoint создан: {entrypoint}",
                 f"Entrypoint created: {entrypoint}",
-            )
-        )
-        print(
-            _text(
-                language,
-                f"Используйте Python из venv: {venv_python}",
-                f"Use the Python from the venv: {venv_python}",
             )
         )
         return 0
