@@ -170,3 +170,4 @@ cython_debug/
 /.commamatrix/mcp.json
 /.codex/
 /.commamatrix/
+/*.py

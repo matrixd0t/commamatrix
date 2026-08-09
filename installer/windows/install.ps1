@@ -16,7 +16,7 @@ function ConvertFrom-CodePoints {
     return -join ($CodePoints.Split(" ") | ForEach-Object { [char][Convert]::ToInt32($_, 16) })
 }
 
-$InstallingLibraries = ConvertFrom-CodePoints "0423 0441 0442 0430 043D 043E 0432 043A 0430 0020 0431 0438 0431 043B 0438 043E 0442 0435 043A 0438 002E 002E 002E"
+$InstallingLibraries = ConvertFrom-CodePoints "0423 0441 0442 0430 043D 043E 0432 043A 0430 0020 0431 0438 0431 043B 0438 043E 0442 0435 043A 002E 002E 002E"
 $AdminPasswordLabel = ConvertFrom-CodePoints "041F 0430 0440 043E 043B 044C 0020 0430 0434 043C 0438 043D 0438 0441 0442 0440 0430 0442 043E 0440 0430"
 $SavePasswordLabel = ConvertFrom-CodePoints "0421 043E 0445 0440 0430 043D 0438 0442 0435 0020 044D 0442 043E 0442 0020 043F 0430 0440 043E 043B 044C"
 $ShortcutLabel = ConvertFrom-CodePoints "041A 043D 043E 043F 043A 0430 0020 0437 0430 043F 0443 0441 043A 0430 0020 0434 043E 0431 0430 0432 043B 0435 043D 0430 0020 043D 0430 0020 0440 0430 0431 043E 0447 0438 0439 0020 0441 0442 043E 043B"
@@ -47,11 +47,18 @@ function Invoke-External {
         [switch]$Quiet
     )
 
-    if ($Quiet) {
-        & $FilePath @ArgumentList *> $null
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        if ($Quiet) {
+            & $FilePath @ArgumentList *> $null
+        }
+        else {
+            & $FilePath @ArgumentList
+        }
     }
-    else {
-        & $FilePath @ArgumentList
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
     }
     if ($LASTEXITCODE -ne 0) {
         throw "$FilePath exited with code $LASTEXITCODE"
@@ -269,6 +276,7 @@ try {
         -EntrypointPath $EntrypointPath `
         -WorkingDirectory $WorkspacePath `
         -IconPath $PersistentLogoIco
+    Write-Host "$ShortcutLabel / Launch shortcut was added to desktop"
 
     Write-Host ""
     Write-Host "========================================"
@@ -278,13 +286,15 @@ try {
     Write-Host "========================================"
 }
 catch {
-    Write-Error $_
+    $errorRecord = $_
+    Write-Host "Installation failed:"
+    Write-Host ("Message: " + $errorRecord.Exception.Message)
+    Write-Host ("Position: " + $errorRecord.InvocationInfo.PositionMessage)
     exit 1
 }
 finally {
     if (Test-Path -LiteralPath $TempRoot) {
         Remove-Item -LiteralPath $TempRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
-    Write-Host "$ShortcutLabel / Launch shortcut was added to desktop"
     Read-Host "Press Enter to exit"
 }
