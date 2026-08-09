@@ -1,4 +1,4 @@
-﻿# installer/windows/install.ps1
+# installer/windows/install.ps1
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -6,6 +6,20 @@ $Utf8Encoding = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding = $Utf8Encoding
 [Console]::OutputEncoding = $Utf8Encoding
 [Console]::InputEncoding = $Utf8Encoding
+
+function ConvertFrom-CodePoints {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$CodePoints
+    )
+
+    return -join ($CodePoints.Split(" ") | ForEach-Object { [char][Convert]::ToInt32($_, 16) })
+}
+
+$InstallingLibraries = ConvertFrom-CodePoints "0423 0441 0442 0430 043D 043E 0432 043A 0430 0020 0431 0438 0431 043B 0438 043E 0442 0435 043A 0438 002E 002E 002E"
+$AdminPasswordLabel = ConvertFrom-CodePoints "041F 0430 0440 043E 043B 044C 0020 0430 0434 043C 0438 043D 0438 0441 0442 0440 0430 0442 043E 0440 0430"
+$SavePasswordLabel = ConvertFrom-CodePoints "0421 043E 0445 0440 0430 043D 0438 0442 0435 0020 044D 0442 043E 0442 0020 043F 0430 0440 043E 043B 044C"
+$ShortcutLabel = ConvertFrom-CodePoints "041A 043D 043E 043F 043A 0430 0020 0437 0430 043F 0443 0441 043A 0430 0020 0434 043E 0431 0430 0432 043B 0435 043D 0430 0020 043D 0430 0020 0440 0430 0431 043E 0447 0438 0439 0020 0441 0442 043E 043B"
 
 $Repository = "matrixd0t/commamatrix"
 $Branch = "master"
@@ -167,7 +181,7 @@ try {
     New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
     New-Item -ItemType Directory -Path $TempRoot -Force | Out-Null
 
-    Write-Host "Установка библиотек... / Installing libraries..."
+    Write-Host "$InstallingLibraries / Installing libraries..."
     $PythonPath = Get-Python313
     Invoke-External -FilePath $PythonPath -Quiet -ArgumentList @(
         "-m",
@@ -258,9 +272,9 @@ try {
 
     Write-Host ""
     Write-Host "========================================"
-    Write-Host "Пароль администратора / Administrator password:"
+    Write-Host "$AdminPasswordLabel / Administrator password:"
     Write-Host $AdminPassword
-    Write-Host "Сохраните этот пароль / Save this password."
+    Write-Host "$SavePasswordLabel / Save this password."
     Write-Host "========================================"
 }
 catch {
@@ -271,6 +285,6 @@ finally {
     if (Test-Path -LiteralPath $TempRoot) {
         Remove-Item -LiteralPath $TempRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
-    Write-Host "Кнопка запуска добавлена на рабочий стол / Launch shortcut was added to desktop"
+    Write-Host "$ShortcutLabel / Launch shortcut was added to desktop"
     Read-Host "Press Enter to exit"
 }
