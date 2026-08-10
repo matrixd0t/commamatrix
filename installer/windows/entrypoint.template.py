@@ -51,7 +51,7 @@ HTTP_HOST = __HTTP_HOST__
 HTTP_PORT = __HTTP_PORT__
 LANGUAGE = __LANGUAGE__
 PYPI_PACKAGE_API = "https://pypi.org/pypi/commamatrix/json"
-INSTALLER_URL = "https://github.com/matrixd0t/commamatrix/releases/latest/download/install.ps1"
+INSTALLER_URL = "https://raw.githubusercontent.com/matrixd0t/commamatrix/master/installer/windows/install.ps1"
 _VERSION_RE = re.compile(r"^v?(\d+(?:\.\d+)*)$", re.IGNORECASE)
 
 WORKSPACE = Path(__file__).resolve().parent
