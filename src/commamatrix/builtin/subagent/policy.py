@@ -12,8 +12,10 @@ ALLOWED_TOOLS_STATE_KEY = "allowed_tools"
 
 
 def validate_allowed_tools(value: str | None) -> str | None:
-    if value == "all" or value is None:
+    if value == "all":
         return value
+    elif not value:
+        return None
     re.compile(value)
     return value
 

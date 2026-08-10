@@ -91,7 +91,7 @@ async def submit_run(
             first.meta.update(meta)
 
     run_state = dict(state or {})
-    run_state["subagent"] = True
+    run_state.update({"subagent": True, "allowed_tools": tools})
     run = RunCtx(
         agent=agent,
         connector=connector,
