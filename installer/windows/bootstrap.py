@@ -43,6 +43,15 @@ class Provider:
 
 
 @dataclass(frozen=True, slots=True)
+class SavedConfiguration:
+    api_base: str
+    api_env: str
+    token_env: str
+    token: str
+    provider: Provider | None
+
+
+@dataclass(frozen=True, slots=True)
 class Selection:
     workspace: Path
     api_base: str
@@ -156,6 +165,65 @@ def _prompt_token(language: str) -> str:
         print(_text(language, "Токен не может быть пустым.", "The token must not be empty."))
 
 
+def _read_env_values(path: Path) -> dict[str, str]:
+    if not path.is_file():
+        return {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise InstallerError(f"Could not read saved configuration: {exc}") from exc
+
+    values: dict[str, str] = {}
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        name = name.strip()
+        value = value.strip()
+        if not name:
+            continue
+        if len(value) >= 2 and value[0] == value[-1] == '"':
+            try:
+                value = str(json.loads(value))
+            except ValueError:
+                value = value[1:-1]
+        values[name] = value
+    return values
+
+
+def _load_saved_configuration(workspace: Path, providers: list[Provider]) -> SavedConfiguration | None:
+    values = _read_env_values(workspace / ".commamatrix" / ".env")
+    if not values:
+        return None
+
+    for provider in providers:
+        api_base = values.get(provider.api_env)
+        if api_base:
+            return SavedConfiguration(
+                api_base=api_base,
+                api_env=provider.api_env,
+                token_env=provider.token_env,
+                token=values.get(provider.token_env, ""),
+                provider=provider,
+            )
+
+    api_env = "LLM_API_BASE"
+    api_base = values.get(api_env)
+    if not api_base:
+        return None
+    for token_env in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+        if token_env in values:
+            return SavedConfiguration(
+                api_base=api_base,
+                api_env=api_env,
+                token_env=token_env,
+                token=values[token_env],
+                provider=None,
+            )
+    return None
+
+
 def _workspace_has_data(workspace: Path) -> bool:
     data_dir = workspace / ".commamatrix"
     if not data_dir.exists():
@@ -260,7 +328,9 @@ def _basic_selection(language: str, providers: list[Provider]) -> Selection:
     provider = defaults[0]
     workspace = DEFAULT_WORKSPACE
     preserve_data = _select_data_policy(language, workspace)
-    model = provider.recommended_model
+    saved = _load_saved_configuration(workspace, providers) if preserve_data else None
+    selected_provider = saved.provider if saved is not None and saved.provider is not None else provider
+    model = selected_provider.recommended_model or provider.recommended_model
     if not model:
         raise InstallerError(
             _text(
@@ -269,14 +339,18 @@ def _basic_selection(language: str, providers: list[Provider]) -> Selection:
                 "The default provider has no recommended model.",
             )
         )
-    _print_instructions(language, provider)
-    token = _prompt_token(language)
+    if saved is None or not saved.token:
+        _print_instructions(language, selected_provider)
+        token = _prompt_token(language)
+    else:
+        print(_text(language, "Используются сохранённые настройки провайдера и ключ.", "Using the saved provider settings and access key."))
+        token = saved.token
     return Selection(
         workspace=workspace,
-        api_base=provider.api_base,
-        api_env=provider.api_env,
-        token_env=provider.token_env,
-        protocol=provider.protocol,
+        api_base=saved.api_base if saved is not None else selected_provider.api_base,
+        api_env=saved.api_env if saved is not None else selected_provider.api_env,
+        token_env=saved.token_env if saved is not None else selected_provider.token_env,
+        protocol=saved.provider.protocol if saved is not None and saved.provider is not None else selected_provider.protocol,
         model=model,
         host="127.0.0.1",
         port=8338,
@@ -299,7 +373,22 @@ def _advanced_selection(language: str, providers: list[Provider]) -> Selection:
                 raise InstallerError(_text(language, "Установка отменена.", "Installation cancelled."))
             state["workspace"] = Path(os.path.expandvars(os.path.expanduser(value))).resolve()
             state["preserve_data"] = _select_data_policy(language, state["workspace"])
-            stage = 1
+            saved = _load_saved_configuration(state["workspace"], providers) if state["preserve_data"] else None
+            if saved is None:
+                stage = 1
+            else:
+                print(_text(language, "Используются сохранённые настройки провайдера.", "Using the saved provider settings."))
+                state.update(
+                    api_base=saved.api_base,
+                    api_env=saved.api_env,
+                    token_env=saved.token_env,
+                    token=saved.token,
+                    protocol=saved.provider.protocol if saved.provider is not None else PROTOCOLS[0][0],
+                    model=saved.provider.recommended_model if saved.provider is not None else None,
+                )
+                if saved.provider is not None and not saved.token:
+                    _print_instructions(language, saved.provider)
+                stage = 4 if saved.token else 3
             continue
 
         if stage == 1:
@@ -451,6 +540,10 @@ def _write_env(selection: Selection) -> None:
         return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
     path = selection.workspace / ".commamatrix" / ".env"
+    if selection.preserve_data:
+        existing = _read_env_values(path)
+        if existing.get(selection.api_env) == selection.api_base and existing.get(selection.token_env) == selection.token:
+            return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         f"{selection.api_env}={quote(selection.api_base)}\n"
