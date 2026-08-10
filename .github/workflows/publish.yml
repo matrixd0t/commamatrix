@@ -57,7 +57,7 @@ jobs:
           make_latest: true
           name: ${{ steps.metadata.outputs.name }}
           body_path: release-notes.md
-          generate_release_notes: false
+          generate_release_notes: true
           # Add future release assets to the list below.
           files: |
             installer/windows/install.ps1
