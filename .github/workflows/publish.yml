@@ -1,4 +1,4 @@
-name: Publish to PyPI
+name: Publish package and create release
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
@@ -33,3 +33,29 @@ jobs:
 
       - name: Publish distributions
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  release:
+    name: Create GitHub release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Prepare release metadata
+        id: metadata
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "name=CommaMatrix ${version}" >> "$GITHUB_OUTPUT"
+          git log -1 --pretty=%B > release-notes.md
+
+      - name: Create release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.metadata.outputs.name }}
+          body_path: release-notes.md
+          generate_release_notes: false
+          # Add future release assets to the list below.
+          files: |
+            installer/windows/install.ps1
