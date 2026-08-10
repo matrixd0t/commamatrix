@@ -11,7 +11,7 @@
 
 
 <p align="center">
-  <a href="https://raw.githubusercontent.com/matrixd0t/commamatrix/master/installer/windows/install.ps1">Installer</a>
+  <a href="https://github.com/matrixd0t/commamatrix/releases/latest">Releases</a>
   ·
   <a href="https://github.com/matrixd0t/commamatrix/blob/master/src/commamatrix/builtin/self_extension/guides/main.md">Documentation</a>
   ·
@@ -28,7 +28,7 @@ your internet provider stands between you and the AI.
 
 ### Method 1. Download the file
 
-Download and run [`install.ps1`](https://raw.githubusercontent.com/matrixd0t/commamatrix/master/installer/windows/install.ps1).
+Download and run [`install.ps1`](https://github.com/matrixd0t/commamatrix/releases/latest/download/install.ps1).
 Open the downloaded file by double-clicking it.
 
 ### Method 2. One command
@@ -38,7 +38,7 @@ Open the downloaded file by double-clicking it.
 3. Paste the command:
 
 ```powershell
-irm https://raw.githubusercontent.com/matrixd0t/commamatrix/master/installer/windows/install.ps1 | iex
+irm https://github.com/matrixd0t/commamatrix/releases/latest/download/install.ps1 | iex
 ```
 
 4. Choose English language, Basic installation mode, and

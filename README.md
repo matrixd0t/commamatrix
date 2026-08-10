@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://raw.githubusercontent.com/matrixd0t/commamatrix/master/installer/windows/install.ps1">Установщик</a>
+  <a href="https://github.com/matrixd0t/commamatrix/releases/latest">Релизы</a>
   ·
   <a href="https://github.com/matrixd0t/commamatrix/blob/master/src/commamatrix/builtin/self_extension/guides/main.md">Документация</a>
   ·
@@ -26,7 +26,7 @@
 
 ### Способ 1. Скачать файл
 
-Скачайте и запустите [`install.ps1`](https://raw.githubusercontent.com/matrixd0t/commamatrix/master/installer/windows/install.ps1). Скачанный файл откройте двойным кликом.
+Скачайте и запустите [`install.ps1`](https://github.com/matrixd0t/commamatrix/releases/latest/download/install.ps1). Скачанный файл откройте двойным кликом.
 
 ### Способ 2. Одна команда
 
@@ -35,7 +35,7 @@
 3. Вставьте команду:
 
 ```powershell
-irm https://raw.githubusercontent.com/matrixd0t/commamatrix/master/installer/windows/install.ps1 | iex
+irm https://github.com/matrixd0t/commamatrix/releases/latest/download/install.ps1 | iex
 ```
 
 4. Дождитесь установки Python и необходимых библиотек.

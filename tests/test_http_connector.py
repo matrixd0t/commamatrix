@@ -194,7 +194,7 @@ class TestHttpConnectorRoutes:
                 HttpStatusMessage(
                     code="update_available",
                     severity="red",
-                    link_url="https://raw.githubusercontent.com/matrixd0t/commamatrix/master/installer/windows/install.ps1",
+                    link_url="https://github.com/matrixd0t/commamatrix/releases/latest/download/install.ps1",
                     link_text="установщик",
                 )
             ]
@@ -208,7 +208,7 @@ class TestHttpConnectorRoutes:
         assert {
             "code": "update_available",
             "severity": "red",
-            "link_url": "https://raw.githubusercontent.com/matrixd0t/commamatrix/master/installer/windows/install.ps1",
+            "link_url": "https://github.com/matrixd0t/commamatrix/releases/latest/download/install.ps1",
             "link_text": "установщик",
         } in response.json()["messages"]
 

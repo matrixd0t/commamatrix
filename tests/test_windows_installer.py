@@ -36,7 +36,7 @@ def test_entrypoint_checks_pypi_for_library_updates():
 
     assert 'PYPI_PACKAGE_API = "https://pypi.org/pypi/commamatrix/json"' in source
     assert "package_info.get(\"version\")" in source
-    assert 'INSTALLER_URL = "https://raw.githubusercontent.com/matrixd0t/commamatrix/master/installer/windows/install.ps1"' in source
+    assert 'INSTALLER_URL = "https://github.com/matrixd0t/commamatrix/releases/latest/download/install.ps1"' in source
     assert "GITHUB_LATEST_RELEASE_API" not in source
 
 
