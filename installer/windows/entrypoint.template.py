@@ -32,9 +32,11 @@ from PIL import Image, ImageDraw
 from commamatrix import Agent, agentic_model, reasoning_level
 from commamatrix.builtin.http_connector import HttpConnector, HttpStatusMessage
 from commamatrix.builtin.llm_http_adapter import (
+    anthropic_api_key,
     llm_api_base,
     llm_api_protocol,
     llm_refresh_on_start,
+    openai_api_key,
 )
 from commamatrix.components.config import log_file, log_to_console
 from commamatrix.components.server import http_host, http_port
