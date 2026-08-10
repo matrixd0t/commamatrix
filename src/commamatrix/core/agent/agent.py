@@ -452,7 +452,7 @@ class Agent:
             run.last_item_id = last_item_id
             await self._restore_chain_state(run, last_item_id)
             if run.state.get("subagent"):
-                run.chain_state["allowed_tools"] = run.state["allowed_tools"]
+                run.chain_state["allowed_tools"] = run.state.get("allowed_tools", None)
 
             if (await self._before_run(run)).abort:
                 self.logger.warning("Run aborted by hook run_id=%s", run.run_id)
