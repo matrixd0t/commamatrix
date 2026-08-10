@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -52,6 +53,7 @@ class Selection:
     host: str
     port: int
     token: str
+    preserve_data: bool = False
 
 
 def _text(language: str, ru: str, en: str) -> str:
@@ -154,6 +156,55 @@ def _prompt_token(language: str) -> str:
         print(_text(language, "Токен не может быть пустым.", "The token must not be empty."))
 
 
+def _workspace_has_data(workspace: Path) -> bool:
+    data_dir = workspace / ".commamatrix"
+    if not data_dir.exists():
+        return False
+    if not data_dir.is_dir():
+        return True
+    try:
+        return any(data_dir.iterdir())
+    except OSError as exc:
+        raise InstallerError(f"Could not inspect existing workspace data: {exc}") from exc
+
+
+def _clear_workspace_data(workspace: Path) -> None:
+    data_dir = workspace / ".commamatrix"
+    try:
+        if data_dir.is_dir():
+            shutil.rmtree(data_dir)
+        elif data_dir.exists():
+            data_dir.unlink()
+    except OSError as exc:
+        raise InstallerError(f"Could not clear existing workspace data: {exc}") from exc
+
+
+def _select_data_policy(language: str, workspace: Path) -> bool:
+    if not _workspace_has_data(workspace):
+        return False
+
+    print(
+        _text(
+            language,
+            f"Найдены сохранённые данные CommaMatrix в {workspace / '.commamatrix'}.",
+            f"Existing CommaMatrix data was found in {workspace / '.commamatrix'}.",
+        )
+    )
+    selected = _prompt_choice(
+        language,
+        _text(language, "Что сделать с сохранёнными данными?", "What should happen to the saved data?"),
+        [
+            _text(language, "Сохранить данные (рекомендуется)", "Keep the data (recommended)"),
+            _text(language, "Очистить данные и начать заново", "Clear the data and start over"),
+        ],
+        back=False,
+    )
+    if selected == 1:
+        _clear_workspace_data(workspace)
+        return False
+    return True
+
+
 def _select_language() -> str:
     print("Выберите язык / Select language:")
     print("1. Русский (рекомендуется)")
@@ -207,6 +258,8 @@ def _basic_selection(language: str, providers: list[Provider]) -> Selection:
             )
         )
     provider = defaults[0]
+    workspace = DEFAULT_WORKSPACE
+    preserve_data = _select_data_policy(language, workspace)
     model = provider.recommended_model
     if not model:
         raise InstallerError(
@@ -219,7 +272,7 @@ def _basic_selection(language: str, providers: list[Provider]) -> Selection:
     _print_instructions(language, provider)
     token = _prompt_token(language)
     return Selection(
-        workspace=DEFAULT_WORKSPACE,
+        workspace=workspace,
         api_base=provider.api_base,
         api_env=provider.api_env,
         token_env=provider.token_env,
@@ -228,6 +281,7 @@ def _basic_selection(language: str, providers: list[Provider]) -> Selection:
         host="127.0.0.1",
         port=8338,
         token=token,
+        preserve_data=preserve_data,
     )
 
 
@@ -244,6 +298,7 @@ def _advanced_selection(language: str, providers: list[Provider]) -> Selection:
             if isinstance(value, BackRequested):
                 raise InstallerError(_text(language, "Установка отменена.", "Installation cancelled."))
             state["workspace"] = Path(os.path.expandvars(os.path.expanduser(value))).resolve()
+            state["preserve_data"] = _select_data_policy(language, state["workspace"])
             stage = 1
             continue
 
@@ -380,6 +435,7 @@ def _advanced_selection(language: str, providers: list[Provider]) -> Selection:
                 host=state["host"],
                 port=state["port"],
                 token=state["token"],
+                preserve_data=state["preserve_data"],
             )
 
     raise InstallerError("The advanced configuration prompt did not return a value")
@@ -466,7 +522,16 @@ def main() -> int:
             try:
                 result_file = args.result_file.resolve()
                 result_file.parent.mkdir(parents=True, exist_ok=True)
-                result_file.write_text(str(entrypoint.resolve()), encoding="utf-8")
+                result_file.write_text(
+                    json.dumps(
+                        {
+                            "entrypoint": str(entrypoint.resolve()),
+                            "preserve_data": selection.preserve_data,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    encoding="utf-8",
+                )
             except OSError as exc:
                 raise InstallerError(f"Could not write bootstrap result: {exc}") from exc
         print()

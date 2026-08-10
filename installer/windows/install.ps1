@@ -235,7 +235,14 @@ try {
         $ResultPath
     )
 
-    $EntrypointPath = (Get-Content -LiteralPath $ResultPath -Raw -Encoding UTF8).Trim()
+    try {
+        $BootstrapResult = Get-Content -LiteralPath $ResultPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+    catch {
+        throw "Could not read bootstrap result: $($_.Exception.Message)"
+    }
+    $EntrypointPath = [string]$BootstrapResult.entrypoint
+    $PreserveData = [bool]$BootstrapResult.preserve_data
     if ([string]::IsNullOrWhiteSpace($EntrypointPath) -or -not (Test-Path -LiteralPath $EntrypointPath)) {
         throw "Bootstrap did not produce an entrypoint"
     }
@@ -246,22 +253,29 @@ try {
         "--credentials-file",
         $CredentialsPath
     )
-    if (-not (Test-Path -LiteralPath $CredentialsPath)) {
+    $AdminCredentials = $null
+    if (-not (Test-Path -LiteralPath $CredentialsPath) -and -not $PreserveData) {
         throw "Entrypoint did not produce initial administrator credentials"
     }
-    try {
-        $AdminCredentials = Get-Content -LiteralPath $CredentialsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if (Test-Path -LiteralPath $CredentialsPath) {
+        try {
+            $AdminCredentials = Get-Content -LiteralPath $CredentialsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        }
+        catch {
+            throw "Could not read initial administrator credentials: $($_.Exception.Message)"
+        }
     }
-    catch {
-        throw "Could not read initial administrator credentials: $($_.Exception.Message)"
-    }
-    $AdminUsername = [string]$AdminCredentials.username
-    if ([string]::IsNullOrWhiteSpace($AdminUsername)) {
-        throw "Initial administrator credentials do not contain a username"
-    }
-    $AdminPassword = [string]$AdminCredentials.password
-    if ([string]::IsNullOrWhiteSpace($AdminPassword)) {
-        throw "Initial administrator credentials do not contain a password"
+    $AdminUsername = ""
+    $AdminPassword = ""
+    if ($null -ne $AdminCredentials) {
+        $AdminUsername = [string]$AdminCredentials.username
+        if ([string]::IsNullOrWhiteSpace($AdminUsername)) {
+            throw "Initial administrator credentials do not contain a username"
+        }
+        $AdminPassword = [string]$AdminCredentials.password
+        if ([string]::IsNullOrWhiteSpace($AdminPassword)) {
+            throw "Initial administrator credentials do not contain a password"
+        }
     }
 
     $PythonwPath = Join-Path (Split-Path -Parent $PythonPath) "pythonw.exe"
@@ -274,8 +288,12 @@ try {
     New-Item -ItemType Directory -Path $AssetsPath -Force | Out-Null
     $PersistentLogoPng = Join-Path $AssetsPath "logo.png"
     $PersistentLogoIco = Join-Path $AssetsPath "logo.ico"
-    Copy-Item -LiteralPath $LogoPngPath -Destination $PersistentLogoPng -Force
-    Copy-Item -LiteralPath $LogoIcoPath -Destination $PersistentLogoIco -Force
+    if (-not (Test-Path -LiteralPath $PersistentLogoPng)) {
+        Copy-Item -LiteralPath $LogoPngPath -Destination $PersistentLogoPng
+    }
+    if (-not (Test-Path -LiteralPath $PersistentLogoIco)) {
+        Copy-Item -LiteralPath $LogoIcoPath -Destination $PersistentLogoIco
+    }
 
     New-DesktopShortcut `
         -TargetPath $PythonwPath `
@@ -286,12 +304,17 @@ try {
 
     Write-Host ""
     Write-Host "========================================"
-    Write-Host "$AdminUsernameLabel / Username:"
-    Write-Host $AdminUsername
-    Write-Host "$AdminPasswordLabel / Administrator password:"
-    Write-Host $AdminPassword
-    Write-Host "$SavePasswordLabel / Save this password."
-    Write-Host "$ChangeCredentialsLabel / You can change the username and password through the web interface."
+    if ($null -ne $AdminCredentials) {
+        Write-Host "$AdminUsernameLabel / Username:"
+        Write-Host $AdminUsername
+        Write-Host "$AdminPasswordLabel / Administrator password:"
+        Write-Host $AdminPassword
+        Write-Host "$SavePasswordLabel / Save this password."
+        Write-Host "$ChangeCredentialsLabel / You can change the username and password through the web interface."
+    }
+    else {
+        Write-Host "Existing administrator credentials were preserved."
+    }
     Write-Host "========================================"
 }
 catch {

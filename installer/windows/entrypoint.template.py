@@ -50,7 +50,7 @@ MODEL = __MODEL__
 HTTP_HOST = __HTTP_HOST__
 HTTP_PORT = __HTTP_PORT__
 LANGUAGE = __LANGUAGE__
-GITHUB_LATEST_RELEASE_API = "https://api.github.com/repos/matrixd0t/commamatrix/releases/latest"
+PYPI_PACKAGE_API = "https://pypi.org/pypi/commamatrix/json"
 INSTALLER_URL = "https://github.com/matrixd0t/commamatrix/releases/latest/download/install.ps1"
 _VERSION_RE = re.compile(r"^v?(\d+(?:\.\d+)*)$", re.IGNORECASE)
 
@@ -120,18 +120,19 @@ async def _check_for_update(agent: Agent) -> None:
             return
 
         response = await agent.http_client.get(
-            GITHUB_LATEST_RELEASE_API,
-            headers={"Accept": "application/vnd.github+json"},
+            PYPI_PACKAGE_API,
+            headers={"Accept": "application/json"},
             timeout=10,
         )
         response.raise_for_status()
         payload = response.json()
-        latest_version = payload.get("tag_name") if isinstance(payload, dict) else None
+        package_info = payload.get("info") if isinstance(payload, dict) else None
+        latest_version = package_info.get("version") if isinstance(package_info, dict) else None
         current_key = _version_key(current_version)
         latest_key = _version_key(latest_version)
         if current_key is None or latest_key is None:
             agent.logger.warning(
-                "Could not compare CommaMatrix versions current=%r latest=%r",
+                "Could not compare CommaMatrix versions current=%r pypi=%r",
                 current_version,
                 latest_version,
             )
