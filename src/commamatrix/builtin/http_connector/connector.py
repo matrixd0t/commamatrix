@@ -132,13 +132,17 @@ class HttpStatusMessage:
     text: str | None = None
     code: str | None = None
     severity: str = "yellow"
+    link_url: str | None = None
+    link_text: str | None = None
 
-    def __init__(self, text: str | None = None, severity: str = "yellow", *, code: str | None = None, message: str | None = None) -> None:
+    def __init__(self, text: str | None = None, severity: str = "yellow", *, code: str | None = None, message: str | None = None, link_url: str | None = None, link_text: str | None = None) -> None:
         if text is None:
             text = message
         object.__setattr__(self, "text", text)
         object.__setattr__(self, "code", code)
         object.__setattr__(self, "severity", severity)
+        object.__setattr__(self, "link_url", link_url)
+        object.__setattr__(self, "link_text", link_text)
         self.__post_init__()
 
     def __post_init__(self) -> None:
@@ -284,8 +288,23 @@ class HttpConnector(Connector[HttpOrigin]):
                 text = value.get("text", value.get("message"))
                 code = value.get("code")
                 severity = value.get("severity", "yellow")
-                if (isinstance(text, str) or isinstance(code, str)) and isinstance(severity, str):
-                    normalized.append(HttpStatusMessage(text=text, code=code if isinstance(code, str) else None, severity=severity))
+                link_url = value.get("link_url")
+                link_text = value.get("link_text")
+                if (
+                    (isinstance(text, str) or isinstance(code, str))
+                    and isinstance(severity, str)
+                    and (link_url is None or isinstance(link_url, str))
+                    and (link_text is None or isinstance(link_text, str))
+                ):
+                    normalized.append(
+                        HttpStatusMessage(
+                            text=text,
+                            code=code if isinstance(code, str) else None,
+                            severity=severity,
+                            link_url=link_url,
+                            link_text=link_text,
+                        )
+                    )
         self._status_messages = normalized
 
     def _status_payload(self) -> dict[str, object]:
@@ -298,6 +317,10 @@ class HttpConnector(Connector[HttpOrigin]):
                 message["code"] = item.code
             if item.text:
                 message["text"] = item.text
+            if item.link_url:
+                message["link_url"] = item.link_url
+            if item.link_text:
+                message["link_text"] = item.link_text
             messages.append(message)
         return {"messages": messages, "file_upload_allowed": self.file_upload_allowed, "poll_after": 3}
 

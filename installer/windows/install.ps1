@@ -17,8 +17,10 @@ function ConvertFrom-CodePoints {
 }
 
 $InstallingLibraries = ConvertFrom-CodePoints "0423 0441 0442 0430 043D 043E 0432 043A 0430 0020 0431 0438 0431 043B 0438 043E 0442 0435 043A 002E 002E 002E"
+$AdminUsernameLabel = ConvertFrom-CodePoints "0418 043C 044F 0020 043F 043E 043B 044C 0437 043E 0432 0430 0442 0435 043B 044F"
 $AdminPasswordLabel = ConvertFrom-CodePoints "041F 0430 0440 043E 043B 044C 0020 0430 0434 043C 0438 043D 0438 0441 0442 0440 0430 0442 043E 0440 0430"
 $SavePasswordLabel = ConvertFrom-CodePoints "0421 043E 0445 0440 0430 043D 0438 0442 0435 0020 044D 0442 043E 0442 0020 043F 0430 0440 043E 043B 044C"
+$ChangeCredentialsLabel = ConvertFrom-CodePoints "0412 044B 0020 0441 043C 043E 0436 0435 0442 0435 0020 0438 0437 043C 0435 043D 0438 0442 044C 0020 0438 043C 044F 0020 0438 0020 043F 0430 0440 043E 043B 044C 0020 0447 0435 0440 0435 0437 0020 0432 0435 0431 002D 0438 043D 0442 0435 0440 0444 0435 0439 0441"
 $ShortcutLabel = ConvertFrom-CodePoints "041A 043D 043E 043F 043A 0430 0020 0437 0430 043F 0443 0441 043A 0430 0020 0434 043E 0431 0430 0432 043B 0435 043D 0430 0020 043D 0430 0020 0440 0430 0431 043E 0447 0438 0439 0020 0441 0442 043E 043B"
 
 $Repository = "matrixd0t/commamatrix"
@@ -253,6 +255,10 @@ try {
     catch {
         throw "Could not read initial administrator credentials: $($_.Exception.Message)"
     }
+    $AdminUsername = [string]$AdminCredentials.username
+    if ([string]::IsNullOrWhiteSpace($AdminUsername)) {
+        throw "Initial administrator credentials do not contain a username"
+    }
     $AdminPassword = [string]$AdminCredentials.password
     if ([string]::IsNullOrWhiteSpace($AdminPassword)) {
         throw "Initial administrator credentials do not contain a password"
@@ -280,9 +286,12 @@ try {
 
     Write-Host ""
     Write-Host "========================================"
+    Write-Host "$AdminUsernameLabel / Username:"
+    Write-Host $AdminUsername
     Write-Host "$AdminPasswordLabel / Administrator password:"
     Write-Host $AdminPassword
     Write-Host "$SavePasswordLabel / Save this password."
+    Write-Host "$ChangeCredentialsLabel / You can change the username and password through the web interface."
     Write-Host "========================================"
 }
 catch {

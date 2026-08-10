@@ -28,6 +28,7 @@ header .status.status-processing{color:var(--success);animation:status-pulse 1s 
 .http-server-status-panel{position:absolute;top:calc(100% + 7px);left:0;display:none;flex-direction:column;gap:6px;width:max-content;min-width:250px;max-width:min(380px,calc(100vw - 24px));padding:10px 12px;background:var(--surface-raised);border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.4)}
 .http-server-status-panel.visible{display:flex}
 .http-server-status-message{font-size:12px;line-height:1.4;color:var(--text)}
+.http-server-status-message a{color:var(--accent);text-decoration:underline}
 .http-server-status-message.yellow{border-left:3px solid #d29922;padding-left:8px}
 .http-server-status-message.red{border-left:3px solid var(--error);padding-left:8px}
 .header-actions{display:flex;align-items:center;gap:6px}

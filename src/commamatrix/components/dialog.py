@@ -16,7 +16,6 @@ DEFAULT_USER = 'unknown'
 class DialogItemType(StrEnum):
     """Categories of dialog entries: user input, llm output,
     tool calls and their results, typed by media type."""
-
     INPUT = "input"
     IMAGE_INPUT = "image_input"
     FILE_INPUT = "file_input"
@@ -25,13 +24,11 @@ class DialogItemType(StrEnum):
     FILE_OUTPUT = "file_output"
     TOOL_CALL = "tool_call"
     TOOL_CALL_RESULT = "tool_call_result"
-    REASONING = "reasoning_level"
+    REASONING = "reasoning"
 
 
 class DialogRole(StrEnum):
-    """Speaker roles in the dialog: system instructions, developer,
-    user, assistant, and tool (for call results)."""
-
+    """Speaker roles in the dialog: system instructions, developer, user, assistant, and tool (for call results)."""
     SYSTEM = "system"
     DEVELOPER = "developer"
     USER = "user"

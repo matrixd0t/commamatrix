@@ -8,6 +8,7 @@ import ctypes
 import hashlib
 import json
 import os
+import re
 import site
 import socket
 import sys
@@ -15,6 +16,7 @@ import threading
 import webbrowser
 from ctypes import wintypes
 from dataclasses import asdict
+from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
 from typing import Any
 
@@ -28,13 +30,11 @@ from dotenv import load_dotenv
 from PIL import Image, ImageDraw
 
 from commamatrix import Agent, agentic_model, reasoning_level
-from commamatrix.builtin.http_connector import HttpConnector
+from commamatrix.builtin.http_connector import HttpConnector, HttpStatusMessage
 from commamatrix.builtin.llm_http_adapter import (
-    anthropic_api_key,
     llm_api_base,
     llm_api_protocol,
     llm_refresh_on_start,
-    openai_api_key,
 )
 from commamatrix.components.config import log_file, log_to_console
 from commamatrix.components.server import http_host, http_port
@@ -48,6 +48,9 @@ MODEL = __MODEL__
 HTTP_HOST = __HTTP_HOST__
 HTTP_PORT = __HTTP_PORT__
 LANGUAGE = __LANGUAGE__
+GITHUB_LATEST_RELEASE_API = "https://api.github.com/repos/matrixd0t/commamatrix/releases/latest"
+INSTALLER_URL = "https://github.com/matrixd0t/commamatrix/releases/latest/download/install.ps1"
+_VERSION_RE = re.compile(r"^v?(\d+(?:\.\d+)*)$", re.IGNORECASE)
 
 WORKSPACE = Path(__file__).resolve().parent
 DATA_DIR = WORKSPACE / ".commamatrix"
@@ -95,6 +98,68 @@ def _label(ru: str, en: str) -> str:
 
 def _browser_url(url: str) -> str:
     return url.replace("://0.0.0.0:", "://127.0.0.1:", 1)
+
+
+def _version_key(value: object) -> tuple[int, ...] | None:
+    if not isinstance(value, str):
+        return None
+    match = _VERSION_RE.fullmatch(value.strip())
+    if match is None:
+        return None
+    return tuple(int(part) for part in match.group(1).split("."))
+
+
+async def _check_for_update(agent: Agent) -> None:
+    try:
+        try:
+            current_version = package_version("commamatrix")
+        except PackageNotFoundError:
+            agent.logger.warning("Could not determine the installed CommaMatrix version")
+            return
+
+        response = await agent.http_client.get(
+            GITHUB_LATEST_RELEASE_API,
+            headers={"Accept": "application/vnd.github+json"},
+            timeout=10,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        latest_version = payload.get("tag_name") if isinstance(payload, dict) else None
+        current_key = _version_key(current_version)
+        latest_key = _version_key(latest_version)
+        if current_key is None or latest_key is None:
+            agent.logger.warning(
+                "Could not compare CommaMatrix versions current=%r latest=%r",
+                current_version,
+                latest_version,
+            )
+            return
+        if latest_key <= current_key:
+            return
+
+        connector = next(
+            (item for item in agent.connector_manager.resolve() if isinstance(item, HttpConnector)),
+            None,
+        )
+        if connector is None:
+            return
+        connector.set_status_messages(
+            [
+                *connector.status_messages,
+                HttpStatusMessage(
+                    text=_label(
+                        "Доступна новая версия: закройте CommaMatrix, скачайте и запустите",
+                        "A new version is available: close CommaMatrix, download and run",
+                    ),
+                    code="update_available",
+                    severity="red",
+                    link_url=INSTALLER_URL,
+                    link_text=_label("установщик", "installer"),
+                ),
+            ]
+        )
+    except Exception:  # noqa: BLE001
+        agent.logger.warning("Could not check for a CommaMatrix update", exc_info=True)
 
 
 def _fallback_icon() -> Image.Image:
@@ -249,6 +314,7 @@ async def _run_runtime() -> None:
         started = True
         tray.start()
         webbrowser.open(_browser_url(agent.http_server.base_url))
+        await _check_for_update(agent)
         command = await commands.get()
         if command == "restart":
             await agent.stop()

@@ -17,6 +17,7 @@ from sse_starlette import EventSourceResponse
 from commamatrix.builtin.http_connector.connector import (
     HttpConnector,
     HttpOrigin,
+    HttpStatusMessage,
     _sse_generator,
     prepare_http_ui,
 )
@@ -184,6 +185,32 @@ class TestHttpConnectorRoutes:
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=conn.app), base_url="http://test") as client:
             response = await client.post("/commamatrix/api/messages", json={"content": "hello"})
         assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_status_serializes_red_message_link(self):
+        conn = _make_connector()
+        conn.set_status_messages(
+            [
+                HttpStatusMessage(
+                    code="update_available",
+                    severity="red",
+                    link_url="https://github.com/matrixd0t/commamatrix/releases/latest/download/install.ps1",
+                    link_text="установщик",
+                )
+            ]
+        )
+        headers, _ = await _auth(conn)
+
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=conn.app), base_url="http://test") as client:
+            response = await client.get("/commamatrix/api/status", headers=headers)
+
+        assert response.status_code == 200
+        assert {
+            "code": "update_available",
+            "severity": "red",
+            "link_url": "https://github.com/matrixd0t/commamatrix/releases/latest/download/install.ps1",
+            "link_text": "установщик",
+        } in response.json()["messages"]
 
     @pytest.mark.asyncio
     async def test_message_validates_json_and_content(self):
