@@ -17,6 +17,7 @@ from commamatrix.builtin.multi_user import (
     user_header_template,
 )
 from commamatrix.components.config import Config
+from commamatrix.components.connector import UserInfo
 from commamatrix.components.dialog import (
     DialogItem,
     DialogItemType,
@@ -114,10 +115,10 @@ async def test_user_name_is_not_filled_with_user_id_without_connector():
 
 @pytest.mark.asyncio
 async def test_user_name_is_not_stored_when_connector_cannot_resolve_it():
-    async def get_user_name(_origin):
+    async def get_user_info(_user):
         return None
 
-    connector = SimpleNamespace(get_user_name=get_user_name)
+    connector = SimpleNamespace(get_user_info=get_user_info)
     agent = _agent(Config(), connector)
     agent.storage = _Storage()
     item = _item()
@@ -147,7 +148,7 @@ async def test_user_message_header_uses_empty_name_when_name_is_unavailable():
 async def test_user_info_uses_connector_for_platform():
     async def lookup(user):
         assert user == "Елена"
-        return {"id": 12345, "username": "Елена", "extra": "ignored"}
+        return UserInfo(id=12345, name="Елена")
 
     connector = SimpleNamespace(origin_types=(TelegramOriginForMultiDialog,), get_user_info=lookup)
     agent = SimpleNamespace(connector_manager=SimpleNamespace(resolve=lambda: [connector]))
