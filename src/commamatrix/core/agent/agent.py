@@ -780,7 +780,7 @@ class Agent:
 
         connector = self.connector_manager.resolve_for_origin(run.origin)
         self.logger.debug("Sending item type=%s connector=%s", dialog_item.item_type.value, type(connector).__name__)
-        external_id = await connector.send(run.origin, dialog_item)
+        external_id = await connector.send(run, dialog_item)
         dialog_item.external_id = external_id or None
         self.logger.debug("Item delivered external_id_present=%s", dialog_item.external_id is not None)
 

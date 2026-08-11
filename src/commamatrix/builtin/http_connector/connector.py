@@ -30,7 +30,7 @@ from ...components.config import ConfigField
 from ...components.connector import Connector, UserInfo
 from ...components.dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
 from ...components.file_storage import DataType, normalize_file_id, read_file
-from ...components.hook import OnAgentStartCtx, OnParsedCtx, on_agent_start
+from ...components.hook import OnAgentStartCtx, OnParsedCtx, RunCtx, on_agent_start
 from ...components.llm_adapter import LLMModalities, StreamDelta
 from ...components.server import SERVER_ROOT, http_external_url
 from ...utils import _row_value, commamatrix_dir
@@ -513,8 +513,8 @@ class HttpConnector(Connector[HttpOrigin]):
         for session in sessions:
             await session.queue.put(event)
 
-    async def send(self, origin: HttpOrigin, item: DialogItem) -> str:
-        if isinstance(origin, HttpOrigin) and item.item_type is DialogItemType.OUTPUT:
+    async def send(self, run: RunCtx, item: DialogItem) -> str:
+        if isinstance(run.origin, HttpOrigin) and item.item_type is DialogItemType.OUTPUT:
             await self._prepare_output_attachments(item)
         return ""
 

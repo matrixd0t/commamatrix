@@ -9,7 +9,7 @@ from typing import Any
 
 from ...components.connector import Connector
 from ...components.dialog import DialogItem, DialogItemType, DialogOrigin
-from ...components.hook import AfterLlmCallCtx, OnParsedCtx
+from ...components.hook import AfterLlmCallCtx, OnParsedCtx, RunCtx
 from ...utils import await_if_needed
 
 
@@ -39,10 +39,10 @@ class InternalConnector(Connector[InternalOrigin]):
     async def parse(self, data: dict) -> OnParsedCtx | None:
         return None
 
-    async def send(self, origin: InternalOrigin, item: DialogItem) -> str:
+    async def send(self, run: RunCtx, item: DialogItem) -> str:
         if item.item_type != DialogItemType.OUTPUT:
             return ""
-        internal_origin = self._as_internal(origin)
+        internal_origin = self._as_internal(run.origin)
         self._items.setdefault(internal_origin.task_id, []).append(item)
         return ""
 

@@ -31,7 +31,7 @@ from .llm_adapter import LLMModalities, StreamDelta
 
 if TYPE_CHECKING:
     from ..core.agent import Agent
-    from .hook import OnParsedCtx
+    from .hook import OnParsedCtx, RunCtx
 
 type OnRecv = Callable[[dict], Awaitable[list[asyncio.Task]]]
 
@@ -109,7 +109,7 @@ class Connector(AbstractService, Generic[OrgT]):
     async def parse(self, data: dict) -> OnParsedCtx | None: ...
 
     @abstractmethod
-    async def send(self, origin: OrgT, item: DialogItem) -> str:
+    async def send(self, run: RunCtx, item: DialogItem) -> str:
         """Render an item and return its external ID, or an empty string."""
 
     async def publish_item(self, origin: OrgT, item: DialogItem) -> None:

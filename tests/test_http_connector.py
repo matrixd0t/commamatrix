@@ -23,7 +23,7 @@ from commamatrix.builtin.http_connector.connector import (
 )
 from commamatrix.components.config import Config
 from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
-from commamatrix.components.hook import OnAgentStartCtx
+from commamatrix.components.hook import OnAgentStartCtx, RunCtx
 from commamatrix.components.server import Server
 from tests.conftest import stub_agent
 
@@ -139,17 +139,20 @@ class TestHttpConnectorSend:
         from tests.conftest import StubOrigin
 
         conn = _make_connector()
-        item = DialogItem(content="hi", item_type=DialogItemType.OUTPUT, role=DialogRole.ASSISTANT, origin=StubOrigin())
-        assert await conn.send(StubOrigin(), item) == ""
+        origin = StubOrigin()
+        run = RunCtx(agent=conn.agent, origin=origin, user="test-user")
+        item = DialogItem(content="hi", item_type=DialogItemType.OUTPUT, role=DialogRole.ASSISTANT, origin=origin)
+        assert await conn.send(run, item) == ""
 
     @pytest.mark.asyncio
     async def test_returns_unique_user_scoped_external_ids(self):
         conn = _make_connector()
         origin = HttpOrigin(http_user_id=7)
+        run = RunCtx(agent=conn.agent, origin=origin, user="test-user")
         item = DialogItem(content="hi", item_type=DialogItemType.OUTPUT, role=DialogRole.ASSISTANT, origin=origin)
 
-        first = await conn.send(origin, item)
-        second = await conn.send(origin, item)
+        first = await conn.send(run, item)
+        second = await conn.send(run, item)
 
         assert first == ""
         assert second == ""

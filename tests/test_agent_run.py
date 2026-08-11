@@ -100,7 +100,7 @@ class RecordingConnector(Connector[StubOrigin]):
     async def parse(self, data: dict) -> OnParsedCtx | None:
         return None
 
-    async def send(self, origin: StubOrigin, item: DialogItem) -> str:
+    async def send(self, run: RunCtx, item: DialogItem) -> str:
         self._external_id_counter += 1
         ext_id = f"ext_{self._external_id_counter}"
         item.external_id = ext_id

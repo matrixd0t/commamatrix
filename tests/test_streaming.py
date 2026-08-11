@@ -109,7 +109,7 @@ class TestConnectorStreaming:
         class MinimalConnector(Connector):
             async def parse(self, data):
                 return None
-            async def send(self, origin, item):
+            async def send(self, run, item):
                 return ""
 
         agent = stub_agent()

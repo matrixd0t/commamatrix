@@ -13,6 +13,7 @@ from commamatrix import (
     DialogOrigin,
     DialogRole,
     OnParsedCtx,
+    RunCtx,
 )
 
 
@@ -42,8 +43,8 @@ class ChatConnector(Connector[ChatOrigin]):
             previous_external_id=data.get("previous_external_id"),
         )
 
-    async def send(self, origin: ChatOrigin, item: DialogItem) -> str:
-        if not isinstance(origin, ChatOrigin):
+    async def send(self, run: RunCtx, item: DialogItem) -> str:
+        if not isinstance(run.origin, ChatOrigin):
             return ""
         # Render item according to item.item_type and send it.
         return "my-chat-message-id"
@@ -74,10 +75,10 @@ The base connector starts `listen(self.agent.handle)` as a task. Override
 `start()` and `stop()` only when the external client needs additional lifecycle
 handling, and always stop listeners and owned clients.
 
-`send()` receives every complete outgoing block, including text, reasoning,
-images, files, and tool calls. Return an external ID when the platform provides
-one, or an empty string when it does not. The agent persists the item even when
-delivery returns no external ID.
+`send()` receives the complete `RunCtx` and every outgoing block, including text,
+reasoning, images, files, and tool calls. Return an external ID when the platform
+provides one, or an empty string when it does not. The agent persists the item
+even when delivery returns no external ID.
 
 ## Streaming
 
