@@ -58,7 +58,7 @@ class ChatConnector(Connector[ChatOrigin]):
         return
 ```
 
-`parse()`, `send()`, and `get_user_name()` are required for a concrete
+`parse()`, `send()`, and `get_user_info()` are required for a concrete
 connector. The generic argument lets the framework infer the connector's
 `origin_types`.
 
