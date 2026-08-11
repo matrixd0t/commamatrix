@@ -39,7 +39,7 @@ class InternalConnector(Connector[InternalOrigin]):
     async def parse(self, data: dict) -> OnParsedCtx | None:
         return None
 
-    async def send(self, origin: DialogOrigin, item: DialogItem) -> str:
+    async def send(self, origin: InternalOrigin, item: DialogItem) -> str:
         if item.item_type != DialogItemType.OUTPUT:
             return ""
         internal_origin = self._as_internal(origin)
