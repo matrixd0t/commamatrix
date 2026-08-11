@@ -42,7 +42,7 @@ class ChatConnector(Connector[ChatOrigin]):
             previous_external_id=data.get("previous_external_id"),
         )
 
-    async def send(self, origin: DialogOrigin, item: DialogItem) -> str:
+    async def send(self, origin: ChatOrigin, item: DialogItem) -> str:
         if not isinstance(origin, ChatOrigin):
             return ""
         # Render item according to item.item_type and send it.
