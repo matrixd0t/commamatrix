@@ -6,7 +6,6 @@ on:
       - master
     paths:
       - installer/windows/install.ps1
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -23,31 +22,34 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Move installer tag
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: git push --force origin "${GITHUB_SHA}:refs/tags/latest"
-
-      - name: Create or update release
+      - name: Delete previous installer release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git log -1 --pretty=%B > release-notes.md
-          if gh release view latest >/dev/null 2>&1; then
-            gh release edit latest \
-              --title "CommaMatrix installer" \
-              --notes-file release-notes.md \
-              --target "$GITHUB_SHA" \
-              --latest
-          else
-            gh release create latest \
-              --title "CommaMatrix installer" \
-              --notes-file release-notes.md \
-              --target "$GITHUB_SHA" \
-              --latest
+          if gh release view latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete latest \
+              --repo "$GITHUB_REPOSITORY" \
+              --yes \
+              --cleanup-tag
           fi
+
+      - name: Move installer tag
+        run: git push --force origin "${GITHUB_SHA}:refs/tags/latest"
+
+      - name: Create installer release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          git log -1 --pretty=%B > release-notes.md
+          gh release create latest \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "CommaMatrix installer" \
+            --notes-file release-notes.md \
+            --target "$GITHUB_SHA" \
+            --latest
 
       - name: Upload installer
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload latest installer/windows/install.ps1 --clobber
+        run: gh release upload latest installer/windows/install.ps1 --repo "$GITHUB_REPOSITORY" --clobber

@@ -1,4 +1,8 @@
-# __init__.py
+# src/commamatrix/__init__.py
+
+from importlib.metadata import version as _distribution_version
+
+__version__ = _distribution_version("commamatrix")
 
 from . import builtin as builtin
 from . import components as _components
@@ -11,7 +15,15 @@ from .utils import *
 
 __all__ = list(
     dict.fromkeys(
-        ["Agent", *_components.__all__, *_core.__all__, *utils.__all__, "builtin", "utils"]
+        [
+            "Agent",
+            "__version__",
+            *_components.__all__,
+            *_core.__all__,
+            *utils.__all__,
+            "builtin",
+            "utils",
+        ]
     )
 )
 
