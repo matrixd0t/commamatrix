@@ -23,7 +23,7 @@ class TestConnectorSubclass:
         class MyConn(Connector[StubOrigin]):
             async def parse(self, data):
                 return None
-            async def send(self, origin, item):
+            async def send(self, run, item):
                 return ""
         assert getattr(MyConn, CONNECTOR_ATTRIBUTE, False) is True
 
@@ -31,7 +31,7 @@ class TestConnectorSubclass:
         class MyConn(Connector[StubOrigin]):
             async def parse(self, data):
                 return None
-            async def send(self, origin, item):
+            async def send(self, run, item):
                 return ""
         assert MyConn.origin_types == (StubOrigin,)
 
@@ -39,7 +39,7 @@ class TestConnectorSubclass:
         class MyConn(Connector[StubOrigin]):
             async def parse(self, data):
                 return None
-            async def send(self, origin, item):
+            async def send(self, run, item):
                 return ""
         import asyncio
         agent = stub_agent()
@@ -53,7 +53,7 @@ class TestPythonConnectorSource:
         class TestConn(Connector[StubOrigin]):
             async def parse(self, data):
                 return None
-            async def send(self, origin, item):
+            async def send(self, run, item):
                 return ""
 
         mod = types.ModuleType("conn_test_mod")
@@ -76,7 +76,7 @@ class TestConnectorManager:
         class TestConn2(Connector[StubOrigin]):
             async def parse(self, data):
                 return None
-            async def send(self, origin, item):
+            async def send(self, run, item):
                 return ""
 
         mod = types.ModuleType("cm_test_mod")
@@ -102,7 +102,7 @@ class TestConnectorLifecycle:
         class SimpleConn(Connector[StubOrigin]):
             async def parse(self, data):
                 return None
-            async def send(self, origin, item):
+            async def send(self, run, item):
                 return ""
 
         agent = stub_agent()
@@ -116,7 +116,7 @@ class TestConnectorLifecycle:
         class SimpleConn2(Connector[StubOrigin]):
             async def parse(self, data):
                 return None
-            async def send(self, origin, item):
+            async def send(self, run, item):
                 return ""
 
         agent = stub_agent()
