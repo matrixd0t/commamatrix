@@ -27,7 +27,7 @@ from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.staticfiles import StaticFiles
 
 from ...components.config import ConfigField
-from ...components.connector import Connector
+from ...components.connector import Connector, UserInfo
 from ...components.dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
 from ...components.file_storage import DataType, normalize_file_id, read_file
 from ...components.hook import OnAgentStartCtx, OnParsedCtx, on_agent_start
@@ -449,12 +449,6 @@ class HttpConnector(Connector[HttpOrigin]):
             return None
         return self._timezones_by_user.get(origin.http_user_id)
 
-    async def get_user_name(self, origin: DialogOrigin) -> str | None:
-        if not isinstance(origin, HttpOrigin):
-            return None
-        found = await self.authorizer.find_user(origin.http_user_id)
-        return found.username if found is not None else None
-
     async def _find_name_record(self, name: str) -> tuple[object, str | None] | None:
         try:
             rows = await self.agent.storage.execute(
@@ -479,7 +473,7 @@ class HttpConnector(Connector[HttpOrigin]):
                 return row, name
         return None
 
-    async def get_user_info(self, user: int | str) -> dict[str, object] | None:
+    async def get_user_info(self, user: int | str) -> UserInfo | None:
         matched_name: str | None = None
         lookup: int | str = user
         search_name = user
@@ -504,11 +498,12 @@ class HttpConnector(Connector[HttpOrigin]):
                     found = await self.authorizer.find_user(stored_user.removeprefix("http:"))
         if found is None:
             return None
-        result: dict[str, object] = {"id": found.id, "username": found.username}
-        if matched_name is not None:
-            result["matched_name"] = matched_name
-            result["name_changed"] = matched_name.casefold() != found.username.casefold()
-        return result
+        return UserInfo(
+            id=found.id,
+            name=found.username,
+            matched_name=matched_name,
+            name_changed=matched_name is not None and matched_name.casefold() != found.username.casefold(),
+        )
 
     def _sessions_for_user(self, user_id: int) -> list[HTTPSession]:
         return [self._sessions[session_id] for session_id in self._sessions_by_user.get(user_id, ()) if session_id in self._sessions and not self._sessions[session_id].closed]
