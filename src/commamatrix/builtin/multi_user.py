@@ -68,9 +68,10 @@ async def update_user_name(ctx: BeforeRunCtx) -> None:
         except LookupError:
             return
 
-    current_name = await await_if_needed(connector.get_user_name(ctx.run.origin))
-    if not isinstance(current_name, str) or not current_name:
+    user_info = await connector.get_user_info(ctx.run.user)
+    if user_info is None or not user_info.name:
         return
+    current_name = user_info.name
 
     rows = await ctx.run.agent.storage.execute(
         "SELECT name, alternatives FROM commamatrix_user_names WHERE user = ?",

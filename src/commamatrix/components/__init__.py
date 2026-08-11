@@ -30,6 +30,7 @@ from .connector import (
     ConnectorManager,
     OnRecv,
     PythonConnectorSource,
+    UserInfo,
 )
 from .dialog import (
     DEFAULT_PLATFORM,
@@ -264,6 +265,7 @@ __all__ = [
     "ToolManager",
     "ToolSource",
     "Usage",
+    "UserInfo",
     "active_file_storage",
     "active_storage",
     "add_instructions",

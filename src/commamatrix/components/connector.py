@@ -40,6 +40,16 @@ CONNECTOR_ATTRIBUTE = "__commamatrix_connector__"
 OrgT = TypeVar("OrgT", bound=DialogOrigin)
 
 
+@dataclass(frozen=True, slots=True)
+class UserInfo:
+    """Basic platform user data returned by connector lookups."""
+
+    id: int | str
+    name: str
+    matched_name: str | None = None
+    name_changed: bool = False
+
+
 class Connector(AbstractService, Generic[OrgT]):
     """Abstract platform adapter. Subclasses implement parse() to convert platform format into OnParsedCtx, and send() to deliver outgoing messages.
     Lifecycle: start() launches listener, stop() cancels."""
@@ -102,10 +112,6 @@ class Connector(AbstractService, Generic[OrgT]):
     async def send(self, origin: DialogOrigin, item: DialogItem) -> str:
         """Render an item and return its external ID, or an empty string."""
 
-    async def get_user_name(self, origin: DialogOrigin) -> str | None:
-        """Return the current display name for a platform user."""
-        return None
-
     async def publish_item(self, origin: DialogOrigin, item: DialogItem) -> None:
         """Publish a persisted item to passive subscribers when supported."""
 
@@ -113,7 +119,7 @@ class Connector(AbstractService, Generic[OrgT]):
         """Return a user's timezone when the platform can provide one."""
         return None
 
-    async def get_user_info(self, user: int | str) -> dict[str, Any] | None:
+    async def get_user_info(self, user: int | str) -> UserInfo | None:
         """Return basic user information when the platform supports lookup."""
         return None
 

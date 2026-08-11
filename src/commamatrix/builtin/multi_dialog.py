@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from ..components.connector import UserInfo
 from ..components.dialog import ORIGIN_REGISTRY, DialogOrigin
 from ..components.hook import AfterSendCtx, BeforeToolCallCtx, after_send
 from ..components.instruction import InstructionCtx, instruction
@@ -147,14 +148,12 @@ async def get_user_info(user_names_or_ids: list[str | int], ctx: BeforeToolCallC
         result: dict[str, object] | None = None
         for connector in candidate_connectors:
             found = await await_if_needed(connector.get_user_info(search_key))
-            if not isinstance(found, dict):
+            if not isinstance(found, UserInfo):
                 continue
-            found_id = found.get("id")
+            found_id = found.id
             if not isinstance(found_id, (int, str)):
                 continue
-            username = found.get("username")
-            if not isinstance(username, str):
-                username = str(found_id)
+            username = found.name
             platform = platform_filter or str(
                 next(
                     (
@@ -169,9 +168,9 @@ async def get_user_info(user_names_or_ids: list[str | int], ctx: BeforeToolCallC
                 "username": username,
                 "platform": platform,
             }
-            if isinstance(found.get("matched_name"), str):
-                result["matched_name"] = found["matched_name"]
-            if found.get("name_changed"):
+            if found.matched_name is not None:
+                result["matched_name"] = found.matched_name
+            if found.name_changed:
                 result["name_changed"] = True
             break
 
@@ -238,7 +237,7 @@ async def apply_new_origin(ctx: AfterSendCtx) -> None:
     connector = ctx.run.agent.connector_manager.resolve_for_origin(new_origin)
     user_info = await await_if_needed(connector.get_user_info(identity))
 
-    resolved_id = user_info.get("id") if isinstance(user_info, dict) else None
+    resolved_id = user_info.id if isinstance(user_info, UserInfo) else None
     if resolved_id is None:
         resolved_id = identity
     ctx.run.user = f"{new_origin.platform}:{resolved_id}"
