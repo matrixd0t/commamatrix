@@ -31,7 +31,8 @@ user_header_renderer = ConfigField[UserHeaderRenderer | None](
     name="user_header_renderer",
     # ConfigField calls callable defaults without arguments; return the renderer from a factory.
     default=lambda: _default_user_header,
-    description="Optional user-message header renderer accepting (run, item) and returning header text or None; async renderers are supported. The default renderer emits the datetime, user, and name; the rendered header is followed by two newlines.",
+    description="Optional user-message header renderer accepting (run, item) and returning header text or None; async renderers are supported. The default renderer emits the datetime, user, and name; the rendered header is followed by two newlines. "
+                "Built-in shortcuts: '%USER%' -> DialogItem.user ('telegram:8766618923'), '%DATETIME%' -> DialogItem.created_at in user_header_datetime_format, '%NAME%' -> connector-provided user name or empty string",
 )
 user_header_datetime_format = ConfigField[str](
     name="user_header_datetime_format",
@@ -65,7 +66,8 @@ async def _user_timezone(run: RunCtx, item: DialogItem) -> tzinfo:
 @before_run(priority=1000)
 async def update_user_name(ctx: BeforeRunCtx) -> None:
     """Refresh and cache the current platform name for this run."""
-    if "user_name" in ctx.run.state:
+    user_names = ctx.run.state.get("user_names")
+    if isinstance(user_names, dict) and ctx.run.user in user_names:
         return
 
     connector = ctx.run.connector
@@ -108,25 +110,27 @@ async def update_user_name(ctx: BeforeRunCtx) -> None:
             (ctx.run.user, current_name, "[]"),
         )
 
-    ctx.run.state["user_name"] = current_name
+    ctx.run.state.setdefault("user_names", {})[ctx.run.user] = current_name
 
 
 async def _default_user_header(run: RunCtx, item: DialogItem) -> str:
+    return "[%DATETIME%] %USER% | %NAME%:"
+
+
+async def _render_configured_header(renderer: UserHeaderRenderer, run: RunCtx, item: DialogItem) -> str | None:
     user_timezone = await _user_timezone(run, item)
     datetime_format = run.agent.config.get(user_header_datetime_format)
-    user_name = str(run.state.get("user_name", ""))
+    user_names = run.state.get("user_names", {})
+    user_name = str(user_names.get(item.user, "")) if isinstance(user_names, dict) else ""
     created_at = item.created_at
     if created_at.tzinfo is None:
         created_at = created_at.replace(tzinfo=UTC)
     datetime_value = created_at.astimezone(user_timezone).strftime(datetime_format)
-    return f"[{datetime_value} | {item.user} | {user_name}]"
 
-
-async def _render_configured_header(renderer: UserHeaderRenderer, run: RunCtx, item: DialogItem) -> str | None:
     rendered = await await_if_needed(renderer(run, item))
     if rendered is not None and not isinstance(rendered, str):
         raise TypeError("user_header_renderer must return str or None")
-    return rendered.rstrip() if rendered else rendered
+    return rendered.rstrip().replace('%USER%', item.user).replace('%DATETIME%', datetime_value).replace('%NAME%', user_name)
 
 
 @before_llm_call(priority=-1000)
