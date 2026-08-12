@@ -95,7 +95,7 @@ async def test_user_message_header_uses_connector_timezone():
 
     await add_user_message_headers(ctx)
 
-    assert ctx.dialog[0].content == "[14:00:00 24.05.2026 | telegram:Елена | ]\n\nпривет"
+    assert ctx.dialog[0].content == "[14:00:00 24.05.2026] telegram:Елена | :\n\nпривет"
 
 
 @pytest.mark.asyncio
@@ -138,7 +138,7 @@ async def test_user_message_header_uses_empty_name_when_name_is_unavailable():
 
     await add_user_message_headers(ctx)
 
-    assert ctx.dialog[0].content == "[14:00:00 24.05.2026 | telegram:Елена | ]\n\nпривет"
+    assert ctx.dialog[0].content == "[14:00:00 24.05.2026] telegram:Елена | :\n\nпривет"
 
 
 @pytest.mark.asyncio
