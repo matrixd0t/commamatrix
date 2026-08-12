@@ -14,7 +14,7 @@ from commamatrix.builtin.multi_user import (
     describe_user_message_headers,
     update_user_name,
     user_header_datetime_format,
-    user_header_template,
+    user_header_renderer,
 )
 from commamatrix.components.config import Config
 from commamatrix.components.connector import UserInfo
@@ -70,8 +70,7 @@ class _Storage:
 @pytest.mark.asyncio
 async def test_user_message_header_is_added_to_a_transient_copy():
     agent = _agent(Config({
-        user_header_template: "[{datetime} | {user}]",
-        user_header_datetime_format: "%H:%M:%S %d.%m.%Y",
+        user_header_renderer: lambda _run, item: f"[custom | {item.user}]",
     }))
     item = _item()
     ctx = BeforeLlmCallCtx(run=RunCtx(agent=agent, origin=item.origin, user=item.user), dialog=[item], tools=[])
@@ -79,17 +78,16 @@ async def test_user_message_header_is_added_to_a_transient_copy():
     await add_user_message_headers(ctx)
 
     assert item.content == "привет"
-    assert ctx.dialog[0].content == "[11:00:00 24.05.2026 | telegram:Елена]\n\nпривет"
+    assert ctx.dialog[0].content == "[custom | telegram:Елена]\n\nпривет"
 
 
 @pytest.mark.asyncio
 async def test_user_message_header_uses_connector_timezone():
-    async def get_user_timezone(_origin):
+    async def get_user_timezone(_run, _user):
         return ZoneInfo("Europe/Moscow")
 
     connector = SimpleNamespace(get_user_timezone=get_user_timezone)
     agent = _agent(Config({
-        user_header_template: "[{datetime} | {user}]",
         user_header_datetime_format: "%H:%M:%S %d.%m.%Y",
     }), connector)
     item = _item()
@@ -97,7 +95,7 @@ async def test_user_message_header_uses_connector_timezone():
 
     await add_user_message_headers(ctx)
 
-    assert ctx.dialog[0].content == "[14:00:00 24.05.2026 | telegram:Елена]\n\nпривет"
+    assert ctx.dialog[0].content == "[14:00:00 24.05.2026 | telegram:Елена | ]\n\nпривет"
 
 
 @pytest.mark.asyncio
@@ -133,7 +131,6 @@ async def test_user_name_is_not_stored_when_connector_cannot_resolve_it():
 @pytest.mark.asyncio
 async def test_user_message_header_uses_empty_name_when_name_is_unavailable():
     agent = _agent(Config({
-        user_header_template: "[{datetime} | {user} | {name}]",
         user_header_datetime_format: "%H:%M:%S %d.%m.%Y",
     }))
     item = _item()
@@ -141,7 +138,7 @@ async def test_user_message_header_uses_empty_name_when_name_is_unavailable():
 
     await add_user_message_headers(ctx)
 
-    assert ctx.dialog[0].content == "[11:00:00 24.05.2026 | telegram:Елена | ]\n\nпривет"
+    assert ctx.dialog[0].content == "[14:00:00 24.05.2026 | telegram:Елена | ]\n\nпривет"
 
 
 @pytest.mark.asyncio
@@ -165,7 +162,7 @@ async def test_user_info_uses_connector_for_platform():
 
 @pytest.mark.asyncio
 async def test_user_message_header_is_optional_and_instruction_is_dynamic():
-    agent = _agent(Config(overrides={user_header_template: ""}))
+    agent = _agent(Config(overrides={user_header_renderer: None}))
     item = _item()
     ctx = BeforeLlmCallCtx(run=RunCtx(agent=agent, origin=item.origin, user=item.user), dialog=[item], tools=[])
     await add_user_message_headers(ctx)
@@ -174,6 +171,6 @@ async def test_user_message_header_is_optional_and_instruction_is_dynamic():
     assert item.content == "привет"
     assert describe_user_message_headers(InstructionCtx(run=run)) is None
 
-    agent.config.set(user_header_template, "[{datetime}] {user}")
+    agent.config.set(user_header_renderer, lambda _run, _item: "[custom]")
 
     assert describe_user_message_headers(InstructionCtx(run=run)) is not None

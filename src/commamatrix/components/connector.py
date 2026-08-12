@@ -112,10 +112,10 @@ class Connector(AbstractService, Generic[OrgT]):
     async def send(self, run: RunCtx, item: DialogItem) -> str:
         """Render an item and return its external ID, or an empty string."""
 
-    async def publish_item(self, origin: OrgT, item: DialogItem) -> None:
+    async def publish_item(self, run: RunCtx, item: DialogItem) -> None:
         """Publish a persisted item to passive subscribers when supported."""
 
-    async def get_user_timezone(self, origin: OrgT) -> tzinfo | None:
+    async def get_user_timezone(self, run: RunCtx, user: str) -> tzinfo | None:
         """Return a user's timezone when the platform can provide one."""
         return None
 
@@ -123,11 +123,11 @@ class Connector(AbstractService, Generic[OrgT]):
         """Return basic user information when the platform supports lookup."""
         return None
 
-    async def send_stream_chunk(self, origin: OrgT, chunk: StreamDelta) -> None:
+    async def send_stream_chunk(self, run: RunCtx, chunk: StreamDelta) -> None:
         """Send a real-time content delta to the platform for live rendering."""
 
     @asynccontextmanager
-    async def typing(self, origin: OrgT) -> AsyncIterator[None]:
+    async def typing(self, run: RunCtx) -> AsyncIterator[None]:
         yield
 
     async def listen(self, on_recv: OnRecv) -> None:

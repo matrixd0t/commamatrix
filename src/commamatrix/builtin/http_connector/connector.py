@@ -444,10 +444,15 @@ class HttpConnector(Connector[HttpOrigin]):
         self.logger.debug("HTTP event parsed user_id=%d items=%d attachments=%d", user_id, len(dialog_items), len(attachments) if isinstance(attachments, list) else 0)
         return OnParsedCtx(raw=data, connector=self, agent=self.agent, dialog_items=dialog_items)
 
-    async def get_user_timezone(self, origin: HttpOrigin) -> tzinfo | None:
+    async def get_user_timezone(self, run: RunCtx, user: str) -> tzinfo | None:
+        origin = run.origin
         if not isinstance(origin, HttpOrigin):
             return None
-        return self._timezones_by_user.get(origin.http_user_id)
+        try:
+            _, _, user_id = user.partition(":")
+            return self._timezones_by_user.get(int(user_id))
+        except (TypeError, ValueError):
+            return None
 
     async def _find_name_record(self, name: str) -> tuple[object, str | None] | None:
         try:
@@ -514,7 +519,7 @@ class HttpConnector(Connector[HttpOrigin]):
             await session.queue.put(event)
 
     async def send(self, run: RunCtx, item: DialogItem) -> str:
-        if isinstance(run.origin, HttpOrigin) and item.item_type is DialogItemType.OUTPUT:
+        if isinstance(item.origin, HttpOrigin) and item.item_type is DialogItemType.OUTPUT:
             await self._prepare_output_attachments(item)
         return ""
 
@@ -561,7 +566,7 @@ class HttpConnector(Connector[HttpOrigin]):
 
             file_data = await read_file(
                 source,
-                file_storage=self.agent.file_storage,
+                file_storage=self.agent.file_storage.active,
                 http_client=self.agent.http_client,
                 name=path.name,
                 ext=path.suffix,
@@ -584,19 +589,20 @@ class HttpConnector(Connector[HttpOrigin]):
             attachment["error"] = str(exc)
         return attachment
 
-    async def publish_item(self, origin: HttpOrigin, item: DialogItem) -> None:
-        if isinstance(origin, HttpOrigin):
+    async def publish_item(self, run: RunCtx, item: DialogItem) -> None:
+        if isinstance(item.origin, HttpOrigin):
             self._cache_item(item)
-            await self._publish(origin.http_user_id, _serialize_item(item))
+            await self._publish(item.origin.http_user_id, _serialize_item(item))
 
-    async def send_stream_chunk(self, origin: HttpOrigin, chunk: StreamDelta) -> None:
-        if not isinstance(origin, HttpOrigin):
+    async def send_stream_chunk(self, run: RunCtx, chunk: StreamDelta) -> None:
+        if not isinstance(run.origin, HttpOrigin):
             return
         meta = {key: value for key, value in chunk.meta.items() if key != "llm"}
-        await self._publish(origin.http_user_id, {"type": "stream_chunk", "stream_id": meta.pop("stream_id", None), "item_type": {"text": "output", "reasoning_level": "reasoning_level"}.get(chunk.delta_type, chunk.delta_type), "delta_type": chunk.delta_type, "content": chunk.content, "previous_item_id": meta.pop("previous_item_id", None), "meta": meta})
+        await self._publish(run.origin.http_user_id, {"type": "stream_chunk", "stream_id": meta.pop("stream_id", None), "item_type": {"text": "output", "reasoning_level": "reasoning_level"}.get(chunk.delta_type, chunk.delta_type), "delta_type": chunk.delta_type, "content": chunk.content, "previous_item_id": meta.pop("previous_item_id", None), "meta": meta})
 
     @asynccontextmanager
-    async def typing(self, origin: HttpOrigin) -> AsyncIterator[None]:
+    async def typing(self, run: RunCtx) -> AsyncIterator[None]:
+        origin = run.origin
         if not isinstance(origin, HttpOrigin):
             yield
             return

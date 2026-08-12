@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from datetime import UTC, tzinfo
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -12,6 +14,7 @@ from ..components.dialog import DialogItem, DialogRole
 from ..components.hook import (
     BeforeLlmCallCtx,
     BeforeRunCtx,
+    RunCtx,
     before_llm_call,
     before_run,
 )
@@ -22,20 +25,23 @@ if TYPE_CHECKING:
     from ..core.agent import Agent
 
 
-user_header_template = ConfigField[str](
-    name="user_header_template",
-    default="[{datetime} | {user} | {name}]",
-    description="Optional user-message header template. Use {datetime}, {user}, and {name}; the rendered header is followed by two newlines.",
+type UserHeaderRenderer = Callable[[RunCtx, DialogItem], str | Awaitable[str | None] | None]
+
+user_header_renderer = ConfigField[UserHeaderRenderer | None](
+    name="user_header_renderer",
+    # ConfigField calls callable defaults without arguments; return the renderer from a factory.
+    default=lambda: _default_user_header,
+    description="Optional user-message header renderer accepting (run, item) and returning header text or None; async renderers are supported. The default renderer emits the datetime, user, and name; the rendered header is followed by two newlines.",
 )
 user_header_datetime_format = ConfigField[str](
     name="user_header_datetime_format",
     default="%H:%M:%S %d.%m.%Y",
-    description="strftime format used for the {datetime} header field",
+    description="strftime format used for the datetime in the default user-message header renderer",
 )
 user_header_timezone = ConfigField[str](
     name="user_header_timezone",
-    default="UTC",
-    description="IANA timezone used when a connector cannot resolve the user's timezone",
+    default="Europe/Moscow",
+    description="IANA timezone used when a connector cannot resolve the user's timezone; defaults to Moscow time (UTC+3)",
 )
 
 
@@ -47,12 +53,13 @@ def _configured_timezone(agent: Agent) -> tzinfo:
         raise ValueError(f"Invalid user_header_timezone: {timezone_name!r}") from exc
 
 
-async def _user_timezone(ctx: BeforeLlmCallCtx, item: DialogItem) -> tzinfo:
+async def _user_timezone(run: RunCtx, item: DialogItem) -> tzinfo:
     try:
-        connector = ctx.run.agent.connector_manager.resolve_for_origin(item.origin)
+        connector = run.agent.connector_manager.resolve_for_origin(item.origin)
     except LookupError:
-        return _configured_timezone(ctx.run.agent)
-    return resolved if (resolved := await await_if_needed(connector.get_user_timezone(item.origin))) else _configured_timezone(ctx.run.agent)
+        return _configured_timezone(run.agent)
+    item_run = replace(run, connector=connector, origin=item.origin, user=item.user)
+    return resolved if (resolved := await await_if_needed(connector.get_user_timezone(item_run, item.user))) else _configured_timezone(run.agent)
 
 
 @before_run(priority=1000)
@@ -104,34 +111,36 @@ async def update_user_name(ctx: BeforeRunCtx) -> None:
     ctx.run.state["user_name"] = current_name
 
 
-def _render_header(item: DialogItem, template: str, datetime_format: str, user_timezone: tzinfo, user_name: str) -> str:
+async def _default_user_header(run: RunCtx, item: DialogItem) -> str:
+    user_timezone = await _user_timezone(run, item)
+    datetime_format = run.agent.config.get(user_header_datetime_format)
+    user_name = str(run.state.get("user_name", ""))
     created_at = item.created_at
     if created_at.tzinfo is None:
         created_at = created_at.replace(tzinfo=UTC)
-    values = {
-        "datetime": created_at.astimezone(user_timezone).strftime(datetime_format),
-        "user": item.user,
-        "name": user_name,
-    }
-    try:
-        return template.format(**values).rstrip()
-    except (IndexError, KeyError, ValueError) as exc:
-        raise ValueError("Invalid user_header_template; supported fields are {datetime}, {user}, and {name}") from exc
+    datetime_value = created_at.astimezone(user_timezone).strftime(datetime_format)
+    return f"[{datetime_value} | {item.user} | {user_name}]"
+
+
+async def _render_configured_header(renderer: UserHeaderRenderer, run: RunCtx, item: DialogItem) -> str | None:
+    rendered = await await_if_needed(renderer(run, item))
+    if rendered is not None and not isinstance(rendered, str):
+        raise TypeError("user_header_renderer must return str or None")
+    return rendered.rstrip() if rendered else rendered
 
 
 @before_llm_call(priority=-1000)
 async def add_user_message_headers(ctx: BeforeLlmCallCtx) -> None:
     """Add metadata headers to transient dialog copies sent to the LLM."""
-    template = ctx.run.agent.config.get(user_header_template)
-    if not template:
+    renderer = ctx.run.agent.config.get(user_header_renderer)
+    if not renderer:
         return
-    datetime_format = ctx.run.agent.config.get(user_header_datetime_format)
     for index, item in enumerate(ctx.dialog):
         if item.role != DialogRole.USER:
             continue
-        user_timezone = await _user_timezone(ctx, item)
-        user_name = ctx.run.state.get("user_name", "")
-        header = _render_header(item, template, datetime_format, user_timezone, str(user_name))
+        header = await _render_configured_header(renderer, ctx.run, item)
+        if not header:
+            continue
         prefix = f"{header}\n\n"
         if item.content.startswith(prefix):
             continue
@@ -141,7 +150,7 @@ async def add_user_message_headers(ctx: BeforeLlmCallCtx) -> None:
 @instruction(priority=-200)
 def describe_user_message_headers(ctx: InstructionCtx) -> str | None:
     """Tell the llm that configured user-message headers are metadata."""
-    if not ctx.run.agent.config.get(user_header_template):
+    if not ctx.run.agent.config.get(user_header_renderer):
         return None
     return '''
 # Message headers
@@ -151,9 +160,10 @@ Message headers are auto-generated and contain metadata (time / user id / user n
 
 __all__ = [
     "describe_user_message_headers",
+    "UserHeaderRenderer",
     "update_user_name",
     "user_header_datetime_format",
-    "user_header_template",
+    "user_header_renderer",
     "user_header_timezone",
 ]
 

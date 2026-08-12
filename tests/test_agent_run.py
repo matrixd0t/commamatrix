@@ -107,8 +107,8 @@ class RecordingConnector(Connector[StubOrigin]):
         self.sent.append(item)
         return ext_id
 
-    async def send_stream_chunk(self, origin: StubOrigin, delta: StreamDelta) -> None:
-        self.stream_chunks.append(delta)
+    async def send_stream_chunk(self, run: RunCtx, chunk: StreamDelta) -> None:
+        self.stream_chunks.append(chunk)
 
 
 class MockLLMAdapter(LLMAdapter):

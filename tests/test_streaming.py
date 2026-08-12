@@ -17,6 +17,7 @@ from commamatrix.builtin.llm_http_adapter.chat_completions import ChatCompletion
 from commamatrix.builtin.llm_http_adapter.codec import ApiCodec
 from commamatrix.builtin.llm_http_adapter.responses import ResponsesCodec
 from commamatrix.components.connector import Connector
+from commamatrix.components.hook import RunCtx
 from commamatrix.components.llm_adapter import (
     LLMAdapter,
     LLMAdapterManager,
@@ -115,7 +116,7 @@ class TestConnectorStreaming:
         agent = stub_agent()
         conn = MinimalConnector(agent=agent)
         chunk = StreamDelta(content="test", delta_type="text")
-        await conn.send_stream_chunk(stub_origin(), chunk)
+        await conn.send_stream_chunk(RunCtx(agent=agent, origin=stub_origin(), user="test_user"), chunk)
 
     def test_http_connector_supports_streaming_true(self):
         from commamatrix.builtin.http_connector.connector import HttpConnector
@@ -603,7 +604,8 @@ class TestHttpConnectorStreaming:
             delta_type="tool_call",
             meta={"tool_name": "execute", "tool_call_id": "tc1"},
         )
-        await conn.send_stream_chunk(http_origin, chunk)
+        run = RunCtx(agent=agent, origin=http_origin, user="http:1")
+        await conn.send_stream_chunk(run, chunk)
 
         assert not queue.empty()
         item = await queue.get()
@@ -619,7 +621,8 @@ class TestHttpConnectorStreaming:
         agent = stub_agent()
         conn = HttpConnector(agent=agent)
         chunk = StreamDelta(content="x", delta_type="text")
-        await conn.send_stream_chunk(stub_origin(), chunk)
+        run = RunCtx(agent=agent, origin=stub_origin(), user="test_user")
+        await conn.send_stream_chunk(run, chunk)
 
     @pytest.mark.asyncio
     async def test_send_stream_chunk_no_queue_ignored(self):
@@ -630,4 +633,5 @@ class TestHttpConnectorStreaming:
         agent = stub_agent()
         conn = HttpConnector(agent=agent)
         chunk = StreamDelta(content="x", delta_type="text")
-        await conn.send_stream_chunk(HttpOrigin(http_user_id=999), chunk)
+        run = RunCtx(agent=agent, origin=HttpOrigin(http_user_id=999), user="http:999")
+        await conn.send_stream_chunk(run, chunk)
