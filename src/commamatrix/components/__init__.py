@@ -122,6 +122,7 @@ from .llm_adapter import (
     LLMResponseTextBlock,
     LLMResponseToolCallBlock,
     LLMTruncatedError,
+    StructuredOutputModel,
     PythonLLMAdapterSource,
     StopReason,
     StreamDelta,
@@ -129,7 +130,9 @@ from .llm_adapter import (
     ToolCall,
     ToolCallResult,
     Usage,
+    parse_structured_output,
     reasoning_level,
+    structured_output_schema,
 )
 from .server import (
     SERVER_ROOT,
@@ -234,6 +237,7 @@ __all__ = [
     "LLMResponseTextBlock",
     "LLMResponseToolCallBlock",
     "LLMTruncatedError",
+    "StructuredOutputModel",
     "OnAgentStartCtx",
     "OnErrorCtx",
     "OnParsedCtx",
@@ -299,10 +303,12 @@ __all__ = [
     "on_agent_start",
     "on_error",
     "on_parsed",
+    "parse_structured_output",
     "read_file",
     "reasoning_level",
     "resolve_log_level",
     "resolve_origin_type",
+    "structured_output_schema",
     "tool",
 ]
 

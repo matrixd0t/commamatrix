@@ -57,11 +57,13 @@ from ...components.llm_adapter import (
     LLMResponseError,
     LLMResponseToolCallBlock,
     LLMTruncatedError,
+    StructuredOutputModel,
     StopReason,
     StreamDelta,
     StreamEnd,
     ToolCall,
     ToolCallResult,
+    parse_structured_output,
     reasoning_level,  # noqa: F401 - re-exported by core.agent
 )
 from ...components.storage import STORAGE_ATTRIBUTE
@@ -396,6 +398,7 @@ class Agent:
         instructions: str | None = None,
         dialog_items: list[DialogItem] | None = None,
         tools: str | None,
+        response_format: StructuredOutputModel | None = None,
         user: str = "agent",
         meta: dict[str, Any] | None = None,
         state: dict[str, Any] | None = None,
@@ -405,7 +408,7 @@ class Agent:
         runner_key: str | None = None,
         on_error: Callable[[Exception], Any] | None = None,
     ) -> AfterLlmCallCtx | str | None:
-        """Forward a headless run to the optional subagent extension."""
+        """Forward a headless run; ``response_format`` accepts a Pydantic model."""
         from ...builtin.subagent import submit_run as submit_subagent_run
 
         return await submit_subagent_run(
@@ -414,6 +417,7 @@ class Agent:
             instructions=instructions,
             dialog_items=dialog_items,
             tools=tools,
+            response_format=response_format,
             user=user,
             meta=meta,
             state=state,
@@ -481,12 +485,14 @@ class Agent:
                         run=run,
                         dialog=dialog,
                         tools=tools_list,
+                        response_format=run.response_format,
                         reasoning=self._resolve_reasoning(run),
                     )
 
                     await self.hook_manager.fire(HookEventType.BEFORE_LLM_CALL, before_llm_ctx)
                     if run.adapter is not selected_adapter or run.llm is not selected_llm:
                         before_llm_ctx.reasoning = self._resolve_reasoning(run)
+                    run.response_format = before_llm_ctx.response_format
 
                     connector = self.connector_manager.resolve_for_origin(run.origin)
                     stream = connector.supports_streaming
@@ -540,6 +546,8 @@ class Agent:
                             tool_parent_item_ids.append(previous_item_id)
 
                     after_llm_ctx = AfterLlmCallCtx(run=run, response=llm_response)
+                    if before_llm_ctx.response_format is not None and not tool_calls:
+                        parse_structured_output(llm_response, before_llm_ctx.response_format)
                     await self.hook_manager.fire(HookEventType.AFTER_LLM_CALL, after_llm_ctx)
                     self._validate_response(after_llm_ctx.response)
                     self.logger.info("LLM response received run_id=%s blocks=%d stop_reason=%s", run.run_id, len(llm_response.content), llm_response.stop_reason)

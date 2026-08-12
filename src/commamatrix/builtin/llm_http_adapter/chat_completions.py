@@ -178,6 +178,11 @@ class ChatCompletionsCodec(ApiCodec):
         request = {"model": self._model_name(model), "messages": messages, **ctx.llm_call_params}
         if ctx.reasoning is not None:
             request["reasoning_effort"] = ctx.reasoning
+        if ctx.response_format is not None and "response_format" not in request:
+            request["response_format"] = {
+                "type": "json_schema",
+                "json_schema": self.structured_output_format(ctx),
+            }
         if ctx.tools:
             request["tools"] = self.serialize_tools(ctx)
         return request

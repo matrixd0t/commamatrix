@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from ..core.agent import Agent
     from .connector import Connector
     from .dialog import DialogItem, DialogOrigin
-    from .llm_adapter import LLM, LLMAdapter, LLMResponse, ToolCall, ToolCallResult
+    from .llm_adapter import LLM, LLMAdapter, LLMResponse, StructuredOutputModel, ToolCall, ToolCallResult
     from .tool import RunTools, ToolDescriptor
 
 CtxT = TypeVar("CtxT")
@@ -64,6 +64,7 @@ class RunCtx:
     origin: DialogOrigin
     user: str
     llm: LLM | None = None
+    response_format: StructuredOutputModel | None = None
     run_id: str = field(default_factory=lambda: uuid4().hex)
     iteration: int = 0
     state: dict[str, Any] = field(default_factory=dict)
@@ -121,6 +122,7 @@ class BeforeLlmCallCtx(BaseEventCtx):
     reasoning: str | None = None
     dialog: list[DialogItem]
     tools: list[ToolDescriptor]
+    response_format: StructuredOutputModel | None = None
     llm_call_params: dict = field(default_factory=dict)
 
 
@@ -138,6 +140,11 @@ class AfterLlmCallCtx(BaseEventCtx):
             if block.item_type().value == "output"
         ]
         return "\n\n".join(parts) or None
+
+    @property
+    def structured_output(self) -> Any:
+        """Return the validated structured output, when requested."""
+        return self.response.structured_output
 
 
 @dataclass(slots=True, kw_only=True)

@@ -9,6 +9,8 @@ from enum import StrEnum
 from json import dumps
 from typing import TYPE_CHECKING, Any
 
+from pydantic import BaseModel, ValidationError
+
 from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.manager import ServiceInstanceManager
 from ..core.classes.service import AbstractService
@@ -41,6 +43,42 @@ class LLMResponseError(LLMError):
 
 class LLMTruncatedError(LLMError):
     ...
+
+
+StructuredOutputModel = type[BaseModel]
+
+
+def _validate_structured_output_model(value: Any) -> StructuredOutputModel:
+    if not isinstance(value, type) or not issubclass(value, BaseModel):
+        raise TypeError("response_format must be a pydantic BaseModel subclass")
+    return value
+
+
+def structured_output_schema(response_format: StructuredOutputModel) -> dict[str, Any]:
+    """Return the provider-neutral JSON Schema for a structured response model."""
+    model = _validate_structured_output_model(response_format)
+    return {
+        "name": model.__name__,
+        "schema": model.model_json_schema(),
+    }
+
+
+def parse_structured_output(response: LLMResponse, response_format: StructuredOutputModel) -> Any:
+    """Validate the final text response against the requested Pydantic model."""
+    model = _validate_structured_output_model(response_format)
+    text = "\n".join(
+        block.content_str()
+        for block in response.content
+        if block.item_type() is DialogItemType.OUTPUT
+    )
+    if not text:
+        raise LLMResponseError(f"LLM returned no text for structured output {model.__name__!r}")
+    try:
+        parsed = model.model_validate_json(text)
+    except (TypeError, ValueError, ValidationError) as exc:
+        raise LLMResponseError(f"LLM returned invalid structured output for {model.__name__!r}") from exc
+    response.structured_output = parsed
+    return parsed
 
 
 def _normalize_modalities(value: Any) -> set[DataType]:
@@ -234,6 +272,7 @@ class LLMResponse:
     content: list[LLMResponseBlock] = field(default_factory=list)
     usage: Usage | None = None
     raw: Any = None
+    structured_output: Any = None
     meta: dict[str, Any] = field(default_factory=dict)
 
 
