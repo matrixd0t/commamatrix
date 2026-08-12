@@ -14,7 +14,8 @@ import sys
 import types
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator, MutableMapping
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Self, cast
 from uuid import uuid4
@@ -33,7 +34,7 @@ from ...components.config import (
     close_agent_logging,
     get_agent_logger,
 )
-from ...components.dialog import DialogItem, DialogItemType, DialogRole
+from ...components.dialog import DialogItem, DialogItemType, DialogOrigin, DialogRole
 from ...components.file_storage import FILE_STORAGE_ATTRIBUTE
 from ...components.hook import (
     AfterLlmCallCtx,
@@ -423,12 +424,15 @@ class Agent:
             on_error=on_error,
         )
 
-    @asynccontextmanager
-    async def _typing(self, run: RunCtx):
-        """Wrap the run in typing for its current origin."""
-        connector = self.connector_manager.resolve_for_origin(run.origin)
-        async with connector.typing(run.origin):
-            yield
+    async def _enter_typing(self, run: RunCtx) -> tuple[DialogOrigin, AbstractAsyncContextManager[None]]:
+        """Enter typing for a snapshot of the run's current origin."""
+        origin = run.origin
+        connector = self.connector_manager.resolve_for_origin(origin)
+        # Keep the context manager's cleanup bound to the origin active at entry.
+        typing_run = replace(run, connector=connector, origin=origin)
+        context = connector.typing(typing_run)
+        await context.__aenter__()
+        return origin, context
 
     async def _restore_chain_state(self, run: RunCtx, last_item_id: int | None) -> None:
         """Restore chain_state from the conversation branch ending at last_item_id."""
@@ -445,6 +449,8 @@ class Agent:
         """Run: LLM call -> tools -> send until no calls remain."""
         await self._ensure_started()
         error: Exception | None = None
+        typing_origin: DialogOrigin | None = None
+        typing_context: AbstractAsyncContextManager[None] | None = None
         self.logger.info("Run started run_id=%s history_items=%d", run.run_id, len(history or ()))
 
         try:
@@ -460,7 +466,8 @@ class Agent:
             self._select_model(run)
             self.logger.debug("Run model selected run_id=%s model=%s adapter=%s", run.run_id, run.llm.model_name if run.llm else None, type(run.adapter).__name__ if run.adapter else None)
 
-            async with self._typing(run):
+            typing_origin, typing_context = await self._enter_typing(run)
+            try:
                 while True:
                     run.iteration += 1
                     self.logger.debug("Run iteration run_id=%s iteration=%d", run.run_id, run.iteration)
@@ -501,7 +508,7 @@ class Agent:
                             stream_id = stream_ids.setdefault(stream_key, f"stream:{uuid4().hex}")
                             event.meta["stream_id"] = stream_id
                             event.meta["previous_item_id"] = last_item_id
-                            await connector.send_stream_chunk(run.origin, event)
+                            await connector.send_stream_chunk(run, event)
                         elif isinstance(event, LLMResponseBlock):
                             blocks.append(event)
                         elif isinstance(event, StreamEnd):
@@ -547,9 +554,19 @@ class Agent:
                         last_item_id, _ = await self._run_tool_lifecycle(run, tool_call, last_item_id)
 
                     if tool_calls:
+                        if typing_origin != run.origin:
+                            current_typing = typing_context
+                            typing_context = None
+                            if current_typing is not None:
+                                await current_typing.__aexit__(None, None, None)
+                            typing_origin, typing_context = await self._enter_typing(run)
                         continue
 
                     return after_llm_ctx
+
+            finally:
+                if typing_context is not None:
+                    await typing_context.__aexit__(None, None, None)
 
         except asyncio.CancelledError:
             raise
@@ -585,11 +602,7 @@ class Agent:
                     if plugin_targets:
                         await self.add_extensions(*plugin_targets)
                 if not self._scope_has_attribute(STORAGE_ATTRIBUTE):
-                    try:
-                        await self.add_extensions(FP + ".builtin.sql.sqlite_storage")
-                    except MissingExtensionDependencyError as exc:
-                        if exc.dependency_module != "aiosqlite":
-                            raise
+                    await self.add_extensions(FP + ".builtin.sql.sqlite_storage")
                 if not self._scope_has_attribute(FILE_STORAGE_ATTRIBUTE):
                     await self.add_extensions(FP + ".builtin.simple_fs")
                 await self.lifecycle.sync_registered(self._extension_scope)
@@ -666,7 +679,7 @@ class Agent:
                         run.last_item_id = last_item_id
                         connector = self.connector_manager.resolve_for_origin(item.origin)
                         self.logger.debug("Publishing input item connector=%s", type(connector).__name__)
-                        await connector.publish_item(item.origin, item)
+                        await connector.publish_item(run, item)
                 else:
                     last_item_id = item.item_id
                     run.last_item_id = last_item_id
@@ -778,7 +791,7 @@ class Agent:
         before_send_ctx = BeforeSendCtx(run=run, dialog_item=dialog_item)
         await self.hook_manager.fire(HookEventType.BEFORE_SEND, before_send_ctx)
 
-        connector = self.connector_manager.resolve_for_origin(run.origin)
+        connector = self.connector_manager.resolve_for_origin(dialog_item.origin)
         self.logger.debug("Sending item type=%s connector=%s", dialog_item.item_type.value, type(connector).__name__)
         external_id = await connector.send(run, dialog_item)
         dialog_item.external_id = external_id or None
@@ -789,7 +802,7 @@ class Agent:
         if saved_id is not None:
             dialog_item.item_id = saved_id
             run.last_item_id = saved_id
-            await connector.publish_item(dialog_item.origin, dialog_item)
+            await connector.publish_item(run, dialog_item)
         await self.hook_manager.fire(HookEventType.AFTER_SEND, AfterSendCtx(run=run, dialog_item=dialog_item, external_id=dialog_item.external_id))
         return saved_id if saved_id is not None else last_item_id
 

@@ -1079,6 +1079,7 @@ async function send(){
   const failed=pendingAttachments.some(attachment=>attachment.status!=="ready");if(failed){setUiStatus("removeFailedUploads");return}
   const attachments=pendingAttachments.filter(attachment=>attachment.status==="ready"&&(attachment.file_id||attachment.external&&attachment.url));
   if(!text&&!attachments.length)return;
+  scrollToBottom({force:true,smooth:true});
   const fallbackParentId=latestGlobalItemId();
   const parentId=newRootSelected?null:(selectedHeadId??fallbackParentId);
   const sent=await submitMessage(text,parentId,null,attachments);if(sent){inputEl.value="";inputEl.style.height="auto";clearPendingAttachments()}else adjustInputHeight();
