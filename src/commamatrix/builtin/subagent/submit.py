@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from ...components.dialog import DialogItem, DialogItemType, DialogRole
 from ...components.hook import AfterLlmCallCtx, RunCtx
+from ...components.llm_adapter import StructuredOutputModel
 from ...utils import FP
 from .policy import validate_allowed_tools
 from .service import SubagentService
@@ -24,6 +25,7 @@ async def submit_run(
     instructions: str | None = None,
     dialog_items: list[DialogItem] | None = None,
     tools: str | None,
+    response_format: StructuredOutputModel | None = None,
     user: str = "agent",
     meta: dict[str, Any] | None = None,
     state: dict[str, Any] | None = None,
@@ -97,6 +99,7 @@ async def submit_run(
         connector=connector,
         origin=origin,
         user=user,
+        response_format=response_format,
         state=run_state,
         chain_state={"allowed_tools": tools},
         last_item_id=parent_item_id,

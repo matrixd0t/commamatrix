@@ -148,6 +148,18 @@ class ResponsesCodec(ApiCodec):
         request: dict[str, Any] = {"model": self._model_name(model), "input": input_items, **ctx.llm_call_params}
         if ctx.reasoning is not None:
             request["reasoning_level"] = {"effort": ctx.reasoning}
+        if ctx.response_format is not None:
+            text = request.get("text")
+            if text is None:
+                text = {}
+            if not isinstance(text, dict):
+                raise ValueError("Responses API 'text' request parameter must be an object")
+            text = dict(text)
+            text.setdefault("format", {
+                "type": "json_schema",
+                **self.structured_output_format(ctx),
+            })
+            request["text"] = text
         if ctx.tools:
             request["tools"] = self.serialize_tools(ctx)
         return request

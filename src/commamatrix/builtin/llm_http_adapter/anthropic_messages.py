@@ -143,6 +143,18 @@ class AnthropicMessagesCodec(ApiCodec):
         request = {"model": self._model_name(model), "messages": messages, **ctx.llm_call_params}
         if system_parts:
             request["system"] = "\n\n".join(system_parts)
+        if ctx.response_format is not None:
+            output_config = request.get("output_config")
+            if output_config is None:
+                output_config = {}
+            if not isinstance(output_config, dict):
+                raise ValueError("Anthropic API 'output_config' request parameter must be an object")
+            output_config = dict(output_config)
+            output_config.setdefault("format", {
+                "type": "json_schema",
+                "schema": self.structured_output_format(ctx)["schema"],
+            })
+            request["output_config"] = output_config
         if ctx.tools:
             request["tools"] = self.serialize_tools(ctx)
         return request

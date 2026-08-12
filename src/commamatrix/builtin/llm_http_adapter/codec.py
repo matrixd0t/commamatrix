@@ -17,6 +17,7 @@ from ...components.llm_adapter import (
     LLM,
     LLMResponse,
     LLMResponseBlock,
+    structured_output_schema,
     StreamDelta,
     StreamEnd,
 )
@@ -256,6 +257,17 @@ class ApiCodec(ABC):
     @staticmethod
     def _model_name(model: LLM | str) -> str:
         return model if isinstance(model, str) else model.model_name
+
+    @staticmethod
+    def structured_output_format(ctx: BeforeLlmCallCtx) -> dict[str, Any] | None:
+        if ctx.response_format is None:
+            return None
+        schema = structured_output_schema(ctx.response_format)
+        return {
+            "name": schema["name"],
+            "strict": True,
+            "schema": schema["schema"],
+        }
 
     @abstractmethod
     async def build_request(self, *, model: LLM | str, ctx: BeforeLlmCallCtx) -> dict[str, Any]:
