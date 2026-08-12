@@ -56,7 +56,7 @@ class BaseEventCtx:
 @dataclass(slots=True, kw_only=True)
 class RunCtx:
     """Per-run context injected into every hook. Carries agent, connector,
-    origin, user identity, iteration count, and mutable state dict."""
+    origin, user identity, iteration count, persistence mode, and mutable state dict."""
 
     agent: Agent
     connector: Connector | None = None
@@ -65,6 +65,8 @@ class RunCtx:
     user: str
     llm: LLM | None = None
     response_format: StructuredOutputModel | None = None
+    save: bool = True
+    """Whether input, output, and tool items from this run are stored."""
     run_id: str = field(default_factory=lambda: uuid4().hex)
     iteration: int = 0
     state: dict[str, Any] = field(default_factory=dict)

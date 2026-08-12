@@ -23,19 +23,21 @@ async def submit_run(
     *,
     parent_item_id: int | None = None,
     instructions: str | None = None,
+    prompt: str | None = None,
     dialog_items: list[DialogItem] | None = None,
     tools: str | None,
     response_format: StructuredOutputModel | None = None,
     user: str = "agent",
     meta: dict[str, Any] | None = None,
     state: dict[str, Any] | None = None,
+    save: bool = False,
     wait_for_result: bool = True,
     conflict_policy: Literal["replace", "skip"] = "skip",
     runner_namespace: str = "subagent",
     runner_key: str | None = None,
     on_error: Callable[[Exception], Any] | None = None,
 ) -> AfterLlmCallCtx | str | None:
-    """Submit a headless run and resolve its result through the internal connector."""
+    """Submit a headless run, optionally retaining its dialog in storage."""
     await agent._ensure_started()
     target = FP + ".builtin.subagent"
     if not any(
@@ -73,6 +75,18 @@ async def submit_run(
                 previous_item_id=parent_item_id,
             ),
         )
+    if prompt is not None:
+        items.insert(
+            1 if instructions else 0,
+            DialogItem(
+                content=prompt,
+                item_type=DialogItemType.INPUT,
+                role=DialogRole.USER,
+                origin=origin,
+                user=user,
+                previous_item_id=parent_item_id,
+            ),
+        )
 
     if not items and parent_item_id is None:
         service.unregister(origin)
@@ -100,6 +114,7 @@ async def submit_run(
         origin=origin,
         user=user,
         response_format=response_format,
+        save=save,
         state=run_state,
         chain_state={"allowed_tools": tools},
         last_item_id=parent_item_id,

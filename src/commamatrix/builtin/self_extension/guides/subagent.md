@@ -138,6 +138,7 @@ The lower-level function is also available as
 A run must provide at least one of these inputs:
 
 - a non-empty `instructions` string;
+- a `prompt` string;
 - a list of `dialog_items`;
 - a `parent_item_id` from which to load an existing branch.
 
@@ -145,6 +146,12 @@ A run must provide at least one of these inputs:
 different from `@instruction` output: normal dynamic instruction aggregation is
 skipped for headless runs, while the explicit input is part of the submitted
 history.
+
+`prompt` is stored as a `USER` input item before `dialog_items`. When both
+`instructions` and `prompt` are provided, the prompt follows the instructions.
+Headless runs default to `save=False`, so their input, output, and tool items
+are kept for the current run but are not written to storage. Pass `save=True`
+to persist the run contents.
 
 ## Dialog Continuation
 
@@ -171,9 +178,10 @@ its own storage. For a different agent with separate storage, pass the relevant
 context explicitly through `instructions` or `dialog_items` instead of
 reusing the caller's item ID.
 
-The target's branch is persisted with an internal origin and is not sent to an
-external connector. The captured `OUTPUT` items are returned to the submitter;
-other target history remains target-agent history.
+With `save=True`, the target's branch is persisted with an internal origin and
+is not sent to an external connector. With the default `save=False`, the target
+history exists only for the duration of the run. In both modes, captured
+`OUTPUT` items are returned to the submitter.
 
 ## Tool Policy
 

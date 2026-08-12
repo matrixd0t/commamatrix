@@ -396,31 +396,35 @@ class Agent:
         *,
         parent_item_id: int | None = None,
         instructions: str | None = None,
+        prompt: str | None = None,
         dialog_items: list[DialogItem] | None = None,
         tools: str | None,
         response_format: StructuredOutputModel | None = None,
         user: str = "agent",
         meta: dict[str, Any] | None = None,
         state: dict[str, Any] | None = None,
+        save: bool = False,
         wait_for_result: bool = True,
         conflict_policy: Literal["replace", "skip"] = "skip",
         runner_namespace: str = "subagent",
         runner_key: str | None = None,
         on_error: Callable[[Exception], Any] | None = None,
     ) -> AfterLlmCallCtx | str | None:
-        """Forward a headless run; ``response_format`` accepts a Pydantic model."""
+        """Forward a headless run with optional prompt and persistence control."""
         from ...builtin.subagent import submit_run as submit_subagent_run
 
         return await submit_subagent_run(
             self,
             parent_item_id=parent_item_id,
             instructions=instructions,
+            prompt=prompt,
             dialog_items=dialog_items,
             tools=tools,
             response_format=response_format,
             user=user,
             meta=meta,
             state=state,
+            save=save,
             wait_for_result=wait_for_result,
             conflict_policy=conflict_policy,
             runner_namespace=runner_namespace,
@@ -477,7 +481,7 @@ class Agent:
                     self.logger.debug("Run iteration run_id=%s iteration=%d", run.run_id, run.iteration)
                     run.tool_output_tail = None
 
-                    dialog = await self._load_dialog(last_item_id)
+                    dialog = await self._load_run_dialog(run, last_item_id)
                     tools_list = list(self.tool_manager.descriptors)
                     selected_adapter = run.adapter
                     selected_llm = run.llm
@@ -584,9 +588,9 @@ class Agent:
             await self._handle_error(run, exc)
 
         finally:
-            if run.last_item_id is not None:
+            if run.last_item_id is not None or not run.save:
                 try:
-                    run.dialog_items = await self._load_dialog(run.last_item_id)
+                    run.dialog_items = await self._load_run_dialog(run, run.last_item_id)
                 except Exception:  # noqa: BLE001
                     run.dialog_items = []
             await self.hook_manager.fire(HookEventType.AFTER_RUN, AfterRunCtx(run=run, error=error))
@@ -671,7 +675,7 @@ class Agent:
         run.llm = llm
 
     async def _store_history(self, run: RunCtx, history: list[DialogItem] | None) -> int | None:
-        """Persist items in a history batch and return the last item_id."""
+        """Store or retain items in a history batch and return the last item_id."""
         last_item_id: int | None = run.last_item_id
         if history is not None:
             for item in history:
@@ -679,6 +683,9 @@ class Agent:
                     if last_item_id is not None and item.previous_item_id is None:
                         item.previous_item_id = last_item_id
                     item.meta.setdefault("chain", {}).update(run.chain_state)
+                    if not run.save:
+                        run.dialog_items.append(item)
+                        continue
                     self.logger.debug("Saving input item type=%s has_previous=%s", item.item_type.value, item.previous_item_id is not None)
                     last_item_id = await self.storage.save_event(item)
                     self.logger.debug("Saved input item has_id=%s", last_item_id is not None)
@@ -692,6 +699,13 @@ class Agent:
                     last_item_id = item.item_id
                     run.last_item_id = last_item_id
         return last_item_id
+
+    async def _load_run_dialog(self, run: RunCtx, last_item_id: int | None) -> list[DialogItem]:
+        """Load persisted history and append items kept only for this run."""
+        dialog = await self._load_dialog(last_item_id)
+        if not run.save:
+            dialog.extend(run.dialog_items)
+        return dialog
 
     async def _resolve_previous_item(self, parsed: OnParsedCtx) -> None:
         """Link the first dialog item to its replied-to message by external_id."""
@@ -794,7 +808,7 @@ class Agent:
         return last_item_id, after_ctx.result
 
     async def _send_and_store_item(self, run: RunCtx, dialog_item: DialogItem, last_item_id: int | None) -> int | None:
-        """Let the connector render an item, then persist it regardless of delivery."""
+        """Deliver an item and persist it when the run's save mode allows it."""
         dialog_item.meta["chain"] = dict(run.chain_state)
         before_send_ctx = BeforeSendCtx(run=run, dialog_item=dialog_item)
         await self.hook_manager.fire(HookEventType.BEFORE_SEND, before_send_ctx)
@@ -804,6 +818,11 @@ class Agent:
         external_id = await connector.send(run, dialog_item)
         dialog_item.external_id = external_id or None
         self.logger.debug("Item delivered external_id_present=%s", dialog_item.external_id is not None)
+
+        if not run.save:
+            run.dialog_items.append(dialog_item)
+            await self.hook_manager.fire(HookEventType.AFTER_SEND, AfterSendCtx(run=run, dialog_item=dialog_item, external_id=dialog_item.external_id))
+            return last_item_id
 
         saved_id = await self.storage.save_event(dialog_item)
         self.logger.debug("Saved output item id_present=%s", saved_id is not None)
