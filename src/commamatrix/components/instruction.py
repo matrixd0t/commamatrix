@@ -211,9 +211,9 @@ def connector_modalities(ctx: InstructionCtx) -> str | None:
 
     markers = ", ".join(f"[{modality.value}:file_id_or_path]" for modality in attachment_modalities)
     return (
+        "# Attachments\n"
         "To attach content from local storage to your response, write a marker "
-        f"using one of these forms: {markers}. "
-        "Use a file ID or a path as the value."
+        f"using one of these forms: {markers}. Use a file ID or a path as the value."
     )
 
 

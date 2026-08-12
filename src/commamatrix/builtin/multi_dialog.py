@@ -9,7 +9,6 @@ from ..components.dialog import ORIGIN_REGISTRY, DialogOrigin
 from ..components.hook import AfterSendCtx, BeforeToolCallCtx, after_send
 from ..components.instruction import InstructionCtx, instruction
 from ..components.tool import tool
-from ..utils import await_if_needed
 
 
 def _type_name(annotation: object) -> str:
@@ -147,7 +146,7 @@ async def get_user_info(user_names_or_ids: list[str | int], ctx: BeforeToolCallC
         search_key = numeric if numeric is not None else user_identifier
         result: dict[str, object] | None = None
         for connector in candidate_connectors:
-            found = await await_if_needed(connector.get_user_info(search_key))
+            found = await connector.get_user_info(search_key)
             if not isinstance(found, UserInfo):
                 continue
             found_id = found.id
@@ -235,7 +234,7 @@ async def apply_new_origin(ctx: AfterSendCtx) -> None:
 
     identity = getattr(new_origin, identity_fields[0])
     connector = ctx.run.agent.connector_manager.resolve_for_origin(new_origin)
-    user_info = await await_if_needed(connector.get_user_info(identity))
+    user_info = await connector.get_user_info(identity)
 
     resolved_id = user_info.id if isinstance(user_info, UserInfo) else None
     if resolved_id is None:

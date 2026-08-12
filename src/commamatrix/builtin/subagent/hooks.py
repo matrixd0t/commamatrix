@@ -59,13 +59,13 @@ async def enforce_allowed_tools(ctx: BeforeToolCallCtx) -> None:
 
 
 @instruction(priority=-100)
-def available_subagents(_ctx: InstructionCtx) -> str:
+def available_subagents(_ctx: InstructionCtx) -> str | None:
     """Describe the agents that can receive delegated work."""
-    agents = sorted(agent_by_name.values(), key=lambda registered: registered.name)
-    lines = ["# Subagents"]
-    for registered in agents:
-        lines.extend((f"## {registered.name}", registered.description))
-    return "\n".join(lines)
+    lines = []
+    for registered in sorted(agent_by_name.values(), key=lambda a: a.name):
+        if registered != _ctx.run.agent:
+            lines.extend((f"## {registered.name}", registered.description))
+    return "\n".join(["# Available subagents"] + lines) if lines else None
 
 
 __all__ = [
