@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from typing import Any
 
@@ -10,6 +11,8 @@ import pytest
 from commamatrix import InstructionCtx
 from commamatrix.builtin.subagent import hooks
 from commamatrix.builtin.subagent import tools as subagent_tools
+import commamatrix.builtin.subagent.submit as submit_module
+from commamatrix.components.dialog import DialogItem, DialogItemType, DialogRole
 from commamatrix.components.hook import BeforeToolCallCtx, RunCtx
 from commamatrix.components.llm_adapter import ToolCall
 from commamatrix.core.agent.agent import Agent, agent_by_name, get_subagent_by_name
@@ -96,6 +99,71 @@ async def test_prepare_subagent_call_rejects_missing_parent_item_id():
 
     with pytest.raises(ValueError, match="persisted parent item"):
         await hooks.prepare_subagent_call(ctx)
+
+
+@pytest.mark.asyncio
+async def test_submit_run_orders_instructions_prompt_and_dialog_items(monkeypatch):
+    target = submit_module.FP + ".builtin.subagent"
+    captured: dict[str, Any] = {}
+    result = object()
+
+    class _Connector:
+        def __init__(self) -> None:
+            self.future = asyncio.get_running_loop().create_future()
+
+        def waiter(self, _origin):
+            return self.future
+
+    connector = _Connector()
+
+    class _Service:
+        def make_origin(self, task_id, parent_item_id):
+            return stub_origin(task_id)
+
+        def register(self, origin, *, wait_for_result, on_error=None):
+            return connector
+
+        async def complete(self, origin, completed, error=None):
+            connector.future.set_result(completed)
+
+        def unregister(self, origin):
+            pass
+
+    class _Runner:
+        async def submit(self, key, coroutine, *, conflict_policy):
+            return asyncio.create_task(coroutine)
+
+    class _Agent:
+        extension_scope = (target,)
+        services = SimpleNamespace(require=lambda _service_type: _Service())
+        runner = _Runner()
+
+        async def _ensure_started(self):
+            pass
+
+        async def add_extensions(self, _target):
+            pass
+
+        async def run(self, run, *, history):
+            captured["run"] = run
+            captured["history"] = history
+            return result
+
+    monkeypatch.setattr(submit_module, "validate_allowed_tools", lambda tools: None)
+
+    returned = await submit_module.submit_run(
+        _Agent(),
+        instructions="system",
+        prompt="user",
+        dialog_items=[DialogItem(content="context", item_type=DialogItemType.INPUT, role=DialogRole.USER, origin=stub_origin())],
+        tools=None,
+    )
+
+    assert returned is result
+    assert [item.content for item in captured["history"]] == ["system", "user", "context"]
+    assert captured["history"][0].role is DialogRole.SYSTEM
+    assert captured["history"][1].role is DialogRole.USER
+    assert captured["run"].save is False
 
 
 def test_agent_name_is_registered():

@@ -355,6 +355,21 @@ class TestAgentRunTextResponse:
         assert item.item_type == DialogItemType.OUTPUT
 
     @pytest.mark.asyncio
+    async def test_run_without_save_keeps_items_in_memory(self):
+        text_block = LLMResponseTextBlock(content="Transient")
+        events = [text_block, StreamEnd(stop_reason=StopReason.END_TURN)]
+        agent, connector, storage = await _setup_agent(events)
+
+        run = _make_run_ctx(agent, connector)
+        run.save = False
+        history = [make_dialog_item("Prompt")]
+
+        await agent.run(run, history=history)
+
+        assert storage._items == {}
+        assert [item.content for item in run.dialog_items] == ["Prompt", "Transient"]
+
+    @pytest.mark.asyncio
     async def test_response_with_reasoning_block(self):
         reasoning = LLMResponseReasoningBlock(content="Thinking...")
         text = LLMResponseTextBlock(content="Answer")

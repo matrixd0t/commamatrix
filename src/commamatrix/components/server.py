@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import quote
 
 from ..core.classes.lifecycle_registry import lifecycle_component
@@ -49,6 +50,9 @@ class _Registration:
 @lifecycle_component(key="http_server", priority=100, after="connector_manager")
 class Server(AbstractService):
     """One Starlette application shared by all agent extensions."""
+
+    _start_lock: ClassVar[asyncio.Lock | None] = None
+    _start_lock_loop: ClassVar[asyncio.AbstractEventLoop | None] = None
 
     def __init__(self, agent: Agent) -> None:
         super().__init__(agent)
@@ -206,34 +210,69 @@ class Server(AbstractService):
         )
 
     async def start(self) -> None:
-        if self._uvicorn_server is not None and self._uvicorn_server.started:
+        if not self._registrations:
+            self.logger.debug("HTTP server startup skipped routes=0")
             return
-        try:
-            app = self.app
-            import uvicorn
-        except ImportError:
-            self.logger.warning("HTTP server dependency uvicorn is unavailable")
-            return
-        self.logger.info("HTTP server starting host=%s port=%d", self._host, self._port)
-        config = uvicorn.Config(
-            app=app,
-            host=self._host,
-            port=self._port,
-            log_level="warning",
-            use_colors=False,
-        )
-        self._uvicorn_server = uvicorn.Server(config)
-        listener_task = asyncio.create_task(self._uvicorn_server.serve())
-        self._listener_task = listener_task
-        while not self._uvicorn_server.started:
-            if self._uvicorn_server.should_exit:
-                await asyncio.gather(listener_task, return_exceptions=True)
-                self.logger.error("HTTP server failed to start host=%s port=%d", self._host, self._port)
-                raise RuntimeError(f"HTTP http_server failed to start on {self._host}:{self._port}")
-            await asyncio.sleep(0.01)
-        if self._uvicorn_server.servers:
-            self._bound_port = self._uvicorn_server.servers[0].sockets[0].getsockname()[1]
-        self.logger.info("HTTP server started host=%s port=%d", self._host, self._bound_port or self._port)
+        lock = self._get_start_lock()
+        async with lock:
+            if self._uvicorn_server is not None and self._uvicorn_server.started:
+                return
+            try:
+                app = self.app
+                import uvicorn
+            except ImportError:
+                self.logger.warning("HTTP server dependency uvicorn is unavailable")
+                return
+            port = self._select_port()
+            self.logger.info("HTTP server starting host=%s port=%d", self._host, port or self._port)
+            config = uvicorn.Config(
+                app=app,
+                host=self._host,
+                port=port,
+                log_level="warning",
+                use_colors=False,
+            )
+            self._uvicorn_server = uvicorn.Server(config)
+            listener_task = asyncio.create_task(self._uvicorn_server.serve())
+            self._listener_task = listener_task
+            while not self._uvicorn_server.started:
+                if self._uvicorn_server.should_exit:
+                    await asyncio.gather(listener_task, return_exceptions=True)
+                    self.logger.error("HTTP server failed to start host=%s port=%s", self._host, port or self._port)
+                    raise RuntimeError(f"HTTP http_server failed to start on {self._host}:{port or self._port}")
+                await asyncio.sleep(0.01)
+            if self._uvicorn_server.servers:
+                self._bound_port = self._uvicorn_server.servers[0].sockets[0].getsockname()[1]
+            self.logger.info("HTTP server started host=%s port=%d", self._host, self._bound_port or self._port)
+
+    async def refresh(self) -> None:
+        if self._registrations:
+            await self.start()
+        elif self._uvicorn_server is not None:
+            await self.stop()
+
+    @classmethod
+    def _get_start_lock(cls) -> asyncio.Lock:
+        loop = asyncio.get_running_loop()
+        if cls._start_lock_loop is not loop:
+            cls._start_lock = asyncio.Lock()
+            cls._start_lock_loop = loop
+        return cls._start_lock
+
+    def _select_port(self) -> int:
+        if self._port == 0 or self._port_is_available(self._host, self._port):
+            return self._port
+        self.logger.warning("HTTP server port occupied host=%s port=%d; requesting a free port", self._host, self._port)
+        return 0
+
+    @staticmethod
+    def _port_is_available(host: str, port: int) -> bool:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            try:
+                probe.bind((host, port))
+            except OSError:
+                return False
+        return True
 
     async def stop(self) -> None:
         self.logger.info("HTTP server stopping")
