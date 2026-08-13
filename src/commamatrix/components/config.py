@@ -5,11 +5,31 @@ from __future__ import annotations
 import logging
 import logging.handlers
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Generic, TypeVar
+from types import UnionType
+from typing import Any, Generic, TypeAliasType, TypeVar, Union, cast, get_args, get_origin
 
 T = TypeVar("T")
-_MISSING = object()
+
+
+class _Missing:
+    def __repr__(self) -> str:
+        return "_MISSING"
+
+
+_MISSING = _Missing()
+
+
+def _is_callable_type(type_hint: object) -> bool:
+    if isinstance(type_hint, TypeAliasType):
+        return _is_callable_type(type_hint.__value__)
+    origin = get_origin(type_hint)
+    if origin is Callable:
+        return True
+    if origin in (Union, UnionType):
+        return any(_is_callable_type(argument) for argument in get_args(type_hint))
+    return type_hint is Callable
 
 
 class ConfigField(Generic[T]):
@@ -45,11 +65,14 @@ class ConfigField(Generic[T]):
 
     @property
     def default(self) -> T | None:
-        if self._default is _MISSING:
+        default = self._default
+        if default is _MISSING:
             return None
-        if callable(self._default) and not isinstance(self._default, type):
-            return self._default()
-        return self._default  # type: ignore[return-value]
+        if not callable(default):
+            return default  # type: ignore[return-value]
+        if isinstance(default, type) or _is_callable_type(getattr(self, "_type_hint", Any)):
+            return default  # type: ignore[return-value]
+        return default()
 
     @property
     def has_default(self) -> bool:
@@ -295,4 +318,3 @@ def close_agent_logging(agent: Any) -> None:
 
 def get_agent_logger(agent: Any, component: str) -> AgentLogger:
     return AgentLogger(agent, component)
-

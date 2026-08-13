@@ -220,7 +220,7 @@ def connector_modalities(ctx: InstructionCtx) -> str | None:
 @before_llm_call
 async def add_instructions(ctx: BeforeLlmCallCtx) -> None:
     """Collect instruction outputs and prepend as system message."""
-    if ctx.run.state.get("subagent"):
+    if not ctx.run.aggregate_instructions:
         return
     instruction_manager: InstructionManager = ctx.run.agent.instruction_manager
     parts = await instruction_manager.collect(ctx.run)

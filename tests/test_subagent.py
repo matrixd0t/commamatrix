@@ -163,7 +163,8 @@ async def test_submit_run_orders_instructions_prompt_and_dialog_items(monkeypatc
     assert [item.content for item in captured["history"]] == ["system", "user", "context"]
     assert captured["history"][0].role is DialogRole.SYSTEM
     assert captured["history"][1].role is DialogRole.USER
-    assert captured["run"].save is False
+    assert captured["run"].save is True
+    assert captured["run"].aggregate_instructions is True
 
 
 def test_agent_name_is_registered():

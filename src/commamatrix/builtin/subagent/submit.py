@@ -7,6 +7,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
+from ...components.config import _MISSING
 from ...components.dialog import DialogItem, DialogItemType, DialogRole
 from ...components.hook import AfterLlmCallCtx, RunCtx
 from ...components.llm_adapter import StructuredOutputModel
@@ -22,7 +23,7 @@ async def submit_run(
     agent: Agent,
     *,
     parent_item_id: int | None = None,
-    instructions: str | None = None,
+    instructions: str | None = _MISSING,
     prompt: str | None = None,
     dialog_items: list[DialogItem] | None = None,
     tools: str | None,
@@ -30,7 +31,7 @@ async def submit_run(
     user: str = "agent",
     meta: dict[str, Any] | None = None,
     state: dict[str, Any] | None = None,
-    save: bool = False,
+    save: bool = True,
     wait_for_result: bool = True,
     conflict_policy: Literal["replace", "skip"] = "skip",
     runner_namespace: str = "subagent",
@@ -61,6 +62,10 @@ async def submit_run(
         if not wait_for_result:
             return f"{type(exc).__name__}: {exc}"
         raise
+
+    instructions_missing = instructions is _MISSING
+    if instructions_missing:
+        instructions = None
 
     items = list(dialog_items or [])
     if instructions:
@@ -115,6 +120,7 @@ async def submit_run(
         user=user,
         response_format=response_format,
         save=save,
+        aggregate_instructions=instructions_missing or bool(instructions),
         state=run_state,
         chain_state={"allowed_tools": tools},
         last_item_id=parent_item_id,

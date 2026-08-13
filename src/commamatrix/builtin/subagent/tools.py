@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+from ...components.config import _MISSING
 from ...components.tool import tool
 from ...core.agent.agent import get_subagent_by_name
 
 
-@tool(alias="subagent", codeact=True)
+@tool(alias="", codeact=True)
 async def call_subagent(
     subagent: str = "",
     *,
-    instructions: str | None = None,
+    instructions: str | None = _MISSING,
     tools: str | None,
     continue_from_here: bool = False,
     parent_item_id: int | None = None,
@@ -19,7 +20,7 @@ async def call_subagent(
     """Run a headless subagent.
 
     subagent: name of the registered agent that should execute the run. If the name is unknown, leave it empty to run in the current agent.
-    instructions: use empty string for no system prompt, "all" to inherit your instructions, or provide a custom one.
+    instructions: omit to use aggregated instructions, use empty string or null to disable them, or provide a custom system input.
     tools: use empty string for no tools, "all" for every tool, or a regex matching allowed tool names.
     If continue_from_here is true, inherit the current dialog history; otherwise start without it.
     If wait_for_result is true, return the subagent's response; otherwise start it in the background.

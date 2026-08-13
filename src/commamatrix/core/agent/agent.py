@@ -31,6 +31,7 @@ from httpx2 import AsyncClient
 from ...components.config import (
     Config,
     ConfigField,
+    _MISSING,
     close_agent_logging,
     get_agent_logger,
 )
@@ -395,7 +396,7 @@ class Agent:
         self,
         *,
         parent_item_id: int | None = None,
-        instructions: str | None = None,
+        instructions: str | None = _MISSING,
         prompt: str | None = None,
         dialog_items: list[DialogItem] | None = None,
         tools: str | None,
@@ -403,7 +404,7 @@ class Agent:
         user: str = "agent",
         meta: dict[str, Any] | None = None,
         state: dict[str, Any] | None = None,
-        save: bool = False,
+        save: bool = True,
         wait_for_result: bool = True,
         conflict_policy: Literal["replace", "skip"] = "skip",
         runner_namespace: str = "subagent",

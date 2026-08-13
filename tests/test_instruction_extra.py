@@ -61,6 +61,66 @@ class TestAddInstructionsEndToEnd:
         assert ctx.dialog[1].content == "Hi"
 
     @pytest.mark.asyncio
+    async def test_prepends_system_message_for_subagent_run(self):
+        agent = _stub_agent()
+        agent.instruction_manager = InstructionManager(agent=agent)
+        source = PythonInstructionSource()
+
+        async def subagent_instruction(ctx: InstructionCtx) -> str:
+            return "Dynamic subagent instruction"
+
+        descriptor = InstructionDescriptor(
+            id="instruction://test/subagent_instruction",
+            name="subagent_instruction",
+            module="test",
+            _source_ref=weakref.ref(source),
+        )
+        source._handlers[descriptor.id] = subagent_instruction
+        agent.instruction_manager._descriptors = {descriptor.id: descriptor}
+        agent.instruction_manager._rebuild()
+
+        run = RunCtx(agent=agent, origin=stub_origin(), user="u", state={"subagent": True})
+        dialog = [make_dialog_item("Hi", role=DialogRole.USER)]
+        ctx = BeforeLlmCallCtx(run=run, dialog=dialog, tools=[])
+
+        await add_instructions(ctx)
+
+        assert ctx.dialog[0].content == "Dynamic subagent instruction"
+        assert ctx.dialog[1].content == "Hi"
+
+    @pytest.mark.asyncio
+    async def test_explicit_subagent_instructions_disable_aggregation(self):
+        agent = _stub_agent()
+        agent.instruction_manager = InstructionManager(agent=agent)
+        source = PythonInstructionSource()
+
+        async def subagent_instruction(ctx: InstructionCtx) -> str:
+            return "Should not be added"
+
+        descriptor = InstructionDescriptor(
+            id="instruction://test/disabled_subagent_instruction",
+            name="disabled_subagent_instruction",
+            module="test",
+            _source_ref=weakref.ref(source),
+        )
+        source._handlers[descriptor.id] = subagent_instruction
+        agent.instruction_manager._descriptors = {descriptor.id: descriptor}
+        agent.instruction_manager._rebuild()
+
+        run = RunCtx(
+            agent=agent,
+            origin=stub_origin(),
+            user="u",
+            aggregate_instructions=False,
+        )
+        dialog = [make_dialog_item("Explicit instructions", role=DialogRole.SYSTEM)]
+        ctx = BeforeLlmCallCtx(run=run, dialog=dialog, tools=[])
+
+        await add_instructions(ctx)
+
+        assert [item.content for item in ctx.dialog] == ["Explicit instructions"]
+
+    @pytest.mark.asyncio
     async def test_multiple_instructions_joined(self):
         agent = _stub_agent()
         agent.instruction_manager = InstructionManager(agent=agent)

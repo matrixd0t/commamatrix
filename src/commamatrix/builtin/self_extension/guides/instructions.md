@@ -20,10 +20,12 @@ The handler receives `InstructionCtx` and returns `str | None`. Returning
 `None` omits the fragment. Instructions may be synchronous or asynchronous;
 use async code for I/O.
 
-Before each normal LLM call, non-`None` fragments are stripped, joined with
+Before each LLM call, non-`None` fragments are stripped, joined with
 blank lines, and inserted at the beginning of the in-memory dialog as a
 `SYSTEM` item. This item is not persisted as ordinary conversation history.
-The built-in instruction aggregator skips this step for headless subagent runs.
+The same aggregation also runs for headless subagent runs when `instructions`
+is omitted or non-empty. Explicitly passing `None` or `""` disables the
+aggregation for that run.
 
 ## Ordering
 

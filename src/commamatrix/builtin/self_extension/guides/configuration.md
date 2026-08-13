@@ -43,9 +43,11 @@ Resolution order is:
 2. Per-agent defaults.
 3. The field default.
 
-Callable defaults are evaluated lazily when the field is read. A field without a
-default raises a configuration error when its owner first reads it; creating a
-`Config` does not validate every plugin field globally.
+Callable, non-class defaults for non-callable fields are evaluated lazily when
+the field is read. For a field typed as `Callable`, the callable itself is the
+default value and is not invoked. Class defaults remain class objects. A field
+without a default raises a configuration error when its owner first reads it;
+creating a `Config` does not validate every plugin field globally.
 
 Keep secrets in environment-backed defaults or host-provided overrides. Never
 place API keys in source code, docstrings, metadata, or dialog content.
