@@ -50,9 +50,9 @@ executor = Agent(
 ```
 
 Names should be unique and stable. The built-in `available_subagents`
-instruction lists registered names and descriptions for normal runs. It is not
-added to a headless run because the normal instruction aggregator is skipped
-for headless execution.
+instruction lists registered names and descriptions. It is also added to
+headless runs without an explicit non-empty `instructions` value through the
+normal instruction aggregation path.
 
 ## Model-Driven Delegation
 
@@ -74,7 +74,7 @@ The tool parameters are:
 | Parameter            | Meaning                                                                                                           |
 |----------------------|-------------------------------------------------------------------------------------------------------------------|
 | `subagent`           | Exact registered agent name. The before-tool hook defaults a missing value to the current agent.                  |
-| `instructions`       | Optional system-role input for the new run. It is not an automatic copy of the caller's instructions.             |
+| `instructions`       | Omit to use aggregated instructions; pass `None`/`""` to disable them, or a non-empty string for an additional system input. |
 | `tools`              | Tool allowlist: `all`, `None`/empty for no ordinary tools, or a regex matched with `re.fullmatch`.                |
 | `continue_from_here` | Continue the current dialog branch instead of starting a fresh branch.                                            |
 | `parent_item_id`     | Internal continuation value. The before-tool hook replaces it with the current tool call's persisted parent item. |
@@ -110,7 +110,7 @@ extension code rather than by an LLM tool call:
 
 ```python
 result = await executor.submit_run(
-    instructions="Produce a concise inventory of the project files.",
+    instructions="Produce a concise description of the project files.",
     tools="",
     wait_for_result=True,
 )
@@ -142,16 +142,20 @@ A run must provide at least one of these inputs:
 - a list of `dialog_items`;
 - a `parent_item_id` from which to load an existing branch.
 
-`instructions` is stored as a `SYSTEM` input item for the headless run. It is
-different from `@instruction` output: normal dynamic instruction aggregation is
-skipped for headless runs, while the explicit input is part of the submitted
-history.
+`instructions` has three states:
+
+- when omitted, dynamic `@instruction` aggregation is enabled and no explicit system item is added;
+- when explicitly set to `None` or `""`, dynamic aggregation is disabled and no explicit system item is added;
+- when set to a non-empty string, dynamic aggregation remains enabled and the string is added as an additional `SYSTEM` input item.
+
+The non-empty explicit item is part of the submitted history and follows the
+aggregated instructions in the dialog.
 
 `prompt` is stored as a `USER` input item before `dialog_items`. When both
 `instructions` and `prompt` are provided, the prompt follows the instructions.
-Headless runs default to `save=False`, so their input, output, and tool items
-are kept for the current run but are not written to storage. Pass `save=True`
-to persist the run contents.
+Headless runs default to `save=True`, so their input, output, and tool items are
+written to storage. Pass `save=False` to keep the run contents only for the
+current run.
 
 ## Dialog Continuation
 
@@ -178,8 +182,8 @@ its own storage. For a different agent with separate storage, pass the relevant
 context explicitly through `instructions` or `dialog_items` instead of
 reusing the caller's item ID.
 
-With `save=True`, the target's branch is persisted with an internal origin and
-is not sent to an external connector. With the default `save=False`, the target
+With the default `save=True`, the target's branch is persisted with an internal
+origin and is not sent to an external connector. With `save=False`, the target
 history exists only for the duration of the run. In both modes, captured
 `OUTPUT` items are returned to the submitter.
 

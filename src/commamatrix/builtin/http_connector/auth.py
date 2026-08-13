@@ -36,20 +36,6 @@ class InitialAdminCredentials:
     password: str
 
 
-class UserName(BaseModel):
-    user: str
-    name: str
-    alternatives: list[str]
-
-
-class UserNamesTable(BaseTable[UserName]):
-    table_id = "commamatrix.http_user_names"
-    table_name = "commamatrix_user_names"
-    row_model = UserName
-    primary_key = "user"
-    indexes = (("name",),)
-
-
 _AUTH_TABLE = "commamatrix_http_auth"
 _USERNAME_MIN_LENGTH = 2
 _USERNAME_MAX_LENGTH = 32

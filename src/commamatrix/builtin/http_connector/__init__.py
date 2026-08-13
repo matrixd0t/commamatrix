@@ -7,9 +7,8 @@ from .auth import (
     HttpAuthRow,
     HttpAuthTable,
     InitialAdminCredentials,
-    UserName,
-    UserNamesTable,
 )
+from ..multi_user import UserName, UserNamesTable
 from .connector import (
     HttpConnector,
     HttpOrigin,

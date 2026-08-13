@@ -9,6 +9,8 @@ from datetime import UTC, tzinfo
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from pydantic import BaseModel
+
 from ..components.config import ConfigField
 from ..components.dialog import DialogItem, DialogRole
 from ..components.hook import (
@@ -19,6 +21,7 @@ from ..components.hook import (
     before_run,
 )
 from ..components.instruction import InstructionCtx, instruction
+from ..components.table import BaseTable
 from ..utils import _row_value, await_if_needed
 
 if TYPE_CHECKING:
@@ -27,10 +30,27 @@ if TYPE_CHECKING:
 
 type UserHeaderRenderer = Callable[[RunCtx, DialogItem], str | Awaitable[str | None] | None]
 
+
+class UserName(BaseModel):
+    user: str
+    name: str
+    alternatives: list[str]
+
+
+class UserNamesTable(BaseTable[UserName]):
+    table_id = "commamatrix.http_user_names"
+    table_name = "commamatrix_user_names"
+    row_model = UserName
+    primary_key = "user"
+    indexes = (("name",),)
+
+
+async def _default_user_header(run: RunCtx, item: DialogItem) -> str:
+    return "[%DATETIME%] %USER% | %NAME%:"
+
 user_header_renderer = ConfigField[UserHeaderRenderer | None](
     name="user_header_renderer",
-    # ConfigField calls callable defaults without arguments; return the renderer from a factory.
-    default=lambda: _default_user_header,
+    default=_default_user_header,
     description="Optional user-message header renderer accepting (run, item) and returning header text or None; async renderers are supported. The default renderer emits the datetime, user, and name; the rendered header is followed by two newlines. "
                 "Built-in shortcuts: '%USER%' -> DialogItem.user ('telegram:8766618923'), '%DATETIME%' -> DialogItem.created_at in user_header_datetime_format, '%NAME%' -> connector-provided user name or empty string",
 )
@@ -113,10 +133,6 @@ async def update_user_name(ctx: BeforeRunCtx) -> None:
     ctx.run.state.setdefault("user_names", {})[ctx.run.user] = current_name
 
 
-async def _default_user_header(run: RunCtx, item: DialogItem) -> str:
-    return "[%DATETIME%] %USER% | %NAME%:"
-
-
 async def _render_configured_header(renderer: UserHeaderRenderer, run: RunCtx, item: DialogItem) -> str | None:
     user_timezone = await _user_timezone(run, item)
     datetime_format = run.agent.config.get(user_header_datetime_format)
@@ -165,9 +181,10 @@ Message headers are auto-generated and contain metadata (time / user id / user n
 __all__ = [
     "describe_user_message_headers",
     "UserHeaderRenderer",
+    "UserName",
+    "UserNamesTable",
     "update_user_name",
     "user_header_datetime_format",
     "user_header_renderer",
     "user_header_timezone",
 ]
-

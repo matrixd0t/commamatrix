@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from types import SimpleNamespace
 
 import pytest
@@ -28,6 +29,11 @@ class TestConfigField:
     def test_callable_default(self):
         f = ConfigField[str](name="key", default=lambda: "lazy")
         assert f.default == "lazy"
+
+    def test_callable_default_is_preserved_for_callable_field(self):
+        default = lambda: "renderer"
+        f = ConfigField[Callable](name="key", default=default)
+        assert f.default is default
 
     def test_no_default(self):
         f = ConfigField[str](name="key")
