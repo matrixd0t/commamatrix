@@ -61,7 +61,7 @@ class AgentLifecycle:
         self._refresh_lock = asyncio.Lock()
         self._started = False
         self._changed = False
-        self._last_scope: tuple[str, ...] = ()
+        self._last_scope: tuple[object, ...] = ()
 
         for child in children or ():
             self.register(child)
@@ -156,7 +156,7 @@ class AgentLifecycle:
             child.logger.info("Lifecycle component stopped key=%s", self._child_specs[id(child)].key)
         self._remove_child(child)
 
-    async def sync_registered(self, scope: Iterable[str]) -> None:
+    async def sync_registered(self, scope: Iterable[object]) -> None:
         """Reconcile registered components with the current extension scope."""
         scope = tuple(scope)
         active = {
@@ -185,7 +185,7 @@ class AgentLifecycle:
                 continue
             self._add_registration(registration)
 
-    def set_scope(self, scope: list[str]) -> None:
+    def set_scope(self, scope: list[object]) -> None:
         scope_key = tuple(scope)
         if scope_key != self._last_scope:
             self._last_scope = scope_key
@@ -306,10 +306,13 @@ class AgentLifecycle:
         return key
 
     @staticmethod
-    def _registration_is_active(registration: LifecycleRegistration, scope: Iterable[str]) -> bool:
+    def _registration_is_active(registration: LifecycleRegistration, scope: Iterable[object]) -> bool:
         return any(
-            module_name == registration.owner
-            or module_name.startswith(registration.owner + ".")
+            isinstance(module_name, str)
+            and (
+                module_name == registration.owner
+                or module_name.startswith(registration.owner + ".")
+            )
             for module_name in scope
         )
 

@@ -10,6 +10,7 @@ import types
 
 import pytest
 
+from commamatrix import instruction, tool
 from commamatrix.components.config import Config, ConfigField
 from commamatrix.components.server import http_port
 from commamatrix.core.agent.agent import Agent
@@ -258,6 +259,112 @@ class TestAgentExtensions:
         import os
 
         assert Agent._resolve_module_name(os) == "os"
+
+    @pytest.mark.asyncio
+    async def test_add_remove_direct_instruction_object(self):
+        @instruction(priority=3)
+        async def scoped_direct_instruction(ctx) -> str | None:
+            return "direct"
+
+        agent = Agent("test", config={}, auto_load_main=False, auto_load_plugins=False)
+        result = await agent.add_extensions(scoped_direct_instruction)
+        assert agent.extension_scope == (scoped_direct_instruction,)
+        assert result == [scoped_direct_instruction]
+
+        await agent.refresh_extensions()
+        descriptors = {descriptor.name: descriptor for descriptor in agent.instruction_manager.descriptors}
+        assert descriptors["scoped_direct_instruction"].priority == 3
+
+        await agent.remove_extensions(scoped_direct_instruction)
+        assert agent.extension_scope == ()
+        await agent.refresh_extensions()
+        assert "scoped_direct_instruction" not in {
+            descriptor.name for descriptor in agent.instruction_manager.descriptors
+        }
+
+    @pytest.mark.asyncio
+    async def test_direct_tool_object_runs_after_start(self):
+        @tool
+        async def direct_probe_ping() -> str:
+            return "pong"
+
+        agent = Agent("test", config={}, auto_load_main=False, auto_load_plugins=False)
+        await agent.start()
+        try:
+            await agent.add_extensions(direct_probe_ping)
+            descriptor = next(
+                d for d in agent.tool_manager.descriptors if d.name == "direct_probe_ping"
+            )
+            assert agent.tool_manager.resolve(agent.tool_manager.public_name(descriptor)) is descriptor
+            assert await agent.tool_manager.invoke(descriptor, {}) == "pong"
+        finally:
+            await agent.stop()
+
+    @pytest.mark.asyncio
+    async def test_direct_object_deduplicates_with_module_declaration(self, tmp_path):
+        path = tmp_path / "dedup_probe.py"
+        path.write_text(
+            "from commamatrix import tool\n\n"
+            "@tool\n"
+            "async def ping() -> str:\n"
+            "    return 'pong'\n",
+            encoding="utf-8",
+        )
+        agent = Agent("test", config={}, auto_load_main=False, auto_load_plugins=False)
+        await agent.add_extensions(str(path))
+        ping = getattr(sys.modules["dedup_probe"], "ping")
+        await agent.add_extensions(ping)
+        await agent.start()
+        try:
+            python_ids = [
+                descriptor.id
+                for descriptor in agent.tool_manager.descriptors
+                if descriptor.id.startswith("python://dedup_probe/")
+            ]
+            assert python_ids == ["python://dedup_probe/ping"]
+            assert agent.tool_manager.resolve("dedup_probe_ping") is not None
+        finally:
+            await agent.stop()
+
+    @pytest.mark.asyncio
+    async def test_add_skips_objects_without_markers(self):
+        agent = Agent("test", config={}, auto_load_main=False, auto_load_plugins=False)
+
+        async def plain_function() -> str:
+            return ""
+
+        result = await agent.add_extensions(plain_function, "os")
+        assert result == ["os"]
+        assert plain_function not in agent.extension_scope
+
+    @pytest.mark.asyncio
+    async def test_remove_direct_object_not_in_scope(self):
+        @tool
+        async def absent_tool() -> str:
+            return ""
+
+        agent = Agent("test", config={}, auto_load_main=False, auto_load_plugins=False)
+        assert await agent.remove_extensions(absent_tool) == []
+
+    @pytest.mark.asyncio
+    async def test_reload_direct_object_ensures_presence(self):
+        @tool
+        async def reload_probe_tool() -> str:
+            return "pong"
+
+        agent = Agent("test", config={}, auto_load_main=False, auto_load_plugins=False)
+        await agent.add_extensions(reload_probe_tool)
+        result = await agent.reload_extensions(reload_probe_tool)
+        assert result == [reload_probe_tool]
+        assert agent.extension_scope.count(reload_probe_tool) == 1
+
+    @pytest.mark.asyncio
+    async def test_add_direct_config_field(self):
+        field = ConfigField[str](name="direct_probe_field", default="v", description="probe")
+        agent = Agent("test", config={}, auto_load_main=False, auto_load_plugins=False)
+        await agent.add_extensions(field)
+        assert field in agent.extension_scope
+        assert "## direct_probe_field: str (default: 'v')" in agent.config_fields_markdown()
 
     def test_resolve_module_name_invalid(self):
         assert Agent._resolve_module_name(42) is None

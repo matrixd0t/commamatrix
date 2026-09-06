@@ -58,7 +58,7 @@ async def manage(module_or_path: str, action: Literal["add", "remove", "reload"]
 @tool(alias="self_extension")
 async def list_all(*, ctx: BeforeToolCallCtx) -> str:
     """List the extension roots currently active for this agent."""
-    scope = ctx.run.agent.extension_scope
+    scope = [name for name in ctx.run.agent.extension_scope if isinstance(name, str)]
     roots = [name for name in scope if not any(name != other and name.startswith(other + ".") for other in scope)]
     if not roots:
         return "No active extensions."

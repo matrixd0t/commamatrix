@@ -195,7 +195,7 @@ class AgentScheduler(Manager[ScheduledTaskDescriptor]):
     def planner(self) -> Planner:
         return self._planner
 
-    def set_scope(self, scope: list[str]) -> None:
+    def set_scope(self, scope: list[object]) -> None:
         self._python_source.set_scope(scope)
 
     async def start(self) -> None:

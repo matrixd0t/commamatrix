@@ -1,6 +1,12 @@
 # core/extensions.py
 
-"""Extension target resolution and per-agent module scope management."""
+"""Extension target resolution and per-agent scope management.
+
+Scope entries are module names (str) or directly added declaration objects:
+any object stamped with a ``__commamatrix`` marker attribute, such as an
+``@instruction`` or ``@tool`` function. Module entries are scanned via their
+namespace; declaration entries are owned by definition.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +19,8 @@ from typing import Literal
 
 ExtensionTarget = str | types.ModuleType
 ExtensionOperation = Literal["add", "remove", "reload"]
+
+_MARKER_PREFIX = "__commamatrix"
 
 
 def discover_plugin_targets(root: Path) -> list[Path]:
@@ -52,50 +60,66 @@ class MissingExtensionDependencyError(ExtensionRuntimeError):
 
 
 class ExtensionRuntime:
-    """Resolve extension targets and maintain their active module scope."""
+    """Resolve extension targets and maintain the agent's active scope.
+
+    Scope entries are module names (str) or directly added declaration objects.
+    """
 
     def __init__(self) -> None:
-        self._scope: list[str] = []
+        self._scope: list[object] = []
 
     @property
-    def scope(self) -> tuple[str, ...]:
+    def scope(self) -> tuple[object, ...]:
         return tuple(self._scope)
 
     @property
-    def scope_list(self) -> list[str]:
+    def scope_list(self) -> list[object]:
         return self._scope
 
-    def replace_scope(self, scope: Iterable[str]) -> None:
+    def replace_scope(self, scope: Iterable[object]) -> None:
         self._scope = list(scope)
 
-    def apply(self, targets: Iterable[ExtensionTarget], operation: ExtensionOperation) -> list[str]:
+    def apply(self, targets: Iterable[object], operation: ExtensionOperation) -> list[object]:
         """Apply an extension operation and restore scope when it fails."""
-        handlers: dict[ExtensionOperation, Callable[[str], bool]] = {
+        handlers: dict[ExtensionOperation, Callable[[object], bool]] = {
             "add": self._add,
             "remove": self._remove,
             "reload": self._reload,
         }
         handler = handlers[operation]
-        handled: list[str] = []
+        handled: list[object] = []
         original_scope = list(self._scope)
 
         for entry in targets:
-            module_name: str | None = None
+            target: object | None = None
             try:
-                module_name = self.resolve_module_name(entry)
-                if module_name is None:
+                target = self.resolve_entry(entry)
+                if target is None:
                     continue
-                if handler(module_name):
-                    handled.append(module_name)
+                if handler(target):
+                    handled.append(target)
             except ExtensionRuntimeError:
                 self._scope = original_scope
                 raise
             except Exception as exc:
                 self._scope = original_scope
-                target = module_name or f"<{type(entry).__name__}>"
-                raise ExtensionRuntimeError(f"Failed to process extension {target}: {exc}") from exc
+                label = target if isinstance(target, str) else repr(entry)
+                raise ExtensionRuntimeError(f"Failed to process extension {label}: {exc}") from exc
 
         return handled
+
+    @staticmethod
+    def resolve_entry(target: object) -> object | None:
+        """Resolve a target to a scope entry: a module name or the declaration object itself."""
+        if isinstance(target, (str, types.ModuleType)):
+            return ExtensionRuntime.resolve_module_name(target)
+        if ExtensionRuntime._is_declaration(target):
+            return target
+        return None
+
+    @staticmethod
+    def _is_declaration(obj: object) -> bool:
+        return any(name.startswith(_MARKER_PREFIX) for name in dir(obj))
 
     @staticmethod
     def resolve_module_name(target: ExtensionTarget) -> str | None:
@@ -129,12 +153,19 @@ class ExtensionRuntime:
                 raise MissingExtensionDependencyError(module_name, missing_name) from exc
             raise
 
-    def _add(self, module_name: str) -> bool:
+    def _add(self, entry: object) -> bool:
+        if isinstance(entry, str):
+            return self._add_module(entry)
+        if not any(item is entry for item in self._scope):
+            self._scope.append(entry)
+        return True
+
+    def _add_module(self, module_name: str) -> bool:
         if module_name not in sys.modules:
             self._import_extension_module(module_name)
 
         prefix = module_name + "."
-        active = set(self._scope)
+        active = {item for item in self._scope if isinstance(item, str)}
         new_names: list[str] = []
         for name in [module_name, *sorted(sys.modules)]:
             if (name == module_name or name.startswith(prefix)) and name not in active:
@@ -143,17 +174,33 @@ class ExtensionRuntime:
         self._scope.extend(new_names)
         return True
 
-    def _remove(self, module_name: str) -> bool:
+    def _remove(self, entry: object) -> bool:
+        if isinstance(entry, str):
+            return self._remove_module(entry)
+        before = len(self._scope)
+        self._scope = [item for item in self._scope if item is not entry]
+        return len(self._scope) < before
+
+    def _remove_module(self, module_name: str) -> bool:
         prefix = module_name + "."
         before = len(self._scope)
         self._scope = [
-            name
-            for name in self._scope
-            if name != module_name and not name.startswith(prefix)
+            item
+            for item in self._scope
+            if not (isinstance(item, str) and (item == module_name or item.startswith(prefix)))
         ]
         return len(self._scope) < before
 
-    def _reload(self, module_name: str) -> bool:
+    def _reload(self, entry: object) -> bool:
+        if isinstance(entry, str):
+            return self._reload_module(entry)
+        # Direct declarations are live objects with nothing to re-import;
+        # reload only ensures the declaration is present.
+        if not any(item is entry for item in self._scope):
+            self._scope.append(entry)
+        return True
+
+    def _reload_module(self, module_name: str) -> bool:
         prefix = module_name + "."
         original_scope = list(self._scope)
         module_names = tuple(
@@ -174,9 +221,9 @@ class ExtensionRuntime:
             )
             self._scope = [
                 *[
-                    name
-                    for name in original_scope
-                    if name != module_name and not name.startswith(prefix)
+                    item
+                    for item in original_scope
+                    if not (isinstance(item, str) and (item == module_name or item.startswith(prefix)))
                 ],
                 *alive,
             ]

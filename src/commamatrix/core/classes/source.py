@@ -71,15 +71,20 @@ class Source(Generic[D], ABC):
 
 class PythonSource(Source[D], Generic[D]):
     """
-    Scoped module scanning.
-    Iterates vars() for objects with marker_attribute, filtering out private names and cross-module re-exports by __module__ check.
+    Scoped declaration scanning.
+
+    Scope entries are module names (str) or directly added declaration objects.
+    Module entries are scanned via vars(); declaration entries are objects
+    themselves, owned by definition. Re-exports are filtered out by the
+    __module__ check for module entries; duplicate descriptor ids (the same
+    declaration reached via its module and directly) keep the first occurrence.
     """
 
     def __init__(self) -> None:
         super().__init__()
-        self._scope: list[str] = []
+        self._scope: list[object] = []
 
-    def set_scope(self, scope: list[str]) -> None:
+    def set_scope(self, scope: list[object]) -> None:
         self._scope = scope
 
     @property
@@ -91,26 +96,41 @@ class PythonSource(Source[D], Generic[D]):
     def build_descriptor(self, object_name: str, obj: object) -> D | None:
         ...
 
+    @staticmethod
+    def _declaration_name(obj: object) -> str:
+        name = getattr(obj, "__name__", None)
+        if not isinstance(name, str) or not name:
+            name = f"{type(obj).__name__}#{id(obj):x}"
+        return name
+
     def iter_objects(self) -> Iterable[tuple[str, object]]:
-        for module_name in self._scope:
-            module = sys.modules.get(module_name)
-            if module is None:
-                continue
-            for object_name, obj in vars(module).items():
-                if object_name.startswith("_"):
+        for entry in self._scope:
+            if isinstance(entry, str):
+                module = sys.modules.get(entry)
+                if module is None:
                     continue
-                if not hasattr(obj, self.marker_attribute):
+                for object_name, obj in vars(module).items():
+                    if object_name.startswith("_"):
+                        continue
+                    if not hasattr(obj, self.marker_attribute):
+                        continue
+                    if getattr(obj, "__module__", None) != entry:
+                        continue
+                    yield object_name, obj
+            else:
+                if not hasattr(entry, self.marker_attribute):
                     continue
-                if getattr(obj, "__module__", None) != module_name:
-                    continue
-                yield object_name, obj
+                yield self._declaration_name(entry), entry
 
     def scan(self) -> list[D]:
         descriptors: list[D] = []
+        seen: set[str] = set()
         for name, obj in self.iter_objects():
             descriptor = self.build_descriptor(name, obj)
-            if descriptor is not None:
-                descriptors.append(descriptor)
+            if descriptor is None or descriptor.id in seen:
+                continue
+            seen.add(descriptor.id)
+            descriptors.append(descriptor)
         return descriptors
 
 

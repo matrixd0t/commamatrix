@@ -311,7 +311,7 @@ class HookManager(Manager[HookDescriptor]):
         self.mount(self._python_source)
         self._handlers: dict[str, list[HookDescriptor]] = {}
 
-    def set_scope(self, scope: list[str]) -> None:
+    def set_scope(self, scope: list[object]) -> None:
         self._python_source.set_scope(scope)
 
     async def fire(self, event: str, ctx: Any) -> None:
