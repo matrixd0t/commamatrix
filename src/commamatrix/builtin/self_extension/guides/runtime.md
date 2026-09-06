@@ -18,7 +18,8 @@ source that owns the current descriptor.
 ## Extension Operations
 
 `add_extensions()` imports targets and adds their module tree to one agent's
-scope. `remove_extensions()` removes the scope contribution and reconciles
+scope; direct declaration objects are added to the scope as-is.
+`remove_extensions()` removes the scope contribution and reconciles
 descriptors and instances. `reload_extensions()` replaces the imported module
 tree and restores the previous usable scope if importing the replacement fails.
 

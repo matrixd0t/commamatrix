@@ -57,6 +57,7 @@ class ConfigField(Generic[T]):
         self._default = default
         self._description = description
         self._name: str | None = name or None
+        self.__commamatrix_config_field__ = True
 
     def __set_name__(self, owner: type, name: str) -> None:
         """Descriptor protocol: capture attribute name when used as a class variable."""

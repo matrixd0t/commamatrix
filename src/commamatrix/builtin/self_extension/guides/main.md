@@ -106,6 +106,14 @@ explicitly. Use `add_extensions()`, `remove_extensions()`, and
 module created while an already-running agent is active must be added explicitly
 before that agent can use it.
 
+Besides whole modules, `add_extensions()` and `remove_extensions()` accept
+direct declaration objects: any object stamped with a `__commamatrix` marker,
+such as an `@instruction` or `@tool` function, or a `ConfigField`. Only that
+declaration is activated for the agent; its defining module stays inactive.
+Removing matches by object identity. Reloading a direct object only ensures it
+is present. Adding both a module and a declaration from it registers the
+declaration once.
+
 Extension paths are resolved to their canonical import names; the runtime does
 not create synthetic module names. Keep the import path unambiguous and use the
 same target form for later reloads.

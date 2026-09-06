@@ -177,9 +177,9 @@ async def main() -> None:
     agent.config.set(llm_api_base, os.environ["LLM_API_BASE"])  # change settings at any time
     agent.config.set(openai_api_key, os.environ["OPENAI_API_KEY"])  # lambda predicates can be passed as values
     agent.config.set(agentic_model, "deepseek-v4-flash")
-    # the first substring match is selected for model name
-    # for example, 'deepseek/deepseek-v4-flash' matches
-    # the most affordable provider has the priority
+    # model name must match exactly
+    # a compiled re.Pattern can be passed instead: the first matching model is selected
+    # without a filter the most affordable provider has the priority
 
     async with agent:  # like asynccontextmanager, or use await agent.start() / agent.stop()
         print(f"CommaMatrix agent is running at {agent.http_server.base_url}")
@@ -298,6 +298,7 @@ import my_package, my_module
 await agent.add_extensions("data_tools", "web_utils")  # names can be used
 await agent.add_extensions(my_package.my_extension)
 await agent.add_extensions(my_module)
+await agent.add_extensions(my_instruction)  # a single declaration works too: @instruction, @tool, ConfigField, etc.
 ```
 
 Internal package modules must be imported from their `__init__.py`; a re-export

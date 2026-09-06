@@ -426,7 +426,7 @@ class ToolManager(Manager[ToolDescriptor]):
     def public_name(self, descriptor: ToolDescriptor) -> str:
         return self.public_name_from_descriptor(descriptor)
 
-    def set_scope(self, scope: list[str]) -> None:
+    def set_scope(self, scope: list[object]) -> None:
         self._python_source.set_scope(scope)
 
     @property

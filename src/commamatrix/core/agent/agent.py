@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import sys
 import types
 from collections import defaultdict
@@ -101,10 +102,10 @@ plugins_dir = ConfigField[str](
     description="Subdirectory of commamatrix_dir to load extensions from when auto_load_plugins is True",
 )
 
-agentic_model = ConfigField[str](
+agentic_model = ConfigField[str | re.Pattern[str]](
     name="agentic_model",
     default="",
-    description="Substring used to select the default agent model; empty selects any model",
+    description="Exact model name or compiled regex pattern used to select the default agent model; empty selects any model",
 )
 
 
@@ -211,12 +212,12 @@ class Agent:
         return [str(target) for target in discover_plugin_targets(root)]
 
     @property
-    def _extension_scope(self) -> list[str]:
+    def _extension_scope(self) -> list[object]:
         return self._extension_runtime.scope_list
 
     @property
-    def extension_scope(self) -> tuple[str, ...]:
-        """Return the module names currently active for this agent."""
+    def extension_scope(self) -> tuple[object, ...]:
+        """Return the active scope entries: module names and direct declaration objects."""
         return self._extension_runtime.scope
 
     def config_fields_markdown(self) -> str:
@@ -226,12 +227,23 @@ class Agent:
 
         fields: list[tuple[str, str, ConfigField[Any]]] = []
         seen: set[int] = set()
-        for module_name in self._extension_scope:
-            module = sys.modules.get(module_name)
-            if module is None:
+        for entry in self._extension_scope:
+            if isinstance(entry, str):
+                module = sys.modules.get(entry)
+                if module is None:
+                    continue
+                candidates = (
+                    (entry, object_name, field)
+                    for object_name, field in vars(module).items()
+                    if not object_name.startswith("_")
+                )
+            elif isinstance(entry, ConfigField):
+                module_name = getattr(entry, "_declaration_module", None) or "<direct>"
+                candidates = iter([(module_name, entry.name or "config", entry)])
+            else:
                 continue
-            for object_name, field in vars(module).items():
-                if object_name.startswith("_") or not isinstance(field, ConfigField):
+            for module_name, object_name, field in candidates:
+                if not isinstance(field, ConfigField):
                     continue
                 declaring_module = getattr(field, "_declaration_module", None)
                 if declaring_module is not None and declaring_module != module_name:
@@ -283,24 +295,24 @@ class Agent:
         return ExtensionRuntime.resolve_module_name(module_or_path)
 
     @staticmethod
-    def _normalize_extension_targets(targets: Iterable[str | types.ModuleType | Iterable[str | types.ModuleType]]) -> tuple[str | types.ModuleType, ...]:
-        normalized: list[str | types.ModuleType] = []
+    def _normalize_extension_targets(targets: Iterable[object]) -> tuple[object, ...]:
+        normalized: list[object] = []
         for target in targets:
             if isinstance(target, (str, types.ModuleType)):
                 normalized.append(target)
             elif isinstance(target, Iterable):
                 normalized.extend(target)
             else:
-                normalized.append(cast(str | types.ModuleType, target))
+                normalized.append(target)
         return tuple(normalized)
 
-    async def _apply_extensions(self, *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType], operation: ExtensionOperation) -> list[str]:
+    async def _apply_extensions(self, *targets: object | Iterable[object], operation: ExtensionOperation) -> list[object]:
         """Apply an extension operation and refresh active managers."""
         original_scope = list(self._extension_scope)
-        targets = self._normalize_extension_targets(module_or_path)
-        self.logger.debug("Applying extension operation=%s targets=%d", operation, len(targets))
+        normalized = self._normalize_extension_targets(targets)
+        self.logger.debug("Applying extension operation=%s targets=%d", operation, len(normalized))
         try:
-            handled = self._extension_runtime.apply(targets, operation)
+            handled = self._extension_runtime.apply(normalized, operation)
             if handled:
                 await self.lifecycle.sync_registered(self._extension_scope)
                 self.lifecycle.set_scope(self._extension_scope)
@@ -315,17 +327,21 @@ class Agent:
                 raise
             raise RuntimeError("Failed to refresh extension managers") from exc
 
-    async def add_extensions(self, *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType]) -> list[str]:
-        """Activate modules, paths, or iterables of them for this agent."""
-        return await self._apply_extensions(*module_or_path, operation="add")
+    async def add_extensions(self, *targets: object | Iterable[object]) -> list[object]:
+        """Activate modules, paths, direct declaration objects, or iterables of them for this agent."""
+        return await self._apply_extensions(*targets, operation="add")
 
-    async def remove_extensions(self,  *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType]) -> list[str]:
-        """Deactivate modules previously active for this agent."""
-        return await self._apply_extensions(*module_or_path, operation="remove")
+    async def remove_extensions(self, *targets: object | Iterable[object]) -> list[object]:
+        """Deactivate modules or direct declaration objects previously active for this agent."""
+        return await self._apply_extensions(*targets, operation="remove")
 
-    async def reload_extensions(self, *module_or_path: str | types.ModuleType | Iterable[str | types.ModuleType]) -> list[str]:
-        """Reload a module and all currently loaded submodules under its name."""
-        return await self._apply_extensions(*module_or_path, operation="reload")
+    async def reload_extensions(self, *targets: object | Iterable[object]) -> list[object]:
+        """Reload a module and all currently loaded submodules under its name.
+
+        Direct declaration objects have nothing to re-import; reloading them
+        only ensures they are present in the scope.
+        """
+        return await self._apply_extensions(*targets, operation="reload")
 
     async def refresh_extensions(self) -> None:
         """Propagate scope and refresh all services."""
@@ -660,11 +676,21 @@ class Agent:
             raise RuntimeError("No LLM models available")
 
         model_filter = self.config.get(agentic_model)
+        if isinstance(model_filter, re.Pattern):
+            for adapter, llm in available:
+                if model_filter.search(llm.model_name):
+                    run.adapter = adapter
+                    run.llm = llm
+                    return
+            raise RuntimeError(
+                f"No LLM model matches agentic_model pattern '{model_filter.pattern}'"
+            )
+
         if model_filter:
             available = [
                 (adapter, llm)
                 for adapter, llm in available
-                if model_filter in llm.model_name
+                if llm.model_name == model_filter
             ]
             if not available:
                 raise RuntimeError(
@@ -851,12 +877,16 @@ class Agent:
             raise LLMTruncatedError("LLM response truncated (max_tokens)")
 
     def _scope_has_attribute(self, attribute: str) -> bool:
-        """Check whether any extension in the scope stamps the given marker."""
-        for mod_name in self._extension_scope:
-            mod = sys.modules.get(mod_name)
-            if mod is None:
-                continue
-            for obj in vars(mod).values():
+        """Check whether any declaration in the scope stamps the given marker."""
+        for entry in self._extension_scope:
+            if isinstance(entry, str):
+                mod = sys.modules.get(entry)
+                if mod is None:
+                    continue
+                candidates: tuple[object, ...] = tuple(vars(mod).values())
+            else:
+                candidates = (entry,)
+            for obj in candidates:
                 if isinstance(obj, type) and getattr(obj, attribute, False):
                     return True
         return False

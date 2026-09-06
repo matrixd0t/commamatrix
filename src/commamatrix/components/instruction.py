@@ -132,7 +132,7 @@ class InstructionManager(Manager[InstructionDescriptor]):
         self._python_source = PythonInstructionSource()
         self.mount(self._python_source)
 
-    def set_scope(self, scope: list[str]) -> None:
+    def set_scope(self, scope: list[object]) -> None:
         self._python_source.set_scope(scope)
 
     async def collect(self, run: RunCtx) -> list[str]:

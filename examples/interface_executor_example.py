@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 
 from commamatrix import *  # casual wildcard import is safe
 
@@ -54,7 +55,7 @@ def _required_model(env_name: str) -> str:
 async def main() -> None:
     interface = Agent(
         "interface",
-        config={agentic_model: 'deepseek'},  # matches any available deepSeek model
+        config={agentic_model: re.compile(r'deepseek')},  # matches any available deepSeek model
         auto_load_main=False,  # do not add this file contents as agent extension
         auto_load_plugins=False,  # do not add everything in .commamatrix/plugins as agent extensions
     )

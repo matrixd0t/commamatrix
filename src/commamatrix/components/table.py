@@ -156,7 +156,7 @@ class TableManager(Manager[TableDescriptor]):
         self._python_source = PythonTableSource()
         self.mount(self._python_source)
 
-    def set_scope(self, scope: list[str]) -> None:
+    def set_scope(self, scope: list[object]) -> None:
         self._python_source.set_scope(scope)
 
     async def refresh(self) -> None:

@@ -224,7 +224,7 @@ class InstanceManager(Manager[D], Generic[D, S]):
         self._instance_fingerprints: dict[str, str] = {}
         self._start_order: list[str] = []
 
-    def set_scope(self, scope: list[str]) -> None:
+    def set_scope(self, scope: list[object]) -> None:
         self._python_source.set_scope(scope)
 
     @property

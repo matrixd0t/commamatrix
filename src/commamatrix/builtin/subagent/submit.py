@@ -42,7 +42,11 @@ async def submit_run(
     await agent._ensure_started()
     target = FP + ".builtin.subagent"
     if not any(
-        module_name == target or module_name.startswith(target + ".")
+        isinstance(module_name, str)
+        and (
+            module_name == target
+            or module_name.startswith(target + ".")
+        )
         for module_name in agent.extension_scope
     ):
         await agent.add_extensions(target)

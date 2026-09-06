@@ -46,9 +46,11 @@ Use the existing text, reasoning, image, file, and tool-call block classes. Keep
 provider-specific wire data under response or item metadata so replay and
 protocol-specific round trips remain possible.
 
-The default model selection filters by the `agentic_model` substring when it is
-set, then selects the available model with the lowest input-token cost. A hook
-can change the selected adapter or model before a call.
+The default model selection uses `agentic_model` when it is set. A string must
+equal the model name exactly; a compiled `re.Pattern` selects the first
+matching model in adapter and model order (`search()` semantics). Without a
+filter, the available model with the lowest input-token cost is selected. A
+hook can change the selected adapter or model before a call.
 
 Provider classes must be concrete, top-level subclasses of their respective
 provider base classes. Read the relevant base class before implementing one.

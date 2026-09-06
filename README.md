@@ -133,9 +133,9 @@ async def main() -> None:
     agent.config.set(llm_api_base, os.environ["LLM_API_BASE"])  # изменяйте настройки в любой момент
     agent.config.set(openai_api_key, os.environ["OPENAI_API_KEY"])  # можно передавать lambda-предикаты в значения
     agent.config.set(agentic_model, "deepseek-v4-flash")
-    # для названия модели: первое вхождение подстроки будет распознано
-    # например, 'deepseek/deepseek-v4-flash'
-    # в приоритете наиболее дешевый провайдер
+    # для названия модели: точное совпадение имени модели
+    # вместо строки можно передать re.Pattern -- тогда берется первая модель, совпавшая с паттерном
+    # без фильтра в приоритете наиболее дешевый провайдер
 
     async with agent:  # в стиле asynccontextmanager, но можно и await agent.start() / agent.stop()
         print(f"CommaMatrix agent is running at {agent.http_server.base_url}")
@@ -244,6 +244,7 @@ import my_package, my_module
 await agent.add_extensions("data_tools", "web_utils")  # можно использовать имена
 await agent.add_extensions(my_package.my_extension)
 await agent.add_extensions(my_module)
+await agent.add_extensions(my_instruction)  # можно добавить и отдельную декларацию: @instruction, @tool, ConfigField и т.п.
 ```
 
 Внутренние модули пакета нужно импортировать из его `__init__.py`; ре-экспорт сам по себе не считается декларацией компонента.
