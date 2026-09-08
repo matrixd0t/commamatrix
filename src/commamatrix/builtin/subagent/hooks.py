@@ -8,8 +8,6 @@ from ...components.hook import (
     before_llm_call,
     before_tool_call,
 )
-from ...components.instruction import InstructionCtx, instruction
-from ...core.agent.agent import agent_by_name
 from .policy import filter_tool_descriptors, is_tool_allowed
 
 
@@ -58,18 +56,7 @@ async def enforce_allowed_tools(ctx: BeforeToolCallCtx) -> None:
         ctx.abort_reason = f"Tool {public_name!r} is not allowed in this run"
 
 
-@instruction(priority=-100)
-def available_subagents(_ctx: InstructionCtx) -> str | None:
-    """Describe the agents that can receive delegated work."""
-    lines = []
-    for registered in sorted(agent_by_name.values(), key=lambda a: a.name):
-        if registered != _ctx.run.agent:
-            lines.extend((f"## {registered.name}", registered.description))
-    return "\n".join(["# Available subagents"] + lines) if lines else None
-
-
 __all__ = [
-    "available_subagents",
     "enforce_allowed_tools",
     "filter_allowed_tools",
     "prepare_subagent_call",

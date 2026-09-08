@@ -26,7 +26,7 @@
 
 ### Способ 1. Скачать файл
 
-Скачайте и запустите [`install.ps1`](https://github.com/matrixd0t/commamatrix/releases/latest/download/install.ps1). Скачанный файл откройте двойным кликом.
+Скачайте [`install.ps1`](https://github.com/matrixd0t/commamatrix/releases/latest/download/install.ps1), затем нажмите на скачанном файле правой кнопкой мыши и выберите «Выполнить с помощью PowerShell».
 
 ### Способ 2. Одна команда
 

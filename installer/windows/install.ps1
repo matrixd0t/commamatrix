@@ -23,6 +23,8 @@ $SavePasswordLabel = ConvertFrom-CodePoints "0421 043E 0445 0440 0430 043D 0438 
 $ChangeCredentialsLabel = ConvertFrom-CodePoints "0412 044B 0020 0441 043C 043E 0436 0435 0442 0435 0020 0438 0437 043C 0435 043D 0438 0442 044C 0020 0438 043C 044F 0020 0438 0020 043F 0430 0440 043E 043B 044C 0020 0447 0435 0440 0435 0437 0020 0432 0435 0431 002D 0438 043D 0442 0435 0440 0444 0435 0439 0441"
 $ShortcutLabel = ConvertFrom-CodePoints "041A 043D 043E 043F 043A 0430 0020 0437 0430 043F 0443 0441 043A 0430 0020 0434 043E 0431 0430 0432 043B 0435 043D 0430 0020 043D 0430 0020 0440 0430 0431 043E 0447 0438 0439 0020 0441 0442 043E 043B"
 
+$SecondsUnit = ConvertFrom-CodePoints "0441"
+
 $Repository = "matrixd0t/commamatrix"
 $Branch = "master"
 $PythonInstallerVersion = "3.13.15"
@@ -46,24 +48,62 @@ function Invoke-External {
         [string]$FilePath,
         [Parameter(Mandatory = $true)]
         [string[]]$ArgumentList,
-        [switch]$Quiet
+        [switch]$Quiet,
+        [string]$Spinner
     )
 
     $previousErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
+    $exitCode = 0
+    $capturedOutput = @()
     try {
-        if ($Quiet) {
+        if ($Spinner) {
+            $job = Start-Job -ScriptBlock {
+                param($fp, $al)
+                $output = & $fp @al 2>&1
+                $code = 1
+                if ($null -ne $LASTEXITCODE) {
+                    $code = $LASTEXITCODE
+                }
+                [pscustomobject]@{ ExitCode = $code; Output = $output }
+            } -ArgumentList @($FilePath, $ArgumentList)
+
+            $frames = @("|", "/", "-", "\")
+            $frameIndex = 0
+            $startedAt = [DateTime]::UtcNow
+            while ($job.State -eq "Running") {
+                $elapsed = [int]([DateTime]::UtcNow - $startedAt).TotalSeconds
+                $frame = $frames[$frameIndex % $frames.Count]
+                Write-Host ("`r{0} {1} ({2}{3})  " -f $frame, $Spinner, $elapsed, $SecondsUnit) -NoNewline
+                $frameIndex += 1
+                Start-Sleep -Milliseconds 150
+            }
+            $result = Receive-Job -Job $job -Wait
+            Remove-Job -Job $job -Force
+            Write-Host ("`r" + (" " * ($Spinner.Length + 16)) + "`r") -NoNewline
+            if ($null -eq $result) {
+                throw "$FilePath did not report an exit code"
+            }
+            $exitCode = [int]$result.ExitCode
+            $capturedOutput = @($result.Output)
+        }
+        elseif ($Quiet) {
             & $FilePath @ArgumentList *> $null
+            $exitCode = $LASTEXITCODE
         }
         else {
             & $FilePath @ArgumentList
+            $exitCode = $LASTEXITCODE
         }
     }
     finally {
         $ErrorActionPreference = $previousErrorActionPreference
     }
-    if ($LASTEXITCODE -ne 0) {
-        throw "$FilePath exited with code $LASTEXITCODE"
+    if ($exitCode -ne 0) {
+        foreach ($line in $capturedOutput) {
+            Write-Host $line
+        }
+        throw "$FilePath exited with code $exitCode"
     }
 }
 
@@ -205,7 +245,7 @@ try {
         throw "Python virtual environment was not created: $VenvPath"
     }
 
-    Invoke-External -FilePath $VenvPython -Quiet -ArgumentList @(
+    Invoke-External -FilePath $VenvPython -Spinner $InstallingLibraries -ArgumentList @(
         "-m",
         "pip",
         "install",
