@@ -10,10 +10,13 @@ namespace; declaration entries are owned by definition.
 
 from __future__ import annotations
 
+import ast
 import importlib
+import importlib.util
 import sys
 import types
 from collections.abc import Callable, Iterable
+from importlib.metadata import packages_distributions
 from pathlib import Path
 from typing import Literal
 
@@ -41,6 +44,85 @@ def discover_plugin_targets(root: Path) -> list[Path]:
         elif entry.is_dir() and (entry / "__init__.py").is_file():
             targets.append(entry)
     return targets
+
+
+_DISTRIBUTION_ALIASES = {
+    # Import names that differ from their PyPI distribution name.
+    "PIL": "Pillow",
+    "yaml": "PyYAML",
+    "cv2": "opencv-python",
+    "dotenv": "python-dotenv",
+    "dateutil": "python-dateutil",
+    "sklearn": "scikit-learn",
+    "skimage": "scikit-image",
+    "bs4": "beautifulsoup4",
+    "docx": "python-docx",
+    "pptx": "python-pptx",
+    "Crypto": "pycryptodome",
+    "fitz": "PyMuPDF",
+    "win32api": "pywin32",
+    "win32com": "pywin32",
+    "win32con": "pywin32",
+    "pythoncom": "pywin32",
+    "pywintypes": "pywin32",
+}
+
+
+def dependency_distribution(import_name: str) -> str:
+    """Return the distribution name that likely provides an import name."""
+    aliased = _DISTRIBUTION_ALIASES.get(import_name)
+    if aliased is not None:
+        return aliased
+    distributions = packages_distributions().get(import_name)
+    return distributions[0] if distributions else import_name
+
+
+def missing_plugin_dependencies(targets: Iterable[Path | str]) -> list[str]:
+    """Return distribution names that plugin targets import but the runtime cannot resolve.
+
+    Imports are collected statically from target sources, so dynamically
+    imported modules are not seen. Import names map to distributions via
+    installed package metadata and known import-name aliases, falling back to
+    the import name itself.
+    """
+    sources: list[Path] = []
+    own_names: set[str] = set()
+    for target in targets:
+        path = Path(target).expanduser()
+        if path.is_dir():
+            own_names.add(path.name)
+            sources.extend(sorted(path.rglob("*.py")))
+        elif path.is_file() and path.suffix.lower() == ".py":
+            own_names.add(path.stem)
+            sources.append(path)
+
+    missing: set[str] = set()
+    for source in sources:
+        for name in _source_import_names(source):
+            if name in own_names or name in sys.stdlib_module_names:
+                continue
+            try:
+                if importlib.util.find_spec(name) is not None:
+                    continue
+            except (ImportError, ValueError):
+                pass
+            missing.add(dependency_distribution(name))
+    return sorted(missing)
+
+
+def _source_import_names(source: Path) -> list[str]:
+    """Return top-level import names in a source file; relative imports are skipped."""
+    try:
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, ValueError, UnicodeDecodeError):
+        return []
+    names: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.extend(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            names.append(node.module.split(".")[0])
+    return names
 
 
 class ExtensionRuntimeError(RuntimeError):

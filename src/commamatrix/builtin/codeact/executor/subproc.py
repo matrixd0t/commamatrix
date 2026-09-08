@@ -18,6 +18,33 @@ from .backend import ExecutionBackend, ExecutionResult
 _WORKER_PATH = str(Path(__file__).parent / "worker.py")
 
 
+def resolve_worker_executable() -> str:
+    """Prefer a detected virtual environment interpreter for worker processes.
+
+    The runtime may itself run on the base interpreter with a virtual
+    environment's site-packages injected into sys.path; user code in workers
+    then needs that environment's interpreter to import the same packages.
+    """
+    if sys.prefix != sys.base_prefix:
+        return sys.executable
+    seen: set[Path] = set()
+    for entry in sys.path:
+        if not entry:
+            continue
+        directory = Path(entry)
+        if directory.name != "site-packages":
+            continue
+        for root in directory.parents[:3]:
+            if root in seen:
+                continue
+            seen.add(root)
+            for relative in ("Scripts/python.exe", "bin/python", "bin/python3"):
+                candidate = root / relative
+                if candidate.is_file():
+                    return str(candidate)
+    return sys.executable
+
+
 class SubprocessBackend(ExecutionBackend):
     """Run code in a separate process without security isolation."""
 

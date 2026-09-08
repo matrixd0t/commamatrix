@@ -11,6 +11,7 @@ import os
 import re
 import site
 import socket
+import subprocess
 import sys
 import threading
 import webbrowser
@@ -41,6 +42,12 @@ from commamatrix.builtin.llm_http_adapter import (
 from commamatrix.components.config import log_file, log_to_console
 from commamatrix.components.server import http_host, http_port
 from commamatrix.utils import commamatrix_dir
+from commamatrix.core.extensions import (
+    MissingExtensionDependencyError,
+    dependency_distribution,
+    discover_plugin_targets,
+    missing_plugin_dependencies,
+)
 
 API_ENV = __API_ENV__
 TOKEN_ENV = __TOKEN_ENV__
@@ -92,6 +99,50 @@ def _choose_port(host: str, requested: int) -> int:
     except OSError:
         return 0
     return requested
+
+
+def _report(message: str) -> None:
+    if sys.stdout is not None:
+        print(message)
+
+
+def _venv_python() -> Path:
+    for root in VENV_SITE_PACKAGES.parents[:3]:
+        for relative in ("Scripts/python.exe", "bin/python", "bin/python3"):
+            candidate = root / relative
+            if candidate.is_file():
+                return candidate
+    return Path(sys.executable)
+
+
+def _pip_install(distributions: list[str]) -> bool:
+    command = [
+        str(_venv_python()),
+        "-m",
+        "pip",
+        "install",
+        "--disable-pip-version-check",
+        *distributions,
+    ]
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    if result.returncode == 0:
+        return True
+    _report("Could not install: " + ", ".join(distributions))
+    _report((result.stderr or result.stdout or "").strip())
+    return False
+
+
+def _install_plugin_dependencies() -> None:
+    names = missing_plugin_dependencies(discover_plugin_targets(DATA_DIR / "plugins"))
+    if not names:
+        return
+    _report("Installing plugin dependencies: " + ", ".join(names))
+    _pip_install(names)
 
 
 def _label(ru: str, en: str) -> str:
@@ -234,7 +285,15 @@ def _build_agent(*, initialize: bool) -> Agent:
     if initialize:
         config[llm_refresh_on_start] = False
 
-    return Agent("commamatrix", config=config)
+    _install_plugin_dependencies()
+    attempts = 0
+    while True:
+        try:
+            return Agent("commamatrix", config=config)
+        except MissingExtensionDependencyError as exc:
+            attempts += 1
+            if attempts > 5 or not _pip_install([dependency_distribution(exc.dependency_module)]):
+                raise
 
 
 async def _initialize(credentials_file: Path | None) -> None:
