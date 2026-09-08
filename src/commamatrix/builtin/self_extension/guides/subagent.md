@@ -49,10 +49,10 @@ executor = Agent(
 )
 ```
 
-Names should be unique and stable. The built-in `available_subagents`
-instruction lists registered names and descriptions. It is also added to
-headless runs without an explicit non-empty `instructions` value through the
-normal instruction aggregation path.
+Names should be unique and stable. The extension does not advertise registered
+agents to the model: an application that wants cooperative delegation declares
+its own instruction that reads `agent_by_name` and describes only the agents
+that are meant to work together.
 
 ## Model-Driven Delegation
 

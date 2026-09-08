@@ -28,8 +28,7 @@ your internet provider stands between you and the AI.
 
 ### Method 1. Download the file
 
-Download and run [`install.ps1`](https://github.com/matrixd0t/commamatrix/releases/latest/download/install.ps1).
-Open the downloaded file by double-clicking it.
+Download [`install.ps1`](https://github.com/matrixd0t/commamatrix/releases/latest/download/install.ps1), then right-click the downloaded file and choose "Run with PowerShell".
 
 ### Method 2. One command
 

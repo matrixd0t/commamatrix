@@ -11,7 +11,7 @@
       "api_env": "LLM_API_BASE",
       "token_env": "OPENAI_API_KEY",
       "protocol": "chat_completions",
-      "recommended_model": "deepseek-v4-flash-free",
+      "recommended_model": "muse-spark-1.3-contributor-free",
       "instructions": {
         "ru": [
           "1. Откройте в браузере: https://opencode.ai/auth",

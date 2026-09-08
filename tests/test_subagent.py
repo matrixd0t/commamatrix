@@ -8,7 +8,6 @@ from typing import Any
 
 import pytest
 
-from commamatrix import InstructionCtx
 from commamatrix.builtin.subagent import hooks
 from commamatrix.builtin.subagent import tools as subagent_tools
 import commamatrix.builtin.subagent.submit as submit_module
@@ -169,9 +168,7 @@ async def test_submit_run_orders_instructions_prompt_and_dialog_items(monkeypatc
 
 def test_agent_name_is_registered():
     name = "registry-test-agent"
-    name2 = "registry-test-agent2"
     agent = Agent(name, auto_load_main=False, auto_load_plugins=False)
-    agent2 = Agent(name2, auto_load_main=False, auto_load_plugins=False)
     try:
         assert agent_by_name[name] is agent
         assert get_subagent_by_name(name) is agent
@@ -181,6 +178,5 @@ def test_agent_name_is_registered():
         with pytest.raises(KeyError):
             get_subagent_by_name(name)
         assert get_subagent_by_name(agent.name) is agent
-        assert "updated description" in hooks.available_subagents(InstructionCtx(run=RunCtx(agent=agent2, origin=stub_origin(), user="user")))
     finally:
         agent_by_name.pop(agent.name, None)
