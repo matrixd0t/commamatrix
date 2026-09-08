@@ -15,7 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from commamatrix.builtin.codeact.executor.backend import ExecutionResult
-from commamatrix.builtin.codeact.executor.subproc import SubprocessBackend
+from commamatrix.builtin.codeact.executor.subproc import SubprocessBackend, resolve_worker_executable
 from commamatrix.builtin.codeact.rpc.protocol import (
     Namespace,
     RPCError,

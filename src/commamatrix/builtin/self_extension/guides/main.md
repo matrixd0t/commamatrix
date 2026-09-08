@@ -100,6 +100,13 @@ Creating a nested file alone does not make it discoverable. Declarations must
 be top-level objects in their defining module. Private names and cross-module
 re-exports are not registered by the Python source scanner.
 
+Plugin modules import their own third-party dependencies directly. When such a
+package is missing, the runtime raises `MissingExtensionDependencyError` naming
+the import. The Windows entrypoint statically collects plugin imports at
+startup, installs the missing distributions into the virtual environment, and
+retries agent construction when an import still fails; other hosts are
+responsible for installing plugin dependencies themselves.
+
 Use `auto_load_plugins=False` when the host must activate workspace extensions
 explicitly. Use `add_extensions()`, `remove_extensions()`, and
 `reload_extensions()` for import names, module objects, or Python paths. A

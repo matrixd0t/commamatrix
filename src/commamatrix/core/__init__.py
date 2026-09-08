@@ -38,6 +38,8 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "StaleDescriptorError": (".classes.descriptor", "StaleDescriptorError"),
     "UnavailableSourceError": (".classes.source", "UnavailableSourceError"),
     "discover_plugin_targets": (".extensions", "discover_plugin_targets"),
+    "dependency_distribution": (".extensions", "dependency_distribution"),
+    "missing_plugin_dependencies": (".extensions", "missing_plugin_dependencies"),
     "is_core_component": (".classes.lifecycle_registry", "is_core_component"),
     "lifecycle_component": (".classes.lifecycle_registry", "lifecycle_component"),
     "lifecycle_registrations": (".classes.lifecycle_registry", "lifecycle_registrations"),

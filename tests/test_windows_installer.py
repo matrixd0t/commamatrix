@@ -40,6 +40,15 @@ def test_entrypoint_checks_pypi_for_library_updates():
     assert "GITHUB_LATEST_RELEASE_API" not in source
 
 
+def test_entrypoint_installs_missing_plugin_dependencies():
+    template = Path(__file__).parents[1] / "installer" / "windows" / "entrypoint.template.py"
+    source = template.read_text(encoding="utf-8")
+
+    assert "missing_plugin_dependencies(" in source
+    assert 'discover_plugin_targets(DATA_DIR / "plugins")' in source
+    assert "dependency_distribution(exc.dependency_module)" in source
+
+
 def test_basic_selection_uses_saved_provider_and_token(tmp_path, monkeypatch):
     data_dir = tmp_path / ".commamatrix"
     data_dir.mkdir()
