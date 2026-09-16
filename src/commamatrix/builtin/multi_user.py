@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel
 
 from ..components.config import ConfigField
-from ..components.dialog import DialogItem, DialogRole
+from ..components.dialog import DialogItem, DialogRole, DialogItemType
 from ..components.hook import (
     BeforeLlmCallCtx,
     BeforeRunCtx,
@@ -156,7 +156,7 @@ async def add_user_message_headers(ctx: BeforeLlmCallCtx) -> None:
     if not renderer:
         return
     for index, item in enumerate(ctx.dialog):
-        if item.role != DialogRole.USER:
+        if item.role != DialogRole.USER or item.item_type != DialogItemType.INPUT:
             continue
         header = await _render_configured_header(renderer, ctx.run, item)
         if not header:
