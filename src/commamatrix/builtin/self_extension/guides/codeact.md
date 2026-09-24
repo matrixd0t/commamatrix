@@ -48,8 +48,10 @@ the process, and the system terminal. A separate process does not make
 untrusted execution safe.
 
 Do not expose CodeAct to untrusted users without an external isolation and
-authorization boundary. Preserve execution, RPC, shutdown, and output limits.
-Configure the backend and timeouts through the CodeAct `ConfigField` values.
+authorization boundary. The subprocess backend allows 120 seconds for one code
+execution and for each nested RPC tool call by default; the execution deadline
+still bounds all calls in that execution. Preserve execution, RPC, shutdown,
+and output limits, and configure them through the CodeAct `ConfigField` values.
 
 Custom execution backends implement async `start()`, `stop()`, and
 `execute(code, ctx)` methods. Treat backend selection as a deployment security

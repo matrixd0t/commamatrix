@@ -22,6 +22,8 @@ $AdminPasswordLabel = ConvertFrom-CodePoints "041F 0430 0440 043E 043B 044C 0020
 $SavePasswordLabel = ConvertFrom-CodePoints "0421 043E 0445 0440 0430 043D 0438 0442 0435 0020 044D 0442 043E 0442 0020 043F 0430 0440 043E 043B 044C"
 $ChangeCredentialsLabel = ConvertFrom-CodePoints "0412 044B 0020 0441 043C 043E 0436 0435 0442 0435 0020 0438 0437 043C 0435 043D 0438 0442 044C 0020 0438 043C 044F 0020 0438 0020 043F 0430 0440 043E 043B 044C 0020 0447 0435 0440 0435 0437 0020 0432 0435 0431 002D 0438 043D 0442 0435 0440 0444 0435 0439 0441"
 $ShortcutLabel = ConvertFrom-CodePoints "041A 043D 043E 043F 043A 0430 0020 0437 0430 043F 0443 0441 043A 0430 0020 0434 043E 0431 0430 0432 043B 0435 043D 0430 0020 043D 0430 0020 0440 0430 0431 043E 0447 0438 0439 0020 0441 0442 043E 043B"
+$RunningApplicationError = ConvertFrom-CodePoints "0043 006F 006D 006D 0061 004D 0061 0074 0072 0069 0078 0020 0437 0430 043F 0443 0449 0435 043D 002E 0020 0417 0430 043A 0440 043E 0439 0442 0435 0020 0435 0433 043E 0020 0447 0435 0440 0435 0437 0020 0441 0438 0441 0442 0435 043C 043D 044B 0439 0020 0442 0440 0435 0439 0020 0438 0020 0437 0430 043F 0443 0441 0442 0438 0442 0435 0020 0443 0441 0442 0430 043D 043E 0432 0449 0438 043A 0020 0441 043D 043E 0432 0430 002E"
+$RunningApplicationErrorEn = "CommaMatrix is running. Close it from the system tray and run the installer again."
 
 $SecondsUnit = ConvertFrom-CodePoints "0441"
 $StepFormat = ConvertFrom-CodePoints "0428 0430 0433 0020 007B 0030 007D 0020 0438 0437 0020 0033"
@@ -291,7 +293,54 @@ function New-DesktopShortcut {
     $shortcut.Save()
 }
 
+function Test-CommaMatrixRunning {
+    $entrypointPaths = @((Join-Path $InstallRoot "entrypoint.py"))
+    $desktopPath = [Environment]::GetFolderPath("Desktop")
+    if ([string]::IsNullOrWhiteSpace($desktopPath)) {
+        $desktopPath = Join-Path $HOME "Desktop"
+    }
+    $shortcutPath = Join-Path $desktopPath "CommaMatrix.lnk"
+    if (Test-Path -LiteralPath $shortcutPath) {
+        $shell = $null
+        try {
+            $shell = New-Object -ComObject WScript.Shell
+            $arguments = [string]$shell.CreateShortcut($shortcutPath).Arguments
+            $match = [regex]::Match($arguments, '^\s*"(?<path>[^"]+)"')
+            if ($match.Success) {
+                $entrypointPaths += $match.Groups["path"].Value
+            }
+            elseif (-not [string]::IsNullOrWhiteSpace($arguments)) {
+                $entrypointPaths += $arguments.Trim()
+            }
+        }
+        catch {
+        }
+        finally {
+            if ($null -ne $shell) {
+                [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shell)
+            }
+        }
+    }
+
+    $processes = @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'python.exe' OR Name = 'pythonw.exe'" -ErrorAction SilentlyContinue)
+    foreach ($process in $processes) {
+        if ([string]::IsNullOrWhiteSpace($process.CommandLine)) {
+            continue
+        }
+        foreach ($entrypointPath in $entrypointPaths) {
+            if ($process.CommandLine.IndexOf($entrypointPath, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                return $true
+            }
+        }
+    }
+    return $false
+}
+
 try {
+    if (Test-CommaMatrixRunning) {
+        throw "$RunningApplicationError / $RunningApplicationErrorEn"
+    }
+
     New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
     New-Item -ItemType Directory -Path $TempRoot -Force | Out-Null
 
