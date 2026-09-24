@@ -49,6 +49,18 @@ def test_entrypoint_installs_missing_plugin_dependencies():
     assert "dependency_distribution(exc.dependency_module)" in source
 
 
+def test_installer_warns_and_stops_when_commamatrix_is_running():
+    installer = Path(__file__).parents[1] / "installer" / "windows" / "install.ps1"
+    source = installer.read_text(encoding="utf-8")
+
+    assert "function Test-CommaMatrixRunning" in source
+    assert "Get-CimInstance -ClassName Win32_Process" in source
+    assert "$RunningApplicationErrorEn" in source
+    assert source.index("if (Test-CommaMatrixRunning)") < source.index(
+        'Invoke-External -FilePath $PythonPath -Spinner $CreatingEnvironmentLabel'
+    )
+
+
 def test_basic_selection_uses_saved_provider_and_token(tmp_path, monkeypatch):
     data_dir = tmp_path / ".commamatrix"
     data_dir.mkdir()

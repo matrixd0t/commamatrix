@@ -53,7 +53,7 @@ class SubprocessBackend(ExecutionBackend):
         execution_timeout: float = 30.0,
         shutdown_timeout: float = 5.0,
         max_output_bytes: int = 1_000_000,
-        rpc_timeout: float = 10.0,
+        rpc_timeout: float = 120.0,
     ) -> None:
         self._execution_timeout = execution_timeout
         self._shutdown_timeout = shutdown_timeout
@@ -101,7 +101,7 @@ class SubprocessBackend(ExecutionBackend):
         force_kill = False
 
         try:
-            tcp_server = TcpServer(token, handshake_timeout=self._rpc_timeout)
+            tcp_server = TcpServer(token)
             host, port = await tcp_server.start()
 
             proc = await asyncio.create_subprocess_exec(

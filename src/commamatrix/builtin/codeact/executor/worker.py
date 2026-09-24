@@ -47,7 +47,7 @@ async def _read_msg(reader: asyncio.StreamReader) -> bytes:
 
 
 class AsyncRPCClient:
-    def __init__(self, reader, writer, rpc_timeout: float = 10.0):
+    def __init__(self, reader, writer, rpc_timeout: float = 120.0):
         self._reader = reader
         self._writer = writer
         self._rpc_timeout = rpc_timeout
@@ -346,7 +346,7 @@ async def main(host: str, port: int, token: str) -> None:
     code = payload["code"]
     namespace = payload.get("namespace") or {"__name__": "__codeact__"}
     tool_tree = payload.get("tool_tree") or {}
-    rpc_timeout = payload.get("codeact_rpc_timeout", 10.0)
+    rpc_timeout = payload.get("codeact_rpc_timeout", 120.0)
 
     client = AsyncRPCClient(reader, writer, rpc_timeout=rpc_timeout)
     reader_task = asyncio.create_task(client.read_responses())

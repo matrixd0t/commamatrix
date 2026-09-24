@@ -616,6 +616,26 @@ class TestHttpConnectorStreaming:
         assert item["meta"]["tool_name"] == "execute"
 
     @pytest.mark.asyncio
+    async def test_send_reasoning_stream_chunk_preserves_reasoning_type(self):
+        from commamatrix.builtin.http_connector.connector import HttpConnector, HttpOrigin
+
+        agent = stub_agent()
+        conn = HttpConnector(agent=agent)
+        session = conn._open_session(1)
+        run = RunCtx(agent=agent, origin=HttpOrigin(http_user_id=1), user="http:1")
+
+        await conn.send_stream_chunk(
+            run,
+            StreamDelta(content="Thinking...", delta_type="reasoning_level"),
+        )
+
+        event = await session.queue.get()
+        assert event["type"] == "stream_chunk"
+        assert event["item_type"] == "reasoning_level"
+        assert event["delta_type"] == "reasoning_level"
+        assert event["content"] == "Thinking..."
+
+    @pytest.mark.asyncio
     async def test_send_stream_chunk_wrong_origin_ignored(self):
         from commamatrix.builtin.http_connector.connector import HttpConnector
         agent = stub_agent()

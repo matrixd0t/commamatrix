@@ -55,8 +55,8 @@ codeact_execution_timeout = ConfigField[float](
 )
 codeact_rpc_timeout = ConfigField[float](
     name="codeact_rpc_timeout",
-    default=10.0,
-    description="Timeout in seconds for a single RPC tool call",
+    default=120.0,
+    description="Timeout in seconds for a single nested RPC tool call",
 )
 codeact_shutdown_timeout = ConfigField[float](
     name="codeact_shutdown_timeout",

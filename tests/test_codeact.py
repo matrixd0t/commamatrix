@@ -16,6 +16,7 @@ import pytest
 
 from commamatrix.builtin.codeact.executor.backend import ExecutionResult
 from commamatrix.builtin.codeact.executor.subproc import SubprocessBackend, resolve_worker_executable
+from commamatrix.builtin.codeact.service import codeact_execution_timeout, codeact_rpc_timeout
 from commamatrix.builtin.codeact.rpc.protocol import (
     Namespace,
     RPCError,
@@ -253,6 +254,11 @@ class TestExecutionResult:
 
     def test_empty_console_output(self):
         assert ExecutionResult().console_output() == ""
+
+
+def test_codeact_nested_rpc_timeout_defaults_to_execution_limit():
+    assert codeact_execution_timeout.default == codeact_rpc_timeout.default == 120.0
+    assert SubprocessBackend()._rpc_timeout == codeact_rpc_timeout.default
 
 
 class TestRPCProtocol:
