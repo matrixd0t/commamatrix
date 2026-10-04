@@ -267,6 +267,17 @@ class _ToolModule(ModuleType):
         return self.__call_proxy(*args, **kwargs)
 
 
+def _make_leaf_module(fullname, proxy):
+    module = _modules_cache.get(fullname)
+    if module is None:
+        module = _ToolModule(fullname, proxy)
+        module.__path__ = []
+        module.__package__ = fullname
+        _modules_cache[fullname] = module
+    _factories[fullname] = lambda m=module: m
+    return module
+
+
 def make_tool_module(fullname, node, client):
     descriptors = node.get("__tools__", [])
     if len(descriptors) == 1:
@@ -281,15 +292,15 @@ def make_tool_module(fullname, node, client):
     module.__package__ = fullname
     _modules_cache[fullname] = module
     by_name: dict[str, list[dict[str, Any]]] = {}
-    for descriptor in node.get("__tools__", []):
+    for descriptor in descriptors:
         by_name.setdefault(descriptor["name"], []).append(descriptor)
     names = []
-    for name, descriptors in by_name.items():
-        if len(descriptors) > 1:
-            proxy = _make_ambiguous_proxy(name, descriptors)
+    for name, name_descriptors in by_name.items():
+        if len(name_descriptors) > 1:
+            proxy = _make_ambiguous_proxy(name, name_descriptors)
         else:
-            proxy = _make_tool_proxy(client, descriptors[0])
-        setattr(module, name, proxy)
+            proxy = _make_tool_proxy(client, name_descriptors[0])
+        setattr(module, name, _make_leaf_module(f"{fullname}.{name}", proxy))
         names.append(name)
     for child_name, child_node in node.items():
         if child_name == "__tools__":
@@ -353,18 +364,9 @@ async def main(host: str, port: int, token: str) -> None:
 
     _modules_cache.clear()
     _factories.clear()
-    tools_node = tool_tree.get("tools", {})
-    for alias, node in tools_node.items():
-        _factories[f"tools.{alias}"] = lambda a=f"tools.{alias}", n=node: (
-            make_tool_module(a, n, client)
-        )
-
-    tools_mod = ModuleType("tools")
-    tools_mod.__path__ = []
-    tools_mod.__package__ = "tools"
-    tools_mod.__all__ = list(tools_node.keys())
-    _modules_cache["tools"] = tools_mod
-    _factories["tools"] = lambda: tools_mod
+    tools_node = {**tool_tree.get("tools", {}), "__tools__": []}
+    tools_mod = make_tool_module("tools", tools_node, client)
+    _factories["tools"] = lambda m=tools_mod: m
     sys.meta_path.insert(0, _Finder())
 
     stdout_buf = io.StringIO()

@@ -63,11 +63,6 @@ codeact_shutdown_timeout = ConfigField[float](
     default=5.0,
     description="Grace period in seconds for worker shutdown",
 )
-codeact_max_output_bytes = ConfigField[int](
-    name="codeact_max_output_bytes",
-    default=1_000_000,
-    description="Maximum bytes of stdout/stderr captured per execution",
-)
 codeact_max_search_results = ConfigField[int](
     name="codeact_max_search_results",
     default=5,
@@ -101,7 +96,6 @@ class CodeActService(Service):
             self.backend = SubprocessBackend(
                 execution_timeout=self.config.get(codeact_execution_timeout),
                 shutdown_timeout=self.config.get(codeact_shutdown_timeout),
-                max_output_bytes=self.config.get(codeact_max_output_bytes),
                 rpc_timeout=self.config.get(codeact_rpc_timeout),
             )
         else:

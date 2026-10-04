@@ -91,7 +91,7 @@ async def do_search(query: str, limit: int, sites: list[str] | None, timeout: in
     return output
 
 
-@tool(alias="web")
+@tool(alias="web", truncation=True)
 async def search(query: str, limit: int = 5, sites: list[str] | None = None, *, ctx: BeforeToolCallCtx) -> str:
     """Search the web and return formatted results.
 

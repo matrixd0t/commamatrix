@@ -28,6 +28,28 @@ import tools.fs as fs
 content = await fs.read_file(path="README.md")
 ```
 
+CodeAct also supports importing the tool as a nested module or through the root
+namespace:
+
+```python
+import tools
+content = await tools.fs.read_file(path="README.md")
+
+import tools.fs.read_file as read_file
+content = await read_file(path="README.md")
+```
+
+The CodeAct management tools `tool_search` and `tools_list` are importable from
+generated code too:
+
+```python
+import tools
+matches = await tools.tool_search(query="read a file")
+listed = await tools.tools_list(alias="fs")
+```
+
+`execute` is deliberately not importable to avoid recursive execution.
+
 Use an explicit stable alias for tools intended for CodeAct. The tool manager
 also exposes name-based virtual namespaces for generated code, but extension
 code should use `run.tools` rather than depending on the source filename.
@@ -50,8 +72,10 @@ untrusted execution safe.
 Do not expose CodeAct to untrusted users without an external isolation and
 authorization boundary. The subprocess backend allows 120 seconds for one code
 execution and for each nested RPC tool call by default; the execution deadline
-still bounds all calls in that execution. Preserve execution, RPC, shutdown,
-and output limits, and configure them through the CodeAct `ConfigField` values.
+still bounds all calls in that execution. Preserve execution, RPC, and shutdown
+limits, and configure them through the CodeAct `ConfigField` values. CodeAct
+output is no longer byte-capped; oversized `execute` output is truncated by the
+generic `max_out_chars` tool mechanism.
 
 Custom execution backends implement async `start()`, `stop()`, and
 `execute(code, ctx)` methods. Treat backend selection as a deployment security

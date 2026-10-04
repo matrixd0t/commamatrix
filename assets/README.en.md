@@ -279,6 +279,10 @@ async def main() -> None:
     print(agent.config_fields_markdown())
 ```
 
+The full reference of core and built-in configuration fields (type, default,
+description, and declaring module) is in
+[config.md](https://github.com/matrixd0t/commamatrix/blob/master/config.md).
+
 ### Extensions
 
 The extension list is isolated per agent and is not tied to module imports. You

@@ -18,12 +18,12 @@ def _format_codeact_guide(codeact: CodeActService) -> str:
     lines = [
         "# CodeAct mode",
         "You have access to an `execute` tool that runs Python code on the backend.",
-        "Inside execute(), import tools as async functions: `import tools.<name> as <name>`.",
+        "Inside execute(), import and use tools as async functions: `from tools.<path> import <name>`, `import tools.<path>.<name> as <name>`, or `import tools` then `await tools.<path>.<name>()`.",
         "All tools are async — top-level await is allowed.",
+        "Take advantage of tool parallelization and chaining capabilities: you may script consequetive or parallel tool calls with custom logic between them.",
         "You MUST prioritize tools over other methods when doing stuff. Example: prefer `write` tool instead of open().write() when you need to store downloaded JSON.",
-        "Use `tool_search(query)` to find tools by description.",
-        "Use `tools_list()` to list available tools.",
-        "Take advantage of tool parallelization and chaining capabilities.",
+        "Use `tool_search(query)` to get detailed info about relevant tools.",
+        "Use `tools_list()` to simply list available tools.",
         "",
         codeact.backend.environment_description(),
     ]

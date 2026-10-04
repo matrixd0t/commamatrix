@@ -82,6 +82,31 @@ stable aliases for reusable tools; aliases must be valid Python identifiers.
 CodeAct's virtual `tools` imports have additional behavior. Read `codeact.md`
 when the tool is intended for generated Python code.
 
+## Output Truncation
+
+Pass `truncation=True` to keep large tool outputs out of the context window:
+
+```python
+@tool(alias="weather", truncation=True)
+async def forecast(city: str) -> str:
+    """Get a verbose forecast."""
+    ...
+```
+
+The framework then injects an optional `max_out_chars` parameter into the
+LLM-visible signature (it is not a real function argument). When the result
+exceeds the budget, the full text is written to
+`commamatrix_dir/tool_outputs/<tool>_<timestamp>.txt` and the returned text is
+cut to the beginning plus a marker:
+
+```text
+[ shown 10000/48213 chars, full output available at forecast_20261004_120000_000000.txt ]
+```
+
+`max_out_chars` defaults to the agent's `tool_max_out_chars` config field; a
+value of `0` or less disables truncation for that call. Truncation applies only
+to `str` results.
+
 ## Metadata
 
 Keyword arguments to `@tool` are declarative metadata. A hook can inspect them

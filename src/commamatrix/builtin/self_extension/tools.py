@@ -35,7 +35,7 @@ How to use:
 '''
 
 
-@tool(alias="self_extension", filesystem=True)
+@tool(alias="self_extension", filesystem=True, truncation=True)
 async def manage(module_or_path: str, action: Literal["add", "remove", "reload"], *, ctx: BeforeToolCallCtx) -> str:
     """Add, remove, or reload an extension by import name or filesystem path."""
     if not module_or_path:
@@ -55,7 +55,7 @@ async def manage(module_or_path: str, action: Literal["add", "remove", "reload"]
     return f"Extension {verb}: {handled[0]}\n"
 
 
-@tool(alias="self_extension")
+@tool(alias="self_extension", truncation=True)
 async def list_all(*, ctx: BeforeToolCallCtx) -> str:
     """List the extension roots currently active for this agent."""
     scope = [name for name in ctx.run.agent.extension_scope if isinstance(name, str)]
@@ -65,7 +65,7 @@ async def list_all(*, ctx: BeforeToolCallCtx) -> str:
     return "Active extension modules:\n" + "\n".join(f"- {name}" for name in roots)
 
 
-@tool(alias="self_extension", filesystem=True)
+@tool(alias="self_extension", filesystem=True, truncation=True)
 async def read_guide(sections: list[str] | None = None) -> str:
     """Read the general extension guide or selected detailed guide sections.
 

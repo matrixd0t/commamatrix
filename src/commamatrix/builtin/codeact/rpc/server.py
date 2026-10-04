@@ -22,8 +22,24 @@ if TYPE_CHECKING:
 
 
 def is_codeact_internal(descriptor: ToolDescriptor) -> bool:
-    """Return True if a descriptor must stay outside the CodeAct worker."""
+    """Return True if a descriptor is a CodeAct management tool.
+
+    Internal tools are shown to the LLM directly (``execute``, ``tool_search``,
+    ``tools_list``) instead of being indexed for CodeAct search.
+    """
     return not descriptor.meta.get("codeact", True)
+
+
+def is_codeact_importable(descriptor: ToolDescriptor) -> bool:
+    """Return True if a descriptor may be imported and invoked inside CodeAct.
+
+    Ordinary tools are importable.  CodeAct management tools are importable only
+    when they opt in with ``codeact_import=True`` (for example ``tool_search``
+    and ``tools_list``); ``execute`` deliberately stays out to avoid recursion.
+    """
+    if descriptor.meta.get("codeact", True):
+        return True
+    return bool(descriptor.meta.get("codeact_import", False))
 
 
 def serialize_tool_descriptor(descriptor: ToolDescriptor) -> dict[str, Any]:
@@ -85,7 +101,7 @@ class RPCServer:
                 descriptor = self._ctx.run.agent.tool_manager.resolve_id(tool_id)
                 if descriptor is None:
                     raise RPCError(code=-32602, message=f"Tool not found: {tool_id!r}")
-                if is_codeact_internal(descriptor):
+                if not is_codeact_importable(descriptor):
                     raise RPCError(
                         code=-32603,
                         message=f"Internal tool with id {tool_id!r} is not accessible from CodeAct",
@@ -103,7 +119,7 @@ class RPCServer:
 
             case ToolsMethod.RESOLVE:
                 descriptor = self._ctx.run.agent.tool_manager.resolve(params["name"])
-                if descriptor is None or is_codeact_internal(descriptor):
+                if descriptor is None or not is_codeact_importable(descriptor):
                     return None
                 return serialize_tool_descriptor(descriptor)
         raise RPCError(code=-32601, message=f"Unknown tools method: {path[0]}")

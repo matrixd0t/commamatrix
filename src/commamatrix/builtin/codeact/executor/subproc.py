@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from ....components.hook import BeforeToolCallCtx
-from ..rpc.server import RPCServer, is_codeact_internal
+from ..rpc.server import RPCServer, is_codeact_importable
 from ..rpc.tcp import TcpServer, TcpTransport
 from .backend import ExecutionBackend, ExecutionResult
 
@@ -52,12 +52,10 @@ class SubprocessBackend(ExecutionBackend):
         self,
         execution_timeout: float = 30.0,
         shutdown_timeout: float = 5.0,
-        max_output_bytes: int = 1_000_000,
         rpc_timeout: float = 120.0,
     ) -> None:
         self._execution_timeout = execution_timeout
         self._shutdown_timeout = shutdown_timeout
-        self._max_output_bytes = max_output_bytes
         self._rpc_timeout = rpc_timeout
 
     async def start(self) -> None:
@@ -78,7 +76,7 @@ class SubprocessBackend(ExecutionBackend):
     async def execute(self, code: str, ctx: BeforeToolCallCtx) -> ExecutionResult:
         server = RPCServer(ctx)
         tm = ctx.run.agent.tool_manager
-        public_descriptors = [d for d in tm.descriptors if not is_codeact_internal(d)]
+        public_descriptors = [d for d in tm.descriptors if is_codeact_importable(d)]
         payload = {
             "code": code,
             "namespace": {"__name__": "__codeact__"},
@@ -164,7 +162,7 @@ class SubprocessBackend(ExecutionBackend):
         stderr_text = "\n".join(stderr_buffer)
         if is_timeout:
             result = ExecutionResult(
-                stderr=self._truncate(stderr_text),
+                stderr=stderr_text,
                 returncode=124,
                 duration_ms=self._execution_timeout * 1000,
             )
@@ -177,14 +175,14 @@ class SubprocessBackend(ExecutionBackend):
                 part for part in (stderr_text, worker_stderr) if part
             )
             result = ExecutionResult(
-                stdout=self._truncate(worker_result.get("stdout", "")),
-                stderr=self._truncate(combined_stderr),
+                stdout=worker_result.get("stdout", ""),
+                stderr=combined_stderr,
                 returncode=worker_result.get("returncode", 0),
                 duration_ms=worker_result.get("elapsed"),
             )
         else:
             result = ExecutionResult(
-                stderr=self._truncate(stderr_text or "Child process crashed"),
+                stderr=stderr_text or "Child process crashed",
                 returncode=1,
             )
 
@@ -217,22 +215,9 @@ class SubprocessBackend(ExecutionBackend):
                 if not line:
                     break
                 text = line.decode("utf-8", errors="replace")
-                current_size = len("\n".join(buffer).encode("utf-8"))
-                if current_size + len(text.encode("utf-8")) > self._max_output_bytes:
-                    buffer.append("...(stderr truncated)")
-                    break
                 buffer.append(text.rstrip("\n"))
         except (ConnectionError, ValueError):
             pass
-
-    def _truncate(self, text: str) -> str:
-        encoded = text.encode("utf-8")
-        if len(encoded) > self._max_output_bytes:
-            truncated = encoded[: self._max_output_bytes].decode(
-                "utf-8", errors="ignore"
-            )
-            return truncated + "\n...(output truncated)"
-        return text
 
     @staticmethod
     def _kill_process(proc: asyncio.subprocess.Process | None) -> None:

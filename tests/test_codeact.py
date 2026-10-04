@@ -15,8 +15,9 @@ from types import SimpleNamespace
 import pytest
 
 from commamatrix.builtin.codeact.executor.backend import ExecutionResult
-from commamatrix.builtin.codeact.executor.subproc import SubprocessBackend, resolve_worker_executable
-from commamatrix.builtin.codeact.service import codeact_execution_timeout, codeact_rpc_timeout
+from commamatrix.builtin.codeact.executor.subproc import (
+    SubprocessBackend,
+)
 from commamatrix.builtin.codeact.rpc.protocol import (
     Namespace,
     RPCError,
@@ -25,6 +26,10 @@ from commamatrix.builtin.codeact.rpc.protocol import (
     ToolsMethod,
 )
 from commamatrix.builtin.codeact.rpc.tcp import TcpServer, TcpTransport
+from commamatrix.builtin.codeact.service import (
+    codeact_execution_timeout,
+    codeact_rpc_timeout,
+)
 
 _WORKER_PATH = str(
     Path(__file__).resolve().parents[1]
@@ -350,6 +355,82 @@ async def test_subprocess_backend_invokes_nested_tool_over_tcp_rpc():
 
 
 @pytest.mark.asyncio
+async def test_subprocess_backend_import_module_attribute_access():
+    ctx, agent = _backend_context()
+    result = await SubprocessBackend(execution_timeout=5, rpc_timeout=2).execute(
+        'import tools\nanswer = await tools.test_tools.echo(msg="hello")\nprint(answer)',
+        ctx,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "echo: hello\n"
+    assert len(agent.calls) == 1
+    assert agent.calls[0].tool_args == {"msg": "hello"}
+
+
+@pytest.mark.asyncio
+async def test_subprocess_backend_import_tool_leaf_as_alias():
+    ctx, agent = _backend_context()
+    result = await SubprocessBackend(execution_timeout=5, rpc_timeout=2).execute(
+        'import tools.test_tools.echo as t\nanswer = await t(msg="hello")\nprint(answer)',
+        ctx,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "echo: hello\n"
+    assert len(agent.calls) == 1
+    assert agent.calls[0].tool_args == {"msg": "hello"}
+
+
+@pytest.mark.asyncio
+async def test_subprocess_backend_dir_lists_tool_modules():
+    ctx, _ = _backend_context()
+    code = (
+        "import tools\n"
+        "package_names = [n for n in dir(tools) if not n.startswith('_')]\n"
+        "tool_names = [n for n in dir(tools.test_tools) if not n.startswith('_')]\n"
+        "print(package_names, tool_names)"
+    )
+    result = await SubprocessBackend(execution_timeout=5, rpc_timeout=2).execute(code, ctx)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "['echo', 'test_tools'] ['echo']\n"
+
+
+def _ungrouped_tool_tree() -> dict:
+    return {
+        "tools": {
+            "tools_list": {
+                "__tools__": [{
+                    "id": "python://codeact/tools_list",
+                    "namespace": "codeact",
+                    "alias": "",
+                    "name": "tools_list",
+                    "doc": "List available tool names.",
+                    "schema": {"type": "function", "parameters": {"type": "object", "properties": {}}},
+                    "meta": {"signature": []},
+                }],
+            },
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_worker_imports_ungrouped_tool_module():
+    code = 'import tools.tools_list as tl\nresult = await tl()\nprint(result)'
+    async with _worker(_payload(code, _ungrouped_tool_tree())) as (_, transport):
+        request = await asyncio.wait_for(transport.recv(), timeout=5)
+        assert request["method"] == "tools.invoke"
+        assert request["params"]["tool_id"] == "python://codeact/tools_list"
+        assert request["params"]["tool_args"] == {}
+        await transport.send({"id": request["id"], "result": "data\nfiles"})
+        response = await asyncio.wait_for(transport.recv(), timeout=5)
+
+    assert response["result"]["returncode"] == 0
+    assert response["result"]["stdout"] == "data\nfiles\n"
+
+
+@pytest.mark.asyncio
 async def test_subprocess_backend_returns_python_errors():
     ctx, _ = _backend_context()
     result = await SubprocessBackend(execution_timeout=5).execute('raise ValueError("broken")', ctx)
@@ -426,11 +507,13 @@ async def test_subprocess_backend_cancellation_cleans_up_worker():
         await asyncio.wait_for(task, timeout=3)
 
 
-def test_subprocess_backend_truncates_utf8_by_bytes():
-    backend = SubprocessBackend(max_output_bytes=5)
-    result = backend._truncate("я" * 10)
-    prefix = result.removesuffix("\n...(output truncated)")
+@pytest.mark.asyncio
+async def test_subprocess_backend_does_not_truncate_large_output():
+    ctx, _ = _backend_context()
+    code = 'import sys\nsys.stdout.write("x" * 1_500_000)'
+    result = await SubprocessBackend(execution_timeout=10).execute(code, ctx)
 
-    assert result.endswith("\n...(output truncated)")
-    assert len(prefix.encode("utf-8")) <= 5
+    assert result.returncode == 0, result.stderr
+    assert len(result.stdout) == 1_500_000
+    assert "truncated" not in result.stdout
 
