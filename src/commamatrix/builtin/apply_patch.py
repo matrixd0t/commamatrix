@@ -574,7 +574,7 @@ def apply_patch_text(patch_text: str, *, root: str | Path | None = None, allow_a
     return PatchResult(operations=results)
 
 
-@tool(alias="code", filesystem=True)
+@tool(alias="code", filesystem=True, truncation=True)
 async def apply_patch(patch: str, *, ctx: BeforeToolCallCtx) -> str:
     """Apply a text patch to files under the agent's current working directory."""
     max_chars = ctx.run.agent.config.get(max_patch_chars)

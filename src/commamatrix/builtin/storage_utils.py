@@ -26,7 +26,7 @@ async def _schema_text(storage: Storage, tables: list[str]) -> str:
     return f"# Storage\nType: {await storage.info()}.\nTables (DDL):{table_text}."
 
 
-@tool(alias="storage")
+@tool(alias="storage", truncation=True)
 async def query(_query: str, params: list | None = None, *, ctx: BeforeToolCallCtx) -> str:
     """
     Execute SQL against persistent storage and return serialized results.

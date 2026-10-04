@@ -63,7 +63,7 @@ def _origin_help(origin_cls: type[DialogOrigin]) -> str:
     return f"{platform}\n└─{type_name}: {fields}"
 
 
-@tool(alias="dialogs")
+@tool(alias="dialogs", truncation=True)
 async def get_origins(platform: str = "any") -> str:
     """View field schemas for all available dialog origins optionally grouped by platform."""
     base_fields = set(DialogOrigin.model_fields)
@@ -91,7 +91,7 @@ async def get_origins(platform: str = "any") -> str:
     return "\n".join(lines) if lines else "No origins registered"
 
 
-@tool(alias="dialogs")
+@tool(alias="dialogs", truncation=True)
 async def get_user_info(user_names_or_ids: list[str | int], ctx: BeforeToolCallCtx) -> dict[str, dict[str, object]]:
     """Get user information keyed by each name or id from the input list.
 
@@ -178,7 +178,7 @@ async def get_user_info(user_names_or_ids: list[str | int], ctx: BeforeToolCallC
     return results
 
 
-@tool(alias="dialogs")
+@tool(alias="dialogs", truncation=True)
 async def switch(origin_type: str, fields_json: str, ctx: BeforeToolCallCtx) -> str:
     """Route the next response; fields_json must be a JSON object containing only origin identity fields."""
     origin_cls = _resolve_origin_class(origin_type)

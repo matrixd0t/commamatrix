@@ -7,7 +7,7 @@ from ...components.tool import tool
 from ...core.agent.agent import get_subagent_by_name
 
 
-@tool(alias="", codeact=True)
+@tool(alias="", codeact=True, truncation=True)
 async def call_subagent(
     subagent: str = "",
     *,

@@ -124,17 +124,6 @@ def _content_type(mime_type: str) -> DataType:
     return DataType.FILE
 
 
-def _truncate_text(content: str, max_chars: int) -> str:
-    if max_chars <= 0:
-        return ""
-    if len(content) <= max_chars:
-        return content
-    marker = "\n\n[truncated]"
-    if max_chars <= len(marker):
-        return content[:max_chars]
-    return content[: max_chars - len(marker)] + marker
-
-
 def _extract_content(html: str) -> str:
     from trafilatura import extract
     return extract(html, output_format="markdown", include_links=True, include_tables=True) or ""
@@ -205,8 +194,8 @@ async def _fetch_url(ref: str, ctx: BeforeToolCallCtx) -> tuple[FileData, str] |
     ), current_url
 
 
-@tool(alias="data", filesystem=True)
-async def read(ref: str, max_chars: int = 4000, *, ctx: BeforeToolCallCtx) -> str:
+@tool(alias="data", filesystem=True, truncation=True)
+async def read(ref: str, *, ctx: BeforeToolCallCtx) -> str:
     """
     Read a text, image, or file from a URL, path, or local storage.
     HTML pages will be converted to Markdown.
@@ -248,20 +237,20 @@ async def read(ref: str, max_chars: int = 4000, *, ctx: BeforeToolCallCtx) -> st
         if not markdown:
             return "No readable content found at this URL."
         output = f"Source: {source_url}\n\n{markdown}"
-        return _truncate_text(output, max_chars)
+        return output
 
     if content_type is DataType.TEXT:
-        return _truncate_text(file_to_context(file_data).content, max_chars)
+        return file_to_context(file_data).content
 
     if ctx.run.llm is not None and content_type in ctx.run.llm.modalities.input:
         _queue_file_input(file_data, ref, ctx)
         return "OK"
 
     content = file_to_context(file_data, content_type=DataType.TEXT).content
-    return _truncate_text(content, max_chars)
+    return content
 
 
-@tool(alias="data", filesystem=True)
+@tool(alias="data", filesystem=True, truncation=True)
 async def write(content: str | bytes, dest: str | None = None, ext: str = "", *, ctx: BeforeToolCallCtx) -> str:
     """
     Write UTF-8 text or any bytes to a path, URL, or local storage.

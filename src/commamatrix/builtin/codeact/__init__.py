@@ -13,7 +13,6 @@ from .hooks import codeact_enabled
 from .service import (
     codeact_backend,
     codeact_execution_timeout,
-    codeact_max_output_bytes,
     codeact_max_search_results,
     codeact_max_tools_list,
     codeact_rpc_timeout,
@@ -25,7 +24,6 @@ __all__ = [
     "codeact_backend",
     "codeact_enabled",
     "codeact_execution_timeout",
-    "codeact_max_output_bytes",
     "codeact_max_search_results",
     "codeact_max_tools_list",
     "codeact_rpc_timeout",
