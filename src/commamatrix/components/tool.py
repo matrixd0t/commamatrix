@@ -330,9 +330,17 @@ def _with_truncation_param(schema: dict[str, Any]) -> dict[str, Any]:
     properties = dict(parameters.get("properties") or {})
     properties.setdefault(
         TRUNCATION_PARAM,
-        {"type": "integer", "description": TRUNCATION_DESCRIPTION},
+        {
+            "anyOf": [{"type": "integer"}, {"type": "null"}],
+            "description": TRUNCATION_DESCRIPTION,
+        },
     )
     parameters["properties"] = properties
+    required = list(parameters.get("required") or [])
+    if TRUNCATION_PARAM not in required:
+        # Strict providers require ``required`` to list every property.
+        required.append(TRUNCATION_PARAM)
+    parameters["required"] = required
     result["parameters"] = parameters
     return result
 

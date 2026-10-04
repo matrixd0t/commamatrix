@@ -149,8 +149,9 @@ class TestToolTruncation:
 
         _source, descriptor = self._scan("trunc_schema_mod", emit)
         try:
-            properties = descriptor.schema["parameters"]["properties"]
-            assert properties["max_out_chars"]["type"] == "integer"
+            param = descriptor.schema["parameters"]["properties"]["max_out_chars"]
+            assert {"type": "integer"} in param["anyOf"]
+            assert "max_out_chars" in descriptor.schema["parameters"]["required"]
             names = [item["name"] for item in descriptor.meta["signature"]]
             assert "max_out_chars" in names
         finally:
