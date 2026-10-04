@@ -107,6 +107,11 @@ cut to the beginning plus a marker:
 value of `0` or less disables truncation for that call. Truncation applies only
 to `str` results.
 
+Because tool schemas are generated in strict mode (every property must appear in
+`required`), the injected parameter is exposed as the nullable
+`anyOf: [integer, null]` and listed in `required`; passing `null` uses the
+configured default.
+
 ## Metadata
 
 Keyword arguments to `@tool` are declarative metadata. A hook can inspect them

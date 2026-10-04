@@ -366,7 +366,7 @@ wheels = [
 
 [[package]]
 name = "commamatrix"
-version = "0.1.34"
+version = "0.1.35"
 source = { editable = "." }
 dependencies = [
     { name = "httpx2" },
