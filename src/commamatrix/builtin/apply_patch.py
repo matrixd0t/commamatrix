@@ -125,15 +125,13 @@ When editing code, prefer the `code_apply_patch` tool (named `tools.code.apply_p
 def parse_patch(patch_text: str) -> list[FileOp]:
     lines = patch_text.splitlines()
 
+    # The Begin/End markers are optional so callers can pass bare file
+    # operations without wrapping them.
     if lines and lines[0].strip() == "*** Begin Patch":
         lines = lines[1:]
-    else:
-        raise PatchError("patch must start with '*** Begin Patch'")
 
     if lines and lines[-1].strip() == "*** End Patch":
         lines = lines[:-1]
-    else:
-        raise PatchError("patch must end with '*** End Patch'")
 
     operations: list[FileOp] = []
     index = 0
@@ -574,7 +572,7 @@ def apply_patch_text(patch_text: str, *, root: str | Path | None = None, allow_a
     return PatchResult(operations=results)
 
 
-@tool(alias="code", filesystem=True, truncation=True)
+@tool(alias="code", filesystem=True)
 async def apply_patch(patch: str, *, ctx: BeforeToolCallCtx) -> str:
     """Apply a text patch to files under the agent's current working directory."""
     max_chars = ctx.run.agent.config.get(max_patch_chars)

@@ -42,6 +42,34 @@ def test_parse_patch_with_add_update_delete_and_move():
     assert operations[1].hunks[0].context_lines == ["function hint"]
 
 
+def test_parse_patch_without_begin_and_end_markers():
+    operations = parse_patch(
+        "*** Add File: bare.txt\n"
+        "+created\n"
+    )
+
+    assert [operation.action for operation in operations] == ["add"]
+    assert operations[0].content == "created\n"
+
+
+def test_parse_patch_with_only_begin_marker():
+    operations = parse_patch(
+        "*** Begin Patch\n"
+        "*** Delete File: gone.txt\n"
+    )
+
+    assert [operation.action for operation in operations] == ["delete"]
+
+
+def test_parse_patch_with_only_end_marker():
+    operations = parse_patch(
+        "*** Delete File: gone.txt\n"
+        "*** End Patch\n"
+    )
+
+    assert [operation.action for operation in operations] == ["delete"]
+
+
 def test_apply_update_requires_eof_hunk_to_reach_end():
     hunks = parse_patch(
         "*** Begin Patch\n"

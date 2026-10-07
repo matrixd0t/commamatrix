@@ -194,7 +194,7 @@ async def _fetch_url(ref: str, ctx: BeforeToolCallCtx) -> tuple[FileData, str] |
     ), current_url
 
 
-@tool(alias="data", filesystem=True, truncation=True)
+@tool(alias="data", filesystem=True)
 async def read(ref: str, *, ctx: BeforeToolCallCtx) -> str:
     """
     Read a text, image, or file from a URL, path, or local storage.
@@ -250,7 +250,7 @@ async def read(ref: str, *, ctx: BeforeToolCallCtx) -> str:
     return content
 
 
-@tool(alias="data", filesystem=True, truncation=True)
+@tool(alias="data", filesystem=True)
 async def write(content: str | bytes, dest: str | None = None, ext: str = "", *, ctx: BeforeToolCallCtx) -> str:
     """
     Write UTF-8 text or any bytes to a path, URL, or local storage.

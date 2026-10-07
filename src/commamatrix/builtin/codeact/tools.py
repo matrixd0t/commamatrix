@@ -19,7 +19,7 @@ def _format_tool_display(d: ToolDescriptor) -> str:
     return "\n".join(parts)
 
 
-@tool(alias="", codeact=False, filesystem=True, truncation=True)
+@tool(alias="", codeact=False, filesystem=True)
 async def execute(code: str, ctx: BeforeToolCallCtx) -> str:
     """Execute Python code in the configured CodeAct environment."""
     codeact: CodeActService = ctx.run.agent.services.require(CodeActService)
@@ -27,7 +27,7 @@ async def execute(code: str, ctx: BeforeToolCallCtx) -> str:
     return result.console_output()
 
 
-@tool(alias="", codeact=False, codeact_import=True, truncation=True)
+@tool(alias="", codeact=False, codeact_import=True)
 async def tool_search(query: str, ctx: BeforeToolCallCtx, limit: int = 5) -> str:
     """Semantically search for tools by description and signature."""
     codeact: CodeActService = ctx.run.agent.services.require(CodeActService)
@@ -38,7 +38,7 @@ async def tool_search(query: str, ctx: BeforeToolCallCtx, limit: int = 5) -> str
     return f"Search results for '{query}':\n" + "\n\n".join([_format_tool_display(d) for d in results])
 
 
-@tool(alias="", codeact=False, codeact_import=True, truncation=True)
+@tool(alias="", codeact=False, codeact_import=True)
 async def tools_list(ctx: BeforeToolCallCtx, alias: str | None = None, limit: int = 50) -> str:
     """List available tool names, grouped by and optionally filtered by alias."""
     codeact: CodeActService = ctx.run.agent.services.require(CodeActService)

@@ -69,12 +69,6 @@ agent.config.set(openai_api_key, os.environ["OPENAI_API_KEY"])
 |------|-----|--------------|----------|
 | `reasoning_level` | `str` | `""` | Режим рассуждений по умолчанию (если применим к модели). Универсальные значения: `max` / `highest` / `lowest` |
 
-### Инструменты (`commamatrix.components.tool`)
-
-| Поле | Тип | По умолчанию | Описание |
-|------|-----|--------------|----------|
-| `tool_max_output_chars` | `int` | `10000` | Бюджет символов для вывода инструментов с `truncation`; полный вывод пишется в `commamatrix_dir/tool_outputs` |
-
 ### Расширения (`commamatrix.core.agent.agent`)
 
 | Поле | Тип | По умолчанию | Описание |
