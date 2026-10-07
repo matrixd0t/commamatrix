@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import functools
 import inspect
-import re
 import sys
 import time
 import weakref
 from abc import ABC
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any, cast, get_type_hints, overload
 from uuid import uuid4
 
@@ -22,27 +19,11 @@ from ..core.classes.descriptor import Descriptor
 from ..core.classes.lifecycle_registry import lifecycle_component
 from ..core.classes.manager import Manager
 from ..core.classes.source import PythonSource, Source
-from ..utils import commamatrix_dir, write_text_file_async
-from .config import ConfigField
 from .hook import BeforeToolCallCtx, RunCtx
 from .llm_adapter import ToolCall, ToolCallResult
 
 DEFAULT_TOOL_SEARCH_AMOUNT = 5
 TOOL_ATTRIBUTE = "__commamatrix_tool__"
-TRUNCATION_PARAM = "max_output_chars"
-TRUNCATION_DESCRIPTION = (
-    "Maximum number of characters returned directly. When the output is longer, "
-    "the full text is saved to a file and only its beginning is shown."
-)
-
-tool_max_output_chars = ConfigField[int](
-    name="tool_max_output_chars",
-    default=10_000,
-    description=(
-        "Default character budget for tool outputs marked with truncation; "
-        "full output is written under commamatrix_dir/tool_outputs when exceeded"
-    ),
-)
 
 type AsyncOrSyncFunction = Callable[..., object] | Callable[..., Awaitable[object]]
 type Decorator[F: AsyncOrSyncFunction] = Callable[[F], F]
@@ -150,13 +131,7 @@ class PythonToolSource(PythonSource[ToolDescriptor], ToolSource):
         fn = cast(AsyncOrSyncFunction, obj)
         raw_meta: dict[str, Any] = getattr(fn, TOOL_ATTRIBUTE)
         metadata = dict(raw_meta)
-        truncation = bool(metadata.get("truncation"))
-        signature_metadata = _signature_metadata(fn)
-        if truncation and not any(
-            item.get("name") == TRUNCATION_PARAM for item in signature_metadata
-        ):
-            signature_metadata = [*signature_metadata, _truncation_signature_item()]
-        metadata["signature"] = signature_metadata
+        metadata["signature"] = _signature_metadata(fn)
         try:
             metadata["__codeact_source__"] = inspect.getsource(fn)
         except (OSError, TypeError):
@@ -178,8 +153,6 @@ class PythonToolSource(PythonSource[ToolDescriptor], ToolSource):
         alias_for_doc: str | None = metadata.get("alias")
 
         schema = build_json_schema(_schema_fn(fn))
-        if truncation:
-            schema = _with_truncation_param(schema)
 
         descriptor = ToolDescriptor(
             id=descriptor_id,
@@ -198,21 +171,13 @@ class PythonToolSource(PythonSource[ToolDescriptor], ToolSource):
         if fn is None:
             raise RuntimeError(f"Tool {descriptor.id} is not owned by this source")
 
-        truncation = bool(descriptor.meta.get("truncation"))
         kwargs = dict(kwargs)
-        max_output_chars = kwargs.pop(TRUNCATION_PARAM, None) if truncation else None
-
         if ctx is not None:
             kwargs = _inject(fn, kwargs, ctx)
 
         if inspect.iscoroutinefunction(fn):
-            result = await fn(**kwargs)
-        else:
-            result = fn(**kwargs)
-
-        if truncation and isinstance(result, str):
-            result = await _spill_tool_output(result, max_output_chars, descriptor, ctx)
-        return result
+            return await fn(**kwargs)
+        return fn(**kwargs)
 
     @staticmethod
     def _build_doc(fn: AsyncOrSyncFunction, alias: str | None = None) -> str:
@@ -312,78 +277,6 @@ def _type_hints(fn: AsyncOrSyncFunction) -> dict[str, Any]:
         return {k: v for k, v in get_type_hints(fn).items() if k != "return"}
     except Exception:  # noqa: BLE001
         return dict(getattr(fn, "__annotations__", {}))
-
-
-def _truncation_signature_item() -> dict[str, Any]:
-    return {
-        "name": TRUNCATION_PARAM,
-        "kind": "KEYWORD_ONLY",
-        "annotation": "int",
-        "default": None,
-    }
-
-
-def _with_truncation_param(schema: dict[str, Any]) -> dict[str, Any]:
-    """Expose ``max_output_chars`` to the LLM without it being a real function argument."""
-    result = dict(schema)
-    parameters = dict(result.get("parameters") or {})
-    properties = dict(parameters.get("properties") or {})
-    properties.setdefault(
-        TRUNCATION_PARAM,
-        {
-            "anyOf": [{"type": "integer"}, {"type": "null"}],
-            "description": TRUNCATION_DESCRIPTION,
-        },
-    )
-    parameters["properties"] = properties
-    required = list(parameters.get("required") or [])
-    if TRUNCATION_PARAM not in required:
-        # Strict providers require ``required`` to list every property.
-        required.append(TRUNCATION_PARAM)
-    parameters["required"] = required
-    result["parameters"] = parameters
-    return result
-
-
-def _tool_output_filename(descriptor: ToolDescriptor) -> str:
-    stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
-    base = f"{descriptor.alias}_{descriptor.name}" if descriptor.alias else descriptor.name
-    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", base).strip("_") or "tool"
-    return f"{safe}_{stamp}.txt"
-
-
-def _resolve_max_output_chars(requested: object, config: Any) -> int | None:
-    if isinstance(requested, bool) or not isinstance(requested, int):
-        requested = config.get(tool_max_output_chars) if config is not None else None
-    if requested is None or requested <= 0:
-        return None
-    return int(requested)
-
-
-async def _spill_tool_output(
-    content: str,
-    requested: object,
-    descriptor: ToolDescriptor,
-    ctx: BeforeToolCallCtx | None,
-) -> str:
-    """Truncate an oversized tool result and persist the full text to disk."""
-    agent = getattr(getattr(ctx, "run", None), "agent", None)
-    config = getattr(agent, "config", None)
-    limit = _resolve_max_output_chars(requested, config)
-    if config is None or limit is None or len(content) <= limit:
-        return content
-
-    directory = Path(config.get(commamatrix_dir)) / "tool_outputs"
-    filename = _tool_output_filename(descriptor)
-    try:
-        await write_text_file_async(directory / filename, content)
-    except OSError:
-        if agent is not None:
-            agent.logger.exception("Failed to persist full tool output name=%s", descriptor.name)
-        return content
-
-    shown = content[:limit]
-    return f"{shown}\n[ shown {len(shown)}/{len(content)} chars, full output available at {filename} ]"
 
 
 def _descriptor_signature(descriptor: ToolDescriptor) -> inspect.Signature | None:

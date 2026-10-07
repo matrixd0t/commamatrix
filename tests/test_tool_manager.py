@@ -9,7 +9,6 @@ import types
 
 import pytest
 
-from commamatrix.components.hook import BeforeToolCallCtx, RunCtx
 from commamatrix.components.llm_adapter import ToolCall
 from commamatrix.components.tool import (
     TOOL_ATTRIBUTE,
@@ -18,10 +17,8 @@ from commamatrix.components.tool import (
     ToolDescriptor,
     ToolManager,
     tool,
-    tool_max_output_chars,
 )
-from commamatrix.utils import commamatrix_dir
-from tests.conftest import stub_agent, stub_origin
+from tests.conftest import stub_agent
 
 
 class TestToolDecorator:
@@ -130,101 +127,6 @@ class TestPythonToolSource:
             assert result == "hello world"
         finally:
             del sys.modules["pt_async_mod"]
-
-
-class TestToolTruncation:
-    def _scan(self, module_name, fn):
-        module = types.ModuleType(module_name)
-        fn.__module__ = module_name
-        setattr(module, fn.__name__, fn)
-        sys.modules[module_name] = module
-        source = PythonToolSource()
-        source.set_scope([module_name])
-        return source, source.scan()[0]
-
-    def test_truncation_injects_schema_and_signature(self):
-        @tool(truncation=True)
-        async def emit() -> str:
-            return "x"
-
-        _source, descriptor = self._scan("trunc_schema_mod", emit)
-        try:
-            param = descriptor.schema["parameters"]["properties"]["max_output_chars"]
-            assert {"type": "integer"} in param["anyOf"]
-            assert "max_output_chars" in descriptor.schema["parameters"]["required"]
-            names = [item["name"] for item in descriptor.meta["signature"]]
-            assert "max_output_chars" in names
-        finally:
-            del sys.modules["trunc_schema_mod"]
-
-    @pytest.mark.asyncio
-    async def test_truncation_spills_full_output(self, tmp_path):
-        @tool(truncation=True)
-        async def emit() -> str:
-            return "A" * 50
-
-        source, descriptor = self._scan("trunc_spill_mod", emit)
-        try:
-            agent = stub_agent()
-            agent.config.set(commamatrix_dir, str(tmp_path))
-            agent.config.set(tool_max_output_chars, 10)
-            ctx = BeforeToolCallCtx(
-                run=RunCtx(agent=agent, origin=stub_origin(), user="u"),
-                tool_call=ToolCall(tool_call_id="1", tool_name="trunc_spill_mod_emit", tool_args={}),
-            )
-            result = await source.invoke(descriptor, {}, ctx=ctx)
-
-            assert result.startswith("A" * 10)
-            assert "[ shown 10/50 chars, full output available at " in result
-            outputs = list((tmp_path / "tool_outputs").glob("trunc_spill_mod_emit_*.txt"))
-            assert len(outputs) == 1
-            assert outputs[0].read_text(encoding="utf-8") == "A" * 50
-        finally:
-            del sys.modules["trunc_spill_mod"]
-
-    @pytest.mark.asyncio
-    async def test_truncation_explicit_param(self, tmp_path):
-        @tool(truncation=True)
-        async def emit() -> str:
-            return "B" * 30
-
-        source, descriptor = self._scan("trunc_param_mod", emit)
-        try:
-            agent = stub_agent()
-            agent.config.set(commamatrix_dir, str(tmp_path))
-            agent.config.set(tool_max_output_chars, 1000)
-            ctx = BeforeToolCallCtx(
-                run=RunCtx(agent=agent, origin=stub_origin(), user="u"),
-                tool_call=ToolCall(tool_call_id="1", tool_name="trunc_param_mod_emit", tool_args={}),
-            )
-            result = await source.invoke(descriptor, {"max_output_chars": 5}, ctx=ctx)
-
-            assert result.startswith("B" * 5)
-            assert "[ shown 5/30 chars" in result
-        finally:
-            del sys.modules["trunc_param_mod"]
-
-    @pytest.mark.asyncio
-    async def test_truncation_leaves_small_output(self, tmp_path):
-        @tool(truncation=True)
-        async def emit() -> str:
-            return "small"
-
-        source, descriptor = self._scan("trunc_small_mod", emit)
-        try:
-            agent = stub_agent()
-            agent.config.set(commamatrix_dir, str(tmp_path))
-            agent.config.set(tool_max_output_chars, 1000)
-            ctx = BeforeToolCallCtx(
-                run=RunCtx(agent=agent, origin=stub_origin(), user="u"),
-                tool_call=ToolCall(tool_call_id="1", tool_name="trunc_small_mod_emit", tool_args={}),
-            )
-            result = await source.invoke(descriptor, {}, ctx=ctx)
-
-            assert result == "small"
-            assert not (tmp_path / "tool_outputs").exists()
-        finally:
-            del sys.modules["trunc_small_mod"]
 
 
 class TestToolManager:
