@@ -29,14 +29,14 @@ from .llm_adapter import ToolCall, ToolCallResult
 
 DEFAULT_TOOL_SEARCH_AMOUNT = 5
 TOOL_ATTRIBUTE = "__commamatrix_tool__"
-TRUNCATION_PARAM = "max_out_chars"
+TRUNCATION_PARAM = "max_output_chars"
 TRUNCATION_DESCRIPTION = (
     "Maximum number of characters returned directly. When the output is longer, "
     "the full text is saved to a file and only its beginning is shown."
 )
 
-tool_max_out_chars = ConfigField[int](
-    name="tool_max_out_chars",
+tool_max_output_chars = ConfigField[int](
+    name="tool_max_output_chars",
     default=10_000,
     description=(
         "Default character budget for tool outputs marked with truncation; "
@@ -200,7 +200,7 @@ class PythonToolSource(PythonSource[ToolDescriptor], ToolSource):
 
         truncation = bool(descriptor.meta.get("truncation"))
         kwargs = dict(kwargs)
-        max_out_chars = kwargs.pop(TRUNCATION_PARAM, None) if truncation else None
+        max_output_chars = kwargs.pop(TRUNCATION_PARAM, None) if truncation else None
 
         if ctx is not None:
             kwargs = _inject(fn, kwargs, ctx)
@@ -211,7 +211,7 @@ class PythonToolSource(PythonSource[ToolDescriptor], ToolSource):
             result = fn(**kwargs)
 
         if truncation and isinstance(result, str):
-            result = await _spill_tool_output(result, max_out_chars, descriptor, ctx)
+            result = await _spill_tool_output(result, max_output_chars, descriptor, ctx)
         return result
 
     @staticmethod
@@ -324,7 +324,7 @@ def _truncation_signature_item() -> dict[str, Any]:
 
 
 def _with_truncation_param(schema: dict[str, Any]) -> dict[str, Any]:
-    """Expose ``max_out_chars`` to the LLM without it being a real function argument."""
+    """Expose ``max_output_chars`` to the LLM without it being a real function argument."""
     result = dict(schema)
     parameters = dict(result.get("parameters") or {})
     properties = dict(parameters.get("properties") or {})
@@ -352,9 +352,9 @@ def _tool_output_filename(descriptor: ToolDescriptor) -> str:
     return f"{safe}_{stamp}.txt"
 
 
-def _resolve_max_out_chars(requested: object, config: Any) -> int | None:
+def _resolve_max_output_chars(requested: object, config: Any) -> int | None:
     if isinstance(requested, bool) or not isinstance(requested, int):
-        requested = config.get(tool_max_out_chars) if config is not None else None
+        requested = config.get(tool_max_output_chars) if config is not None else None
     if requested is None or requested <= 0:
         return None
     return int(requested)
@@ -369,7 +369,7 @@ async def _spill_tool_output(
     """Truncate an oversized tool result and persist the full text to disk."""
     agent = getattr(getattr(ctx, "run", None), "agent", None)
     config = getattr(agent, "config", None)
-    limit = _resolve_max_out_chars(requested, config)
+    limit = _resolve_max_output_chars(requested, config)
     if config is None or limit is None or len(content) <= limit:
         return content
 
@@ -606,9 +606,12 @@ class ToolManager(Manager[ToolDescriptor]):
             result = await tool_source.invoke(descriptor, tool_call.tool_args, ctx=ctx)
         except Exception as exc:
             self.logger.exception("Tool call failed name=%s", tool_call.tool_name)
+            content = f"Error executing tool {tool_call.tool_name!r}: {exc}"
+            if descriptor.doc:
+                content = f"{content}\n\n{descriptor.doc}"
             return ToolCallResult(
                 tool_call_id=tool_call.tool_call_id,
-                content=f"Error executing tool {tool_call.tool_name!r}: {exc}",
+                content=content,
             )
 
         return ToolCallResult(

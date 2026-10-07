@@ -18,7 +18,7 @@ from commamatrix.components.tool import (
     ToolDescriptor,
     ToolManager,
     tool,
-    tool_max_out_chars,
+    tool_max_output_chars,
 )
 from commamatrix.utils import commamatrix_dir
 from tests.conftest import stub_agent, stub_origin
@@ -149,11 +149,11 @@ class TestToolTruncation:
 
         _source, descriptor = self._scan("trunc_schema_mod", emit)
         try:
-            param = descriptor.schema["parameters"]["properties"]["max_out_chars"]
+            param = descriptor.schema["parameters"]["properties"]["max_output_chars"]
             assert {"type": "integer"} in param["anyOf"]
-            assert "max_out_chars" in descriptor.schema["parameters"]["required"]
+            assert "max_output_chars" in descriptor.schema["parameters"]["required"]
             names = [item["name"] for item in descriptor.meta["signature"]]
-            assert "max_out_chars" in names
+            assert "max_output_chars" in names
         finally:
             del sys.modules["trunc_schema_mod"]
 
@@ -167,7 +167,7 @@ class TestToolTruncation:
         try:
             agent = stub_agent()
             agent.config.set(commamatrix_dir, str(tmp_path))
-            agent.config.set(tool_max_out_chars, 10)
+            agent.config.set(tool_max_output_chars, 10)
             ctx = BeforeToolCallCtx(
                 run=RunCtx(agent=agent, origin=stub_origin(), user="u"),
                 tool_call=ToolCall(tool_call_id="1", tool_name="trunc_spill_mod_emit", tool_args={}),
@@ -192,12 +192,12 @@ class TestToolTruncation:
         try:
             agent = stub_agent()
             agent.config.set(commamatrix_dir, str(tmp_path))
-            agent.config.set(tool_max_out_chars, 1000)
+            agent.config.set(tool_max_output_chars, 1000)
             ctx = BeforeToolCallCtx(
                 run=RunCtx(agent=agent, origin=stub_origin(), user="u"),
                 tool_call=ToolCall(tool_call_id="1", tool_name="trunc_param_mod_emit", tool_args={}),
             )
-            result = await source.invoke(descriptor, {"max_out_chars": 5}, ctx=ctx)
+            result = await source.invoke(descriptor, {"max_output_chars": 5}, ctx=ctx)
 
             assert result.startswith("B" * 5)
             assert "[ shown 5/30 chars" in result
@@ -214,7 +214,7 @@ class TestToolTruncation:
         try:
             agent = stub_agent()
             agent.config.set(commamatrix_dir, str(tmp_path))
-            agent.config.set(tool_max_out_chars, 1000)
+            agent.config.set(tool_max_output_chars, 1000)
             ctx = BeforeToolCallCtx(
                 run=RunCtx(agent=agent, origin=stub_origin(), user="u"),
                 tool_call=ToolCall(tool_call_id="1", tool_name="trunc_small_mod_emit", tool_args={}),
@@ -325,6 +325,33 @@ class TestToolManager:
             assert result.content == 10
         finally:
             del sys.modules["tm_call_mod"]
+
+    @pytest.mark.asyncio
+    async def test_call_error_includes_tool_description(self):
+        mod = types.ModuleType("tm_error_mod")
+
+        @tool
+        async def explode() -> str:
+            """Booms on purpose."""
+            raise ValueError("boom")
+
+        explode.__module__ = "tm_error_mod"
+        mod.explode = explode
+        sys.modules["tm_error_mod"] = mod
+        try:
+            agent = stub_agent()
+            tm = ToolManager(agent=agent)
+            tm.set_scope(["tm_error_mod"])
+            tm.scan()
+            tc = ToolCall(
+                tool_call_id="1", tool_name="tm_error_mod_explode", tool_args={}
+            )
+            result = await tm.call(tc)
+            assert "Error executing tool" in result.content
+            assert "boom" in result.content
+            assert "Booms on purpose." in result.content
+        finally:
+            del sys.modules["tm_error_mod"]
 
     @pytest.mark.asyncio
     async def test_call_nonexistent_tool(self):

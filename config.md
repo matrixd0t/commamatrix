@@ -73,7 +73,7 @@ agent.config.set(openai_api_key, os.environ["OPENAI_API_KEY"])
 
 | Поле | Тип | По умолчанию | Описание |
 |------|-----|--------------|----------|
-| `tool_max_out_chars` | `int` | `10000` | Бюджет символов для вывода инструментов с `truncation`; полный вывод пишется в `commamatrix_dir/tool_outputs` |
+| `tool_max_output_chars` | `int` | `10000` | Бюджет символов для вывода инструментов с `truncation`; полный вывод пишется в `commamatrix_dir/tool_outputs` |
 
 ### Расширения (`commamatrix.core.agent.agent`)
 

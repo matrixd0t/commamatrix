@@ -75,7 +75,7 @@ execution and for each nested RPC tool call by default; the execution deadline
 still bounds all calls in that execution. Preserve execution, RPC, and shutdown
 limits, and configure them through the CodeAct `ConfigField` values. CodeAct
 output is no longer byte-capped; oversized `execute` output is truncated by the
-generic `max_out_chars` tool mechanism.
+generic `max_output_chars` tool mechanism.
 
 Custom execution backends implement async `start()`, `stop()`, and
 `execute(code, ctx)` methods. Treat backend selection as a deployment security
